@@ -1,0 +1,12 @@
+// Modelo de dados vem na Fase 1 (ver docs/arquitetura-dados.md).
+// Este arquivo por enquanto só declara datasource/generator para validar a
+// conexão com o Postgres e deixar `prisma migrate` pronto para uso.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
