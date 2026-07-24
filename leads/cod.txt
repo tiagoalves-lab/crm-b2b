@@ -1,0 +1,200 @@
+# =====================================================================
+#  CRAWLER CNPJ GAMA v3 â Dados Abertos da Receita Federal
+#  Filtro por FAIXA DE DIVISÃO CNAE + qualificaÃ§Ã£o + saÃ­da no Sheets
+#  Cole tudo numa cÃ©lula do Colab e rode (Ctrl+F9). 1a execuÃ§Ã£o: 30-60 min
+# =====================================================================
+
+# ----------------------- CONFIG -----------------------
+DIV_INI = 25                 # divisÃ£o CNAE inicial (2 dÃ­gitos)
+DIV_FIM = 30                 # divisÃ£o CNAE final (inclusive)
+DIVISOES_EXTRA = []          # divisÃµes avulsas fora da faixa. Ex: [33, 20]
+INCLUIR_CNAE_SECUNDARIO = False
+UFS   = ["RS"]               # [] = Brasil todo
+SO_MATRIZ   = True
+SO_ATIVAS   = True
+EXCLUIR_MEI = True
+
+# ---- QualificaÃ§Ã£o de leads ----
+EXCLUIR_MICRO    = True      # remove porte "Micro" (mantÃ©m EPP e Demais)
+ANO_MIN_ABERTURA = 2024      # sÃ³ empresas abertas antes deste ano (None = desliga)
+EXIGIR_CONTATO   = True      # descarta quem nÃ£o tem telefone nem e-mail
+
+SHEET_ID  = "1IgzKpswOxH4i5oWoILAWm8RtSSjKa89DfITpwQCUoc8"
+SHEET_ABA = "Base de dados"
+# ------------------------------------------------------
+
+import os, re, sys, shutil, zipfile, urllib.request
+
+try:
+    import duckdb
+except ImportError:
+    os.system(f"{sys.executable} -m pip install -q duckdb")
+    import duckdb
+
+DIVS = sorted(set([f"{d:02d}" for d in range(DIV_INI, DIV_FIM + 1)] +
+                  [f"{d:02d}" for d in DIVISOES_EXTRA]))
+print("DivisÃµes CNAE:", ", ".join(DIVS))
+
+BASE = "https://dados-abertos-rf-cnpj.casadosdados.com.br/arquivos/"
+UA = {"User-Agent": "Mozilla/5.0"}
+MES = "2026-07-12"
+URL = BASE + MES + "/"
+print("Base da Receita:", MES)
+
+def baixar(arq):
+    if os.path.exists(arq):
+        return
+    print("  baixando", arq, "...")
+    for tent in range(3):
+        try:
+            r = urllib.request.Request(URL + arq, headers=UA)
+            with urllib.request.urlopen(r, timeout=600) as resp, open(arq, "wb") as f:
+                shutil.copyfileobj(resp, f, 1024 * 1024)
+            return
+        except Exception as e:
+            print("   retry", tent + 1, "-", e)
+            if os.path.exists(arq):
+                os.remove(arq)
+    raise RuntimeError("Falha ao baixar " + arq)
+
+def extrair(arq):
+    with zipfile.ZipFile(arq) as z:
+        nome = z.namelist()[0]
+        z.extract(nome)
+    return nome
+
+con = duckdb.connect()
+N30 = "[" + ",".join(f"'c{i}'" for i in range(30)) + "]"
+N7  = "[" + ",".join(f"'c{i}'" for i in range(7)) + "]"
+N11 = "[" + ",".join(f"'c{i}'" for i in range(11)) + "]"
+N2  = "['c0','c1']"
+OPT = "delim=';', quote='\"', header=false, encoding='utf-8', all_varchar=true, ignore_errors=true, null_padding=true"
+
+div_in = "'" + "','".join(DIVS) + "'"
+f_cnae = f"substr(c11,1,2) IN ({div_in})"
+if INCLUIR_CNAE_SECUNDARIO:
+    padrao = "(^|,)(" + "|".join(DIVS) + ")\\d{5}"
+    f_cnae = f"({f_cnae} OR regexp_matches(coalesce(c12,''), '{padrao}'))"
+f_uf     = ("AND c19 IN ('" + "','".join(UFS) + "')") if UFS else ""
+f_ativa  = "AND c5 IN ('2','02')" if SO_ATIVAS else ""
+f_matriz = "AND c3 = '1'" if SO_MATRIZ else ""
+
+# ---- 1) ESTABELECIMENTOS ----
+for i in range(10):
+    z = f"Estabelecimentos{i}.zip"
+    baixar(z)
+    csv = extrair(z)
+    con.execute(f"""
+        COPY (SELECT c0 base, c1 ordem, c2 dv, c4 fantasia, c10 abertura, c11 cnae,
+                     c19 uf, c20 cod_mun, c21 ddd1, c22 tel1, c23 ddd2, c24 tel2, c27 email
+              FROM read_csv('{csv}', names={N30}, {OPT})
+              WHERE {f_cnae} {f_ativa} {f_matriz} {f_uf})
+        TO 'est_{i}.parquet'
+    """)
+    os.remove(z); os.remove(csv)
+    print(f"  Estabelecimentos {i+1}/10 ok")
+
+con.execute("CREATE TABLE est AS SELECT * FROM 'est_*.parquet'")
+con.execute("CREATE TABLE bases AS SELECT DISTINCT base FROM est")
+n = con.execute("SELECT count(*) FROM est").fetchone()[0]
+print("Estabelecimentos filtrados:", n)
+
+# ---- 2) EMPRESAS ----
+for i in range(10):
+    z = f"Empresas{i}.zip"
+    baixar(z)
+    csv = extrair(z)
+    sel = f"""SELECT c0 base, c1 razao, c5 porte
+              FROM read_csv('{csv}', names={N7}, {OPT})
+              WHERE c0 IN (SELECT base FROM bases)"""
+    if i == 0:
+        con.execute(f"CREATE TABLE emp_tmp AS {sel}")
+    else:
+        con.execute(f"INSERT INTO emp_tmp BY NAME ({sel})")
+    os.remove(z); os.remove(csv)
+    print(f"  Empresas {i+1}/10 ok")
+
+# ---- 3) SOCIOS ----
+for i in range(10):
+    z = f"Socios{i}.zip"
+    baixar(z)
+    csv = extrair(z)
+    sel = f"""SELECT c0 base, c2 nome
+              FROM read_csv('{csv}', names={N11}, {OPT})
+              WHERE c1 = '2' AND c0 IN (SELECT base FROM bases)"""
+    if i == 0:
+        con.execute(f"CREATE TABLE soc_tmp AS {sel}")
+    else:
+        con.execute(f"INSERT INTO soc_tmp BY NAME ({sel})")
+    os.remove(z); os.remove(csv)
+    print(f"  Socios {i+1}/10 ok")
+
+# ---- 4) SIMPLES + MUNICIPIOS ----
+baixar("Simples.zip"); csv = extrair("Simples.zip")
+con.execute(f"""CREATE TABLE mei AS SELECT c0 base, c4 mei
+                FROM read_csv('{csv}', names={N7}, {OPT})
+                WHERE c0 IN (SELECT base FROM bases)""")
+os.remove("Simples.zip"); os.remove(csv)
+
+baixar("Municipios.zip"); csv = extrair("Municipios.zip")
+con.execute(f"CREATE TABLE mun AS SELECT c0 cod, c1 cidade FROM read_csv('{csv}', names={N2}, {OPT})")
+os.remove("Municipios.zip"); os.remove(csv)
+
+# ---- 5) MONTAGEM FINAL ----
+filtros = []
+if EXCLUIR_MEI:
+    filtros.append("coalesce(s.mei,'N') <> 'S'")
+if EXCLUIR_MICRO:
+    filtros.append("coalesce(em.porte,'') <> '01'")
+if ANO_MIN_ABERTURA:
+    filtros.append(f"e.abertura < '{ANO_MIN_ABERTURA}0101'")
+if EXIGIR_CONTATO:
+    filtros.append("""(nullif(trim(coalesce(e.ddd1,'')||coalesce(e.tel1,'')),'') IS NOT NULL
+                       OR nullif(trim(coalesce(e.email,'')),'') IS NOT NULL)""")
+w = ("WHERE " + " AND ".join(filtros)) if filtros else ""
+
+df = con.execute(f"""
+    SELECT printf('%s.%s.%s/%s-%s', substr(e.base,1,2), substr(e.base,3,3), substr(e.base,6,3), e.ordem, e.dv) AS "CNPJ",
+           coalesce(em.razao,'') AS "Empresa",
+           coalesce(e.fantasia,'') AS "Fantasia",
+           coalesce(m.cidade,'') AS "Cidade",
+           e.uf AS "UF",
+           nullif(trim(coalesce(e.ddd1,'') || coalesce(e.tel1,'')),'') AS "Telefone",
+           nullif(trim(coalesce(e.ddd2,'') || coalesce(e.tel2,'')),'') AS "Telefone 2",
+           lower(coalesce(e.email,'')) AS "Email (Receita)",
+           CASE em.porte WHEN '01' THEN 'Micro' WHEN '03' THEN 'EPP' WHEN '05' THEN 'Demais' ELSE 'NI' END AS "Porte",
+           (SELECT string_agg(DISTINCT nome, ' | ') FROM soc_tmp s2 WHERE s2.base = e.base) AS "Socios (QSA)",
+           e.cnae AS "CNAE",
+           substr(e.cnae,1,2) AS "Divisao",
+           e.abertura AS "Abertura"
+    FROM est e
+    LEFT JOIN emp_tmp em ON em.base = e.base
+    LEFT JOIN mei s ON s.base = e.base
+    LEFT JOIN mun m ON m.cod = e.cod_mun
+    {w}
+    ORDER BY "Divisao", e.uf, "Cidade", "Empresa"
+""").df()
+
+print(f"Empresas encontradas: {len(df)}")
+
+# ---- 6) GRAVAR NO GOOGLE SHEETS ----
+import gspread
+from google.colab import auth
+from google.auth import default
+
+auth.authenticate_user()
+creds, _ = default()
+gc = gspread.authorize(creds)
+
+sh = gc.open_by_key(SHEET_ID)
+try:
+    ws = sh.worksheet(SHEET_ABA)
+    ws.clear()
+except gspread.WorksheetNotFound:
+    ws = sh.add_worksheet(title=SHEET_ABA, rows=len(df) + 10, cols=len(df.columns))
+
+df = df.fillna("").astype(str)
+ws.update([df.columns.tolist()] + df.values.tolist(), value_input_option="RAW")
+
+print(f"=== PRONTO: {len(df)} empresas gravadas em '{SHEET_ABA}' ===")
+print(f"https://docs.google.com/spreadsheets/d/{SHEET_ID}")
