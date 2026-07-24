@@ -6,7 +6,12 @@ dist/
 
 # environment
 .env
+.env.local
 .env.*.local
+
+# next.js (web/)
+.next/
+web/next-env.d.ts
 
 # logs
 *.log
@@ -24,3 +29,9 @@ coverage/
 
 # prisma
 prisma/*.db
+
+# leads — staging local do módulo de leads (ver leads/import_empresas.py)
+leads/*.duckdb
+leads/*.duckdb.wal
+leads/*.parquet
+leads/*.zip

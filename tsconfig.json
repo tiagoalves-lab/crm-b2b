@@ -18,5 +18,7 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true
-  }
+  },
+  "include": ["src/**/*", "test/**/*", "prisma/**/*.ts"],
+  "exclude": ["node_modules", "dist", "web", "leads"]
 }

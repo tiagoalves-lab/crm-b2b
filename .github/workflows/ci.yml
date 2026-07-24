@@ -26,9 +26,14 @@ jobs:
 
     env:
       NODE_ENV: test
+      # DIRECT_URL: papel superuser do container (crm_user) — só pra rodar
+      # `prisma migrate deploy`. Nunca usado pela aplicação/testes.
+      DIRECT_URL: postgresql://crm_user:crm_password@localhost:5432/crm_b2b_ci?schema=public
+      # DATABASE_URL: placeholder até o papel `app_runtime` existir e
+      # ganhar senha (step "Criar senha do papel app_runtime" abaixo
+      # sobrescreve isso via $GITHUB_ENV, com um papel SEM BYPASSRLS —
+      # ver docs/seguranca.md e prisma/migrations/*_app_runtime_role).
       DATABASE_URL: postgresql://crm_user:crm_password@localhost:5432/crm_b2b_ci?schema=public
-      JWT_SECRET: ci-only-secret
-      JWT_REFRESH_SECRET: ci-only-refresh-secret
 
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +50,24 @@ jobs:
       - run: npm run lint
 
       - run: npm run build
+
+      # Cria tabelas + RLS + o papel app_runtime (SEM BYPASSRLS) — usa
+      # DIRECT_URL (superuser), automaticamente, porque schema.prisma
+      # declara `directUrl` no datasource.
+      - run: npx prisma migrate deploy
+
+      # RLS só prova alguma coisa testado com um papel que não a ignora.
+      # Gera uma senha efêmera (só existe durante este job) pro papel
+      # app_runtime criado pela migration, e aponta DATABASE_URL pra ele
+      # — dali em diante os testes rodam sem privilégio de superusuário,
+      # igual a aplicação vai rodar em produção.
+      - name: Definir senha do papel app_runtime (efêmera, só deste job)
+        run: |
+          PASSWORD=$(openssl rand -hex 16)
+          echo "::add-mask::$PASSWORD"
+          PGPASSWORD=crm_password psql -h localhost -U crm_user -d crm_b2b_ci \
+            -c "ALTER ROLE app_runtime WITH LOGIN PASSWORD '$PASSWORD';"
+          echo "DATABASE_URL=postgresql://app_runtime:${PASSWORD}@localhost:5432/crm_b2b_ci?schema=public" >> "$GITHUB_ENV"
 
       - run: npm test
 

@@ -1,12 +1,304 @@
-// Modelo de dados vem na Fase 1 (ver docs/arquitetura-dados.md).
-// Este arquivo por enquanto só declara datasource/generator para validar a
-// conexão com o Postgres e deixar `prisma migrate` pronto para uso.
+// Fase 1 do roadmap — modelo de dados core (ver docs/arquitetura-dados.md).
+//
+// Identidade de usuário vive em `auth.users` (Supabase Auth), fora deste
+// schema — não modelada aqui. Todo campo `*UserId` neste arquivo é uma FK
+// lógica para `auth.users.id`, sem constraint de banco cross-schema (ver
+// docs/arquitetura-dados.md, seção "User vs. Membership").
+//
+// RLS, CHECK constraints polimórficas (Task/Activity) e a extensão
+// pgcrypto são adicionadas via SQL raw na migration gerada — Prisma não
+// modela RLS nativamente (decisão da Fase 0, ver docs/roadmap.md).
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // DATABASE_URL: papel `app_runtime` — SEM superuser, SEM BYPASSRLS.
+  // É a conexão que a aplicação usa em runtime; RLS só protege alguma
+  // coisa se essa conexão não for capaz de ignorá-la. Ver
+  // docs/seguranca.md, seção "Papel do Postgres usado pela aplicação".
+  url       = env("DATABASE_URL")
+  // DIRECT_URL: conexão privilegiada (ex.: papel padrão do Supabase),
+  // usada só por `prisma migrate` pra rodar DDL — nunca pela aplicação.
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum WorkspaceStatus {
+  active
+  suspended
+  trial
+}
+
+enum MembershipRole {
+  owner
+  admin
+  manager
+  sales_rep
+  readonly
+}
+
+enum MembershipStatus {
+  active
+  invited
+  suspended
+}
+
+enum OpportunityStatus {
+  open
+  won
+  lost
+}
+
+enum TaskStatus {
+  pending
+  done
+}
+
+enum ActivityType {
+  note
+  call
+  email
+  stage_change
+  field_update
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Workspace — unidade de tenant. Toda tabela abaixo (exceto esta) carrega
+// workspace_id e tem RLS baseada em `app.current_workspace_id`.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Workspace {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  slug      String          @unique
+  plan      String          @default("trial")
+  status    WorkspaceStatus @default(trial)
+  settings  Json            @default("{}")
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  memberships   Membership[]
+  companies     Company[]
+  contacts      Contact[]
+  pipelines     Pipeline[]
+  opportunities Opportunity[]
+  tasks         Task[]
+  activities    Activity[]
+
+  @@map("workspaces")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Membership — participação + papel por workspace. Identidade real vive em
+// auth.users (Supabase); user_id aqui é FK lógica, não constraint de banco.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Membership {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String           @map("workspace_id") @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  role        MembershipRole
+  status      MembershipStatus @default(invited)
+  managerId   String?          @map("manager_id") @db.Uuid
+  invitedBy   String?          @map("invited_by") @db.Uuid
+  joinedAt    DateTime?        @map("joined_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id])
+  manager   Membership?  @relation("MembershipHierarchy", fields: [managerId], references: [id])
+  reports   Membership[] @relation("MembershipHierarchy")
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@map("memberships")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Company (Account)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Company {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String    @map("workspace_id") @db.Uuid
+  name            String
+  domain          String?
+  industry        String?
+  size            String?
+  ownerUserId     String?   @map("owner_user_id") @db.Uuid
+  parentCompanyId String?   @map("parent_company_id") @db.Uuid
+  customFields    Json      @default("{}") @map("custom_fields")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id])
+  parentCompany Company?      @relation("CompanyHierarchy", fields: [parentCompanyId], references: [id])
+  subsidiaries  Company[]     @relation("CompanyHierarchy")
+  contacts      Contact[]
+  opportunities Opportunity[]
+  tasks         Task[]
+  activities    Activity[]
+
+  @@index([workspaceId])
+  @@map("companies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Contact
+// ─────────────────────────────────────────────────────────────────────────
+
+model Contact {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  companyId   String?   @map("company_id") @db.Uuid
+  name        String
+  email       String?
+  phone       String?
+  title       String?
+  ownerUserId String?   @map("owner_user_id") @db.Uuid
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  workspace              Workspace     @relation(fields: [workspaceId], references: [id])
+  company                Company?      @relation(fields: [companyId], references: [id])
+  opportunitiesAsPrimary Opportunity[] @relation("OpportunityPrimaryContact")
+  tasks                  Task[]
+  activities             Activity[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+  @@index([companyId])
+  @@map("contacts")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pipeline / Stage — configuração, não dado transacional. Stage não carrega
+// workspace_id direto (ver docs/arquitetura-dados.md) — RLS de Stage
+// verifica via subquery em pipeline_id.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Pipeline {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  name        String
+  isDefault   Boolean  @default(false) @map("is_default")
+  appliesTo   String?  @map("applies_to")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id])
+  stages        Stage[]
+  opportunities Opportunity[]
+
+  @@index([workspaceId])
+  @@map("pipelines")
+}
+
+model Stage {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pipelineId  String  @map("pipeline_id") @db.Uuid
+  name        String
+  order       Int
+  probability Int
+  isWon       Boolean @default(false) @map("is_won")
+  isLost      Boolean @default(false) @map("is_lost")
+
+  pipeline      Pipeline      @relation(fields: [pipelineId], references: [id])
+  opportunities Opportunity[]
+
+  @@index([pipelineId])
+  @@map("stages")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Opportunity (Deal) — núcleo transacional.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Opportunity {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId       String            @map("workspace_id") @db.Uuid
+  companyId         String            @map("company_id") @db.Uuid
+  primaryContactId  String?           @map("primary_contact_id") @db.Uuid
+  pipelineId        String            @map("pipeline_id") @db.Uuid
+  stageId           String            @map("stage_id") @db.Uuid
+  ownerUserId       String            @map("owner_user_id") @db.Uuid
+  amount            Decimal           @db.Decimal(14, 2)
+  currency          String            @db.Char(3)
+  expectedCloseDate DateTime?         @map("expected_close_date") @db.Date
+  status            OpportunityStatus @default(open)
+  lostReason        String?           @map("lost_reason")
+  version           Int               @default(1)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  closedAt          DateTime?         @map("closed_at")
+
+  workspace      Workspace  @relation(fields: [workspaceId], references: [id])
+  company        Company    @relation(fields: [companyId], references: [id])
+  primaryContact Contact?   @relation("OpportunityPrimaryContact", fields: [primaryContactId], references: [id])
+  pipeline       Pipeline   @relation(fields: [pipelineId], references: [id])
+  stage          Stage      @relation(fields: [stageId], references: [id])
+  tasks          Task[]
+  activities     Activity[]
+
+  @@index([workspaceId])
+  @@index([companyId])
+  @@index([stageId])
+  @@map("opportunities")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Task — ação futura. Relação polimórfica (company/contact/opportunity)
+// via 3 FKs nullable lado a lado + CHECK "exatamente um preenchido" (SQL
+// raw na migration).
+// ─────────────────────────────────────────────────────────────────────────
+
+model Task {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId    String     @map("workspace_id") @db.Uuid
+  assigneeUserId String     @map("assignee_user_id") @db.Uuid
+  companyId      String?    @map("company_id") @db.Uuid
+  contactId      String?    @map("contact_id") @db.Uuid
+  opportunityId  String?    @map("opportunity_id") @db.Uuid
+  title          String
+  dueAt          DateTime?  @map("due_at")
+  status         TaskStatus @default(pending)
+  createdBy      String     @map("created_by") @db.Uuid
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id])
+  company     Company?     @relation(fields: [companyId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([workspaceId])
+  @@map("tasks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Activity — log append-only. Mesmo padrão polimórfico do Task.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Activity {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String       @map("workspace_id") @db.Uuid
+  actorUserId   String?      @map("actor_user_id") @db.Uuid
+  companyId     String?      @map("company_id") @db.Uuid
+  contactId     String?      @map("contact_id") @db.Uuid
+  opportunityId String?      @map("opportunity_id") @db.Uuid
+  type          ActivityType
+  payload       Json         @default("{}")
+  occurredAt    DateTime     @default(now()) @map("occurred_at")
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id])
+  company     Company?     @relation(fields: [companyId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([workspaceId])
+  @@map("activities")
 }

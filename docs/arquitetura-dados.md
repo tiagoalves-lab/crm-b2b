@@ -41,10 +41,25 @@ Unidade de tenant. Tudo pendura nela.
 Identidade da pessoa é separada de participação em um workspace, porque uma
 pessoa pode pertencer a múltiplos workspaces.
 
-- **User** (identidade global): `id`, `email` (unique global),
-  `password_hash`/auth provider, `name`, `mfa_enabled`.
-- **Membership** (participação + papel): `workspace_id`, `user_id`, `role`,
-  `status` (`active`, `invited`, `suspended`), `invited_by`, `joined_at`.
+> **Atualizado em 2026-07-24:** identidade e autenticação passaram a ser do
+> **Supabase Auth**, não mais uma tabela `User` própria com
+> `password_hash`. Motivo: usuário já tem conta Supabase e preferiu
+> aproveitar Auth + Postgres gerenciado do mesmo provider em vez de manter
+> hash de senha/JWT por conta própria (ver `roadmap.md`, Fase 0).
+
+- **`auth.users`** (gerenciado pelo Supabase, fora do nosso schema): `id`
+  (uuid), `email`, MFA, provider de login (e-mail/senha, OAuth, magic link).
+  Não modelamos nem migramos essa tabela — é interna do Supabase.
+- **Membership** (participação + papel, nossa tabela): `workspace_id`,
+  `user_id` (FK lógica para `auth.users.id` — Postgres não permite FK
+  cross-schema para o schema `auth` do Supabase por padrão, então a
+  integridade é garantida na aplicação, não por constraint de banco),
+  `role`, `status` (`active`, `invited`, `suspended`), `invited_by`,
+  `joined_at`.
+- Dados de perfil que não vivem em `auth.users` (nome de exibição, avatar,
+  preferências) ficam numa tabela `Profile` própria, também referenciando
+  `auth.users.id` — separada de `Membership` porque perfil é por pessoa
+  (global), `Membership` é por pessoa+workspace.
 
 ### Company (Account)
 Organização cliente.
@@ -175,8 +190,8 @@ endpoint) — aplicada idealmente tanto na API quanto via RLS no banco.
    nunca DELETE físico.
 3. Campos customizados via `jsonb` (`custom_fields`) em vez de EAV
    relacional — indexável via GIN, validado por schema na aplicação.
-4. Unicidade sempre escopada a `workspace_id`, exceto `User.email` e
-   `Workspace.slug`.
+4. Unicidade sempre escopada a `workspace_id`, exceto `auth.users.email`
+   (unicidade garantida pelo próprio Supabase Auth) e `Workspace.slug`.
 5. Concorrência em mudança de stage: `updated_at`/versão otimista na
    Opportunity, para evitar sobrescrita silenciosa entre atualização manual
    (Kanban) e automações.
