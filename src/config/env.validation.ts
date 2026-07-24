@@ -1,4 +1,4 @@
-const REQUIRED_VARS = ['DATABASE_URL'] as const;
+const REQUIRED_VARS = ['DATABASE_URL', 'SUPABASE_URL'] as const;
 
 export function validate(config: Record<string, unknown>) {
   const missing = REQUIRED_VARS.filter((key) => !config[key]);

@@ -109,19 +109,73 @@ a ponta (isolamento entre workspaces provado, não só SQL aplicado sem erro).
 **Fase 1 fechada.**
 
 ## Fase 2 — Autenticação e autorização
-- [ ] Login/signup **via Supabase Auth** (SDK no frontend); criação de
-      workspace + `Membership` inicial no primeiro login (trigger de aplicação,
-      não mais fluxo de senha próprio)
-- [ ] Guard no NestJS que valida o JWT do Supabase Auth em cada request
-      (verificação via chave pública/JWKS do projeto Supabase)
-- [ ] Fluxo de convite de Membership (token, expiração, aceite) — convite ainda
-      é lógica nossa, só a autenticação em si é do Supabase
-- [ ] Módulo central de policy (`can(user, action, resource)`) cobrindo RBAC
-      + ownership + hierarquia de time
-- [ ] Testes de autorização por papel (owner/admin/manager/sales_rep/readonly)
+
+> **Nota de escopo (2026-07-24):** ao planejar a implementação, o usuário
+> esclareceu que este projeto **não é um SaaS multi-tenant pra vender** — é
+> ferramenta interna de uso colaborativo da Gama Brasil. Na prática só
+> existe **um workspace** (slug fixo `gama`); qualquer login válido no
+> Supabase Auth entra automaticamente nele, sem tela de "criar workspace"
+> nem convite por token. O modelo Workspace/Membership com RLS por
+> `workspace_id` (Fase 1) é mantido como está — só não tem uso pleno de
+> "múltiplos tenants" agora; a porta fica aberta pra segregar por área/filial
+> no futuro sem migrar o schema de novo. Isso dividiu a fase em dois itens:
+> **núcleo** (fechado nesta sessão) e **convite/gestão de membros** (adiado).
+
+- [x] **Núcleo fechado em 2026-07-24:**
+  - Login via Supabase Auth (SDK já existe no frontend desde a Fase 6);
+    criação automática de `Membership` (`role: sales_rep`, `status: active`)
+    no workspace único, no primeiro login de qualquer usuário autenticado —
+    sem tela de "criar workspace" (decisão de escopo acima).
+  - `SupabaseAuthGuard` (`src/auth/`) valida o JWT do Supabase Auth em cada
+    request via JWKS do projeto (`/auth/v1/.well-known/jwks.json`),
+    verificando assinatura (ES256/RS256 — nunca HS256), issuer e audience.
+    Implementado com `jsonwebtoken` + fetch/`crypto.createPublicKey`
+    nativos do Node, não `jose`: tanto `jose` quanto `jwks-rsa` (que usa
+    `jose` por baixo) são ESM-only, e o `ts-jest` deste projeto (que
+    compila pra CommonJS) não consegue carregar ESM via `require()` —
+    quebrava os testes com "Unexpected token 'export'" mesmo usando
+    `import()` dinâmico no código de produção (o TS baixa isso pra
+    `require()` quando o `module` alvo é `commonjs`).
+  - `TenantContextService` (`src/tenancy/`) generaliza o helper
+    `withWorkspace()` de `test/rls-isolation.e2e-spec.ts` pra uso em
+    request real — abre transação, seta `app.current_user_id` e
+    `app.current_workspace_id` via `SET LOCAL` (com validação estrita de
+    UUID antes de interpolar, já que Postgres não aceita bind parameter
+    nesse comando).
+  - `TenantMembershipGuard` resolve/cria o workspace único (upsert
+    atômico por slug) e o `Membership` do usuário, checando
+    `status = suspended` (403 se suspenso).
+  - `PolicyService` (`src/policy/`) implementa RBAC + ownership de
+    `docs/arquitetura-dados.md` seção 4b: `can()` (checagem pontual) e
+    `scopeFilter()` (fragmento de `where` do Prisma pra listagens — não
+    está literal no doc, adicionado porque toda listagem real precisa
+    disso). Hierarquia de subordinados via `Membership.managerId`.
+  - `GET /me` (`src/me/`) prova a cadeia guard → membership → resposta via
+    HTTP real, sem entrar em CRUD (isso é Fase 3).
+  - CORS restritivo (`FRONTEND_ORIGIN`, `credentials: true`) — endereça
+    `docs/seguranca.md` seção 5/6, já que este é o primeiro endpoint
+    autenticado de verdade.
+  - Testes: `src/auth/verify-supabase-jwt.spec.ts` (unit, chave EC gerada
+    localmente, sem rede), `src/policy/policy.service.spec.ts` (unit, todas
+    as regras por papel), `test/authz.e2e-spec.ts` (e2e contra o Postgres
+    real — prova o critério de saída abaixo combinando RLS de fronteira de
+    workspace com `PolicyService` de fronteira de ownership).
+  - Sem migration nova — `Membership` já tinha todos os campos necessários.
+- [ ] Fluxo de convite de Membership (token, expiração, aceite) — **adiado**,
+      não é mais estritamente necessário dado que login já dá acesso
+      automático; só voltaria a fazer sentido se algum dia for preciso
+      restringir quem pode entrar. Exigiria migration nova (campo de token
+      em `Membership`) e policy de RLS adicional só pra lookup por token.
+- [ ] Endpoint de gestão de membros (promover/suspender/rebaixar papel) —
+      hoje é ajuste manual direto na tabela; `web/app/dashboard/membros`
+      continua placeholder.
 
 **Critério de saída:** dois usuários em papéis diferentes no mesmo workspace
 têm acesso de dados visivelmente distinto, validado por teste automatizado.
+**Atingido em 2026-07-24** por `test/authz.e2e-spec.ts` — sales_rep só vê a
+própria empresa, manager vê a si mais os subordinados, owner vê tudo do
+workspace, tudo contra dado real no Postgres. **Núcleo da Fase 2 fechado**;
+os dois itens adiados acima não bloqueiam a Fase 3.
 
 ## Fase 3 — API core (CRUD + regras de negócio)
 - [ ] Definir estilo de API (REST vs GraphQL) — decisão separada, não coberta

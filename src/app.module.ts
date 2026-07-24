@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
+import { AuthModule } from './auth/auth.module';
 import configuration from './config/configuration';
 import { validate } from './config/env.validation';
+import { MeController } from './me/me.controller';
+import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { TenancyModule } from './tenancy/tenancy.module';
 
 @Module({
   imports: [
@@ -17,7 +21,14 @@ import { PrismaModule } from './prisma/prisma.module';
       validate,
     }),
     PrismaModule,
+    // Ordem importa: guards globais rodam na ordem em que os módulos que os
+    // registram (via APP_GUARD) são resolvidos — AuthModule primeiro
+    // (autentica o JWT), TenancyModule depois (resolve/cria o Membership
+    // já sabendo quem é o usuário).
+    AuthModule,
+    TenancyModule,
+    PolicyModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, MeController],
 })
 export class AppModule {}
