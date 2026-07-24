@@ -1,11 +1,23 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port', 3000);
+
+  // whitelist+forbidNonWhitelisted: campo não declarado no DTO é erro (400),
+  // não descartado silenciosamente — evita, por exemplo, que um cliente
+  // tente setar `status`/`lostReason` na criação de uma Opportunity.
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
 
   // CORS restritivo — nunca "*" com credenciais habilitadas (ver
   // docs/seguranca.md, seção 5). FRONTEND_ORIGIN tem default de dev em
