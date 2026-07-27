@@ -200,23 +200,49 @@ os dois itens adiados acima não bloqueiam a Fase 3.
     migration trocando as 8 policies de `workspace_isolation` pra
     `NULLIF(current_setting(...), '')::uuid`, aplicada contra o Supabase
     real.
-- [ ] Pipeline/Stage
-- [ ] Opportunity (stage∈pipeline, `lost` exige `lost_reason`,
-      concorrência otimista, Activity por mudança semântica)
-- [ ] Task (relação polimórfica imutável após criação, sem soft delete)
-- [ ] Regras de negócio aplicadas na camada de serviço:
-      - stage pertence ao pipeline da opportunity
-      - `lost` exige `lost_reason`
-      - toda mudança relevante gera Activity
-      - versionamento otimista em Opportunity
-- [ ] Endpoint de restauração de Opportunity (o campo `deletedAt` já existe
-      no schema desde a migration `20260724160000_add_opportunity_deleted_at`
-      — falta só o endpoint)
+- [x] **Pipeline + Stage** (2026-07-24): CRUD sem soft delete (config de
+      workspace, não dado transacional). Leitura aberta a qualquer
+      Membership ativo, escrita restrita a owner/admin — interpretação
+      adotada, não literal do doc (Pipeline/Stage não têm `ownerUserId`,
+      então o modelo de ownership do `PolicyService` não se aplica).
+      Marcar `isDefault=true` desmarca o pipeline anterior na mesma
+      transação. `DELETE` de stage/pipeline com `Opportunity` associada
+      retorna 409 (checado no service, antes do FK `RESTRICT` do banco).
+      Stage é sub-recurso aninhado (`/pipelines/:id/stages/...`).
+- [x] **Opportunity** (2026-07-24): regras de negócio todas na camada de
+      serviço (CHECK do banco só como backstop): `stageId` precisa
+      pertencer ao `pipelineId`; `lost` exige `lostReason`; transições de
+      status restritas (`open→won/lost`, `won/lost→open` reabertura
+      explícita — bloqueia `won↔lost` direto, interpretação registrada no
+      código); concorrência otimista via compare-and-swap (`version`
+      ecoado pelo cliente, `updateMany` com `WHERE id+version`, `count=0`
+      → 409 mesmo se a checagem inicial passou — essa é a proteção real
+      contra corrida entre o read e o write, provada com teste e2e de duas
+      atualizações concorrentes reais). Um `Activity` por mudança
+      semântica (`stage_change` com `backward` calculado, `field_update`
+      separado pra status/outros campos). Soft delete + restore habilitado
+      pela migration do passo 0.
+- [x] **Task** (2026-07-24): relação polimórfica com dupla defesa —
+      `@ExactlyOneOf` no DTO (400 na borda) + checagem independente no
+      service (mesmo princípio do `lost`/`lostReason`). Alvo imutável
+      após criação. Sem soft delete (schema não tem `deletedAt`, doc só
+      pede pra Company/Contact/Opportunity — assimetria intencional).
+      Filtro `overdue` computado, nunca persistido. `PolicyService` foi
+      desenhado em torno de `ownerUserId` (Fase 2); Task usa
+      `assigneeUserId` com a mesma semântica — remapeado na borda do
+      `TaskService`, não generalizado no `PolicyService` já testado.
+- [x] Regras de negócio aplicadas na camada de serviço — todas cobertas
+      acima (stage∈pipeline, `lost_reason`, Activity por mudança,
+      versionamento otimista).
+- [x] Soft delete + endpoint de restauração — Company, Contact, Opportunity.
 
 **Critério de saída:** fluxo completo via API — criar company → contact →
 opportunity → mover pelo pipeline → marcar como ganho/perdido — com Activity
-sendo gerada automaticamente em cada passo. **Parcialmente atingido** —
-Company/Contact prontos, falta Pipeline/Stage/Opportunity/Task.
+sendo gerada automaticamente em cada passo. **Atingido em 2026-07-24.**
+**Fase 3 fechada** — 57 testes e2e + 26 unitários passando, todos os 5
+recursos (Company, Contact, Pipeline/Stage, Opportunity, Task) com CRUD via
+REST, RBAC+ownership (`PolicyService`) e RLS (Fase 1) aplicados em toda
+leitura/escrita.
 
 ## Fase 4 — Atividades, tarefas e auditoria
 - [ ] Feed de Activity por Company/Contact/Opportunity (timeline)
