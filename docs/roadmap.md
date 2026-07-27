@@ -314,10 +314,30 @@ no funil, por estágio, por responsável, em moeda-base".
       confirmado pelo usuário no navegador. Telas do dashboard continuam
       placeholder — ainda não há `Workspace`/`Membership` no banco (Fase 1
       não aplicada), então esse é o próximo bloqueio, não a Fase 6.
-- [ ] Telas completas: pipeline Kanban, lista de contacts/companies, detalhe
-      de opportunity com timeline, gestão de workspace/membros — com dado
-      real, depois que a API (Fase 3) estiver pronta
+- [x] **Telas conectadas ao backend real (2026-07-27)**: Membros, Empresas,
+      Contatos, Pipeline, Tarefas trocaram `PlaceholderPanel` por dado real
+      via Server Components + Server Actions (sem lib nova — sem swr/
+      react-query/react-hook-form/Tailwind, nenhuma existia no projeto).
+      `web/lib/api/` — `client.ts` (fetch wrapper com Bearer token via
+      `getServerAccessToken()`), `types.ts` (tipos espelhados à mão, sem
+      monorepo). Backend passou a rodar em `PORT=3001` (Next dev já usa
+      `:3000`). Pipeline: Kanban simples (sem drag-and-drop — mover stage é
+      um `<select>` + botão, fica pra depois do prazo), cria pipeline/stage
+      inline se não existir nenhum, respeita a concorrência otimista da
+      Fase 3 (campo `version` ecoado). Membros: UI da gestão de
+      papel/gerente feita na mesma sessão que os endpoints
+      (`GET`/`PATCH /memberships`) — é o que destrava "representante
+      gerencia o próprio, gerente vê os subordinados" (RBAC+hierarquia já
+      existentes desde a Fase 2/3) sem precisar mexer direto no banco.
+      **Não testado logado de verdade no navegador** — sem credencial real
+      disponível na sessão que implementou isso; build (tsc+lint) limpo e
+      redirect de rota protegida confirmado via curl, mas o fluxo
+      autenticado completo (criar empresa → contato → oportunidade → mover
+      no pipeline → ganhar/perder, tudo pela UI) ainda precisa de
+      verificação manual do usuário.
 - [ ] Testar papéis diferentes na UI (não só na API)
+- [ ] Leads (tela) — depende de outro módulo (score/promoção de lead), fora
+      do que foi construído nas Fases 1-4
 
 ## Fase 7 — Integrações e extensibilidade
 - [ ] Import/export (CSV, e futuramente integrações de e-mail/calendário)
