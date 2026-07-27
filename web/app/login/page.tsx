@@ -10,8 +10,16 @@ export default async function LoginPage({
   return (
     <main className="auth-shell">
       <div className="auth-card">
-        <div className="auth-mark">GB</div>
-        <h1>Gama Brasil</h1>
+        <img
+          src="/logo-gama.svg"
+          alt="Gama Brasil"
+          className="auth-logo logo-light"
+        />
+        <img
+          src="/logo-gama-dark.svg"
+          alt="Gama Brasil"
+          className="auth-logo logo-dark"
+        />
         <p className="auth-sub">Entrar no CRM</p>
 
         {params.error && <p className="auth-error">{params.error}</p>}

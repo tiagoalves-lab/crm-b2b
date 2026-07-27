@@ -111,17 +111,23 @@ a {
   box-shadow: var(--shadow-sm);
 }
 
-.auth-mark {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #fefefe;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  margin-bottom: 6px;
+.auth-logo {
+  height: 34px;
+  width: auto;
+  margin-bottom: 10px;
+}
+
+.logo-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .logo-light {
+    display: none;
+  }
+  .logo-dark {
+    display: inline-block;
+  }
 }
 
 .auth-sub {
@@ -202,28 +208,14 @@ a {
 
 .workspace-switch {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px;
 }
 
-.mark {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fefefe;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 13px;
-  flex: none;
-}
-
-.workspace-switch .name {
-  font-weight: 600;
-  font-size: 13.5px;
+.sidebar-logo {
+  height: 22px;
+  width: auto;
 }
 
 .workspace-switch .plan {

@@ -35,11 +35,17 @@ export default async function DashboardLayout({
     <div className="app-shell">
       <aside className="sidebar">
         <div className="workspace-switch">
-          <div className="mark">GB</div>
-          <div>
-            <div className="name">Gama Brasil</div>
-            <div className="plan">{roleLabel}</div>
-          </div>
+          <img
+            src="/logo-gama.svg"
+            alt="Gama Brasil"
+            className="sidebar-logo logo-light"
+          />
+          <img
+            src="/logo-gama-dark.svg"
+            alt="Gama Brasil"
+            className="sidebar-logo logo-dark"
+          />
+          <div className="plan">{roleLabel}</div>
         </div>
 
         <DashboardNav />
