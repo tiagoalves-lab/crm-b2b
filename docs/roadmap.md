@@ -245,12 +245,43 @@ REST, RBAC+ownership (`PolicyService`) e RLS (Fase 1) aplicados em toda
 leitura/escrita.
 
 ## Fase 4 — Atividades, tarefas e auditoria
-- [ ] Feed de Activity por Company/Contact/Opportunity (timeline)
-- [ ] Tasks com `due_at`, atribuição, cálculo de overdue
-- [ ] Notificações básicas (task vencendo, deal parado há N dias no mesmo stage)
+- [x] Feed de Activity por Company/Contact/Opportunity (timeline) —
+      `GET /activities?companyId=|contactId=|opportunityId=` (exatamente
+      um, `@ExactlyOneOf` + checagem redundante no service — ver achado
+      abaixo), paginado, ordenado por `occurredAt desc`. Visibilidade
+      segue a da entidade referenciada (`PolicyService.can`, mesma regra
+      de Company/Contact/Opportunity).
+- [x] Tasks com `due_at`, atribuição, cálculo de overdue — já entregue na
+      Fase 3 (`GET /tasks?overdue=true`, computado, nunca persistido).
+- [x] Notificações básicas — sem infraestrutura de push/e-mail neste
+      projeto ainda, então implementado como superfície de API consultável
+      (o que uma futura tela de dashboard vai renderizar como alerta):
+      - Task vencendo: `GET /tasks?overdue=true` (Fase 3).
+      - Deal parado: `GET /opportunities?staleDays=N` — oportunidades
+        `open` sem `stage_change` (ou criação, se nunca mudou de stage) há
+        pelo menos N dias. IDs resolvidos via SQL raw parametrizado
+        (nunca interpolação de string), aplicados como filtro comum do
+        Prisma pra reusar `scopeFilter`/paginação sem duplicar RBAC em SQL.
+
+**Achado corrigido na mesma sessão:** o decorator `@ExactlyOneOf` (Fase 3,
+usado por `CreateTaskDto`) tem uma lacuna real — como o campo decorado
+também é `@IsOptional()`, o `class-validator` pula o decorator inteiro
+quando esse campo específico está `undefined`, o que cobre bem "2+
+preenchidos" mas nunca pega "nenhum preenchido" (todos os três undefined,
+todos os decorators pulados). Em `CreateTaskDto` isso não tinha aparecido
+porque `TaskService.mustTargetExist` já tinha uma checagem redundante por
+outro motivo (defesa em profundidade). Em `ListActivitiesQueryDto` não
+existia essa rede de segurança — pego por teste e2e (`GET /activities`
+sem filtro retornava 200 em vez de 400), corrigido com a mesma checagem
+explícita em `ActivityQueryService`. Decorator documentado com a
+armadilha pra próximo uso.
 
 **Critério de saída:** um usuário consegue abrir uma Opportunity e ver
 histórico completo de interações + tarefas pendentes, sem consulta manual ao banco.
+**Atingido em 2026-07-27** — `GET /activities?opportunityId=X` (timeline) +
+`GET /tasks?opportunityId=X` (tarefas, com `status`/`overdue` como filtro
+adicional) juntos cobrem isso via API. **Fase 4 fechada** — 63 testes e2e
++ 26 unitários passando.
 
 ## Fase 5 — Relatórios e forecast
 - [ ] Funil por pipeline/stage (contagem e valor)

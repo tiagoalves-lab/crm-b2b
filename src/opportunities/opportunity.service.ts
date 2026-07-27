@@ -3,16 +3,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Opportunity, OpportunityStatus, Stage } from '@prisma/client';
+import type {
+  Opportunity,
+  OpportunityStatus,
+  Prisma,
+  Stage,
+} from '@prisma/client';
 import { ActivityService } from '../activities/activity.service';
 import { assertActiveMembership } from '../common/assert-active-membership';
-import type { ListQueryDto } from '../common/dto/list-query.dto';
 import { OptimisticConcurrencyException } from '../common/exceptions/optimistic-concurrency.exception';
 import type { PaginatedResult } from '../companies/company.service';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateOpportunityDto } from './dto/create-opportunity.dto';
+import type { ListOpportunitiesQueryDto } from './dto/list-opportunities-query.dto';
 import type { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 
 // open -> won/lost (fechamento); won/lost -> open (reabertura explícita,
@@ -87,16 +92,26 @@ export class OpportunityService {
   async findAll(
     tx: TenantTx,
     membership: MembershipContext,
-    query: ListQueryDto,
+    query: ListOpportunitiesQueryDto,
   ): Promise<PaginatedResult<Opportunity>> {
     const ownerFilter = await this.policy.scopeFilter(tx, membership);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const where = {
+    const where: Prisma.OpportunityWhereInput = {
       workspaceId: membership.workspaceId,
       ...ownerFilter,
       deletedAt: query.includeDeleted ? undefined : null,
     };
+
+    if (query.staleDays) {
+      where.id = {
+        in: await this.findStaleOpportunityIds(
+          tx,
+          membership.workspaceId,
+          query.staleDays,
+        ),
+      };
+    }
 
     const [items, total] = await Promise.all([
       tx.opportunity.findMany({
@@ -109,6 +124,31 @@ export class OpportunityService {
     ]);
 
     return { items, total, page, pageSize };
+  }
+
+  // "Deal parado" (Fase 4, docs/roadmap.md): open, sem stage_change (ou
+  // criação, se nunca mudou de stage) há pelo menos staleDays. IDs
+  // resolvidos via SQL raw (parametrizado via tagged template — nunca
+  // interpolação de string) e depois aplicados como filtro comum do
+  // Prisma, pra reusar scopeFilter/paginação/deletedAt sem duplicar essa
+  // lógica em SQL.
+  private async findStaleOpportunityIds(
+    tx: TenantTx,
+    workspaceId: string,
+    staleDays: number,
+  ): Promise<string[]> {
+    const rows = await tx.$queryRaw<{ id: string }[]>`
+      SELECT o.id FROM "opportunities" o
+      WHERE o."workspace_id" = ${workspaceId}::uuid
+        AND o."status" = 'open'
+        AND o."deleted_at" IS NULL
+        AND COALESCE(
+          (SELECT MAX(a."occurred_at") FROM "activities" a
+           WHERE a."opportunity_id" = o."id" AND a."type" = 'stage_change'),
+          o."created_at"
+        ) < NOW() - (${staleDays} || ' days')::interval
+    `;
+    return rows.map((r) => r.id);
   }
 
   findOne(

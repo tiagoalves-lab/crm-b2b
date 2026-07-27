@@ -236,4 +236,46 @@ describe('OpportunityController (e2e)', () => {
       .expect(201);
     expect((res.body as { deletedAt: string | null }).deletedAt).toBeNull();
   });
+
+  it('GET /opportunities?staleDays= só retorna deals parados há tempo suficiente (Fase 4)', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/opportunities')
+      .send({
+        companyId,
+        pipelineId,
+        stageId: stageAId,
+        amount: 1,
+        currency: 'BRL',
+      })
+      .expect(201);
+    const staleId = (created.body as OpportunityBody).id;
+
+    // Backdata created_at direto no banco — não dá pra simular "10 dias
+    // atrás" via API, e é exatamente isso que o COALESCE(stage_change,
+    // created_at) do service usa quando a oportunidade nunca mudou de
+    // stage.
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.$executeRawUnsafe(
+        `UPDATE "opportunities" SET "created_at" = NOW() - INTERVAL '10 days' WHERE "id" = '${staleId}'`,
+      ),
+    );
+
+    const stale = await request(app.getHttpServer())
+      .get('/opportunities?staleDays=5')
+      .expect(200);
+    expect(
+      (stale.body as { items: OpportunityBody[] }).items.some(
+        (o) => o.id === staleId,
+      ),
+    ).toBe(true);
+
+    const notStale = await request(app.getHttpServer())
+      .get('/opportunities?staleDays=30')
+      .expect(200);
+    expect(
+      (notStale.body as { items: OpportunityBody[] }).items.some(
+        (o) => o.id === staleId,
+      ),
+    ).toBe(false);
+  }, 15000);
 });

@@ -9,11 +9,11 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ListQueryDto } from '../common/dto/list-query.dto';
 import { CurrentMembership } from '../tenancy/current-membership.decorator';
 import { TenantContextService } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
+import { ListOpportunitiesQueryDto } from './dto/list-opportunities-query.dto';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 import { OpportunityService } from './opportunity.service';
 
@@ -38,7 +38,7 @@ export class OpportunityController {
   @Get()
   findAll(
     @CurrentMembership() membership: MembershipContext,
-    @Query() query: ListQueryDto,
+    @Query() query: ListOpportunitiesQueryDto,
   ) {
     return this.tenantContext.run(
       { userId: membership.userId, workspaceId: membership.workspaceId },
