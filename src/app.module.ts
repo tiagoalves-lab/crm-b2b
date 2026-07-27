@@ -14,6 +14,7 @@ import { OpportunityModule } from './opportunities/opportunity.module';
 import { PipelineModule } from './pipelines/pipeline.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { TaskModule } from './tasks/task.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
 @Module({
@@ -40,6 +41,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     ContactModule,
     PipelineModule,
     OpportunityModule,
+    TaskModule,
   ],
   controllers: [AppController, MeController],
   providers: [{ provide: APP_FILTER, useClass: PrismaExceptionFilter }],
