@@ -5,6 +5,12 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 `geracao-qualificacao-leads.md` (módulo de leads), `seguranca.md`
 (segurança — leia antes de tocar em `web/` ou em endpoints do backend).
 
+## Comunicação
+
+Instrução explícita do usuário (2026-07-27): **responder sempre em
+português do Brasil**, em qualquer sessão, independente do idioma da
+mensagem de entrada.
+
 ## Segurança — não negociável, ler antes de qualquer coisa em `web/`
 
 Instrução explícita do usuário (2026-07-24): segurança é premissa antes de
@@ -35,14 +41,17 @@ completo em `docs/seguranca.md` — resumo do que nunca pode acontecer:
 - **Auth**: Supabase Auth (não JWT próprio — decisão revista em
   2026-07-24). `User` não existe como tabela nossa; identidade vive em
   `auth.users` do Supabase, `Membership` referencia por FK lógica.
-- **Fase 1** (DDL + RLS): código pronto (`prisma/schema.prisma` completo,
-  migrations com RLS/CHECK/papel `app_runtime` sem BYPASSRLS, teste
-  crítico em `test/rls-isolation.e2e-spec.ts`), mas **ainda não aplicado
-  contra um banco real** — sem acesso a Postgres nesta sessão. Antes de
-  seguir pra Fase 2/3, confirmar que `prisma migrate deploy` +
-  `npm run test:e2e` rodaram com sucesso contra o Supabase de verdade. Ver
-  `docs/seguranca.md`, seção 3.1, sobre por que o papel de conexão importa
-  tanto quanto o RLS em si.
+- **Fase 1** (DDL + RLS): **fechada (2026-07-24)** — migration aplicada
+  contra o Supabase real (`rrhcibsutyralogpwkxe`), `app_runtime` sem
+  BYPASSRLS configurado, `test/rls-isolation.e2e-spec.ts` passando. Bug de
+  RLS fail-closed (`''::uuid` sob pooler) corrigido em
+  `20260724170000_fix_rls_empty_string_guc`. Ver `docs/seguranca.md`, seção
+  3.1, sobre por que o papel de conexão importa tanto quanto o RLS em si.
+- **Fases 2/3/4** (auth+policy, API core CRUD, Activity/tarefas/alertas):
+  **fechadas (2026-07-24/27)**. RBAC+ownership+hierarquia (`Membership.role`
+  + `ownerUserId` + `managerId`) via `PolicyService`, guards JWT do
+  Supabase sem `jose`/`jwks-rsa` (ESM quebra sob Jest — implementação
+  própria em `src/auth/supabase-jwks.ts`).
 - **Conector Supabase**: usuário ativou o conector oficial em claude.ai
   (2026-07-24), mas não estava disponível na sessão em que foi ativado —
   precisa de sessão nova. **No início de qualquer sessão a partir de
@@ -51,12 +60,36 @@ completo em `docs/seguranca.md` — resumo do que nunca pode acontecer:
   usar qualquer uma pra rodar SQL/migration contra dado real — não supor o
   nível de acesso. Ver `docs/seguranca.md` antes de escrever nada real por
   esse caminho.
-- **Fase 6** (frontend) foi adiantada fora de ordem, a pedido do usuário,
-  como um esqueleto deployável (`web/`) — login real via Supabase Auth,
-  mas todas as telas são placeholder. Risco assumido conscientemente e
-  documentado no roadmap.
+- **Fase 6** (frontend) foi adiantada fora de ordem, a pedido do usuário.
+  Login real via Supabase Auth funciona desde 2026-07-24. **Desde
+  2026-07-27, 5 das 6 telas têm dado real** (Membros, Empresas, Contatos,
+  Pipeline, Tarefas) via Server Components/Server Actions — só `Leads`
+  segue placeholder (depende de módulo separado, fora de escopo). Backend
+  roda em `PORT=3001` (Next dev usa `:3000` por padrão, colidiam).
+  **Pendência real:** fluxo autenticado completo (criar empresa → contato
+  → oportunidade → mover no pipeline → ganhar/perder) ainda não foi
+  confirmado pelo usuário no navegador — próxima sessão, perguntar
+  primeiro se isso já foi testado antes de construir mais telas. Detalhe
+  completo em memória (`project_fase6_frontend_integrado`).
 - **`leads/`**: módulo de geração/qualificação de leads, staging separado
   do CRM (DuckDB local, nunca commitado — ver `.gitignore`).
+- **Deploy de teste (2026-07-27)**: MVP publicado pra validação — backend
+  (NestJS) no Railway (`https://backend-production-bc44.up.railway.app`,
+  projeto `crm-b2b-api`, serviço `backend`), frontend (Next.js) na Vercel
+  (`https://web-gamma-olive-80.vercel.app`, projeto `gamabrasil/web`).
+  CORS do backend (`FRONTEND_ORIGIN`) restrito a essa URL da Vercel — ver
+  `docs/seguranca.md`, seção 5. Ambos apontam pro Supabase real
+  (`rrhcibsutyralogpwkxe`), não há banco de "teste" separado — dado
+  criado nessa URL é dado real do workspace `gama`. CLIs instaladas como
+  devDependency (`@railway/cli` na raiz, `vercel` em `web/`) — **não usar
+  `npx` pra essas ferramentas neste ambiente** (ver
+  `feedback_npx_lock_quirk` na memória — trava com `ECOMPROMISED`), usar
+  o bin local (`node_modules/.bin/railway`, `web/node_modules/.bin/vercel`).
+  Bug real corrigido nesse deploy: `start:prod` apontava pra
+  `dist/main` mas o `tsconfig` compila `src/` e `prisma/*.ts` juntos, então
+  o `outDir` replica como `dist/src/main.js` — nunca tinha sido testado
+  antes (só `start:dev`, que roda direto de `src/` via `ts-node`/`nest
+  start`). Redeploy: `railway up` (raiz) / `vercel --prod` (`web/`).
 
 ## Stack
 

@@ -13,6 +13,11 @@ dist/
 .next/
 web/next-env.d.ts
 
+# deploy CLIs (config local de link do projeto, não segredo mas não deve
+# ser versionado — cada máquina/deploy linka o seu)
+.vercel
+web/.vercel
+
 # logs
 *.log
 npm-debug.log*
