@@ -178,19 +178,45 @@ workspace, tudo contra dado real no Postgres. **Núcleo da Fase 2 fechado**;
 os dois itens adiados acima não bloqueiam a Fase 3.
 
 ## Fase 3 — API core (CRUD + regras de negócio)
-- [ ] Definir estilo de API (REST vs GraphQL) — decisão separada, não coberta
-      no modelo de dados
-- [ ] Endpoints de Company, Contact, Pipeline/Stage, Opportunity, Task
+- [x] Estilo de API: **REST** (decisão do usuário, 2026-07-24) — não GraphQL.
+- [x] Infraestrutura compartilhada: `ValidationPipe` global (whitelist +
+      forbidNonWhitelisted + transform), `PrismaExceptionFilter`
+      (P2002/P2025/P2003 → 409/404/400), `ActivityService` central.
+- [x] **Company + Contact** (2026-07-24): CRUD completo, soft delete +
+      restore, `PolicyService` aplicado em toda leitura/escrita, Activity
+      emitida em create/update/delete/restore. `ownerUserId` validado
+      contra Membership ativo do workspace. E-mail de Contact único por
+      workspace. Testes: HTTP e2e (supertest + `overrideProvider` dos
+      guards globais — `overrideGuard()` não funciona pra guards
+      registrados via `APP_GUARD` nesta versão do Nest, ver
+      `test/utils/fake-auth.ts`) cobrindo roteamento, validação e o ciclo
+      completo create→update→delete→restore.
+  - **Achado corrigido na mesma sessão:** `current_setting('app.current_workspace_id', true)`
+    podia retornar `''` (não NULL) numa conexão pooled já usada antes
+    (placeholder GUC do Postgres) — `''::uuid` quebrava a query com erro
+    em vez de fail-closed (zero linhas). Inalcançável pela aplicação real
+    (`TenantContextService` sempre seta a variável antes de qualquer
+    query), mas o teste de defesa-em-profundidade expôs. Corrigido com
+    migration trocando as 8 policies de `workspace_isolation` pra
+    `NULLIF(current_setting(...), '')::uuid`, aplicada contra o Supabase
+    real.
+- [ ] Pipeline/Stage
+- [ ] Opportunity (stage∈pipeline, `lost` exige `lost_reason`,
+      concorrência otimista, Activity por mudança semântica)
+- [ ] Task (relação polimórfica imutável após criação, sem soft delete)
 - [ ] Regras de negócio aplicadas na camada de serviço:
       - stage pertence ao pipeline da opportunity
       - `lost` exige `lost_reason`
       - toda mudança relevante gera Activity
       - versionamento otimista em Opportunity
-- [ ] Soft delete + endpoint de restauração
+- [ ] Endpoint de restauração de Opportunity (o campo `deletedAt` já existe
+      no schema desde a migration `20260724160000_add_opportunity_deleted_at`
+      — falta só o endpoint)
 
 **Critério de saída:** fluxo completo via API — criar company → contact →
 opportunity → mover pelo pipeline → marcar como ganho/perdido — com Activity
-sendo gerada automaticamente em cada passo.
+sendo gerada automaticamente em cada passo. **Parcialmente atingido** —
+Company/Contact prontos, falta Pipeline/Stage/Opportunity/Task.
 
 ## Fase 4 — Atividades, tarefas e auditoria
 - [ ] Feed de Activity por Company/Contact/Opportunity (timeline)
