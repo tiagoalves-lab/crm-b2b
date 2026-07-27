@@ -75,24 +75,45 @@ export class TenantMembershipGuard implements CanActivate {
     });
   }
 
-  private ensureMembership(
+  private async ensureMembership(
     tx: TenantTx,
     workspaceId: string,
     userId: string,
   ): Promise<MembershipContext> {
-    // update: {} preserva role/status se o Membership já existir — não
-    // queremos rebaixar alguém que um admin promoveu manualmente de volta
-    // pra sales_rep a cada novo login.
-    return tx.membership.upsert({
+    // Não usa mais upsert simples — precisa decidir o papel do primeiro
+    // membro (owner) antes de criar, então checa existência primeiro. Se
+    // já existir, devolve como está — não queremos rebaixar alguém que um
+    // admin promoveu manualmente de volta pra sales_rep a cada novo login.
+    const existing = await tx.membership.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
-      update: {},
-      create: {
-        workspaceId,
-        userId,
-        role: DEFAULT_ROLE,
-        status: 'active',
-        joinedAt: new Date(),
-      },
     });
+    if (existing) {
+      return existing;
+    }
+
+    // Primeiro membro do workspace vira owner — sem isso ninguém consegue
+    // promover ninguém (todo login novo cairia em sales_rep pra sempre, e
+    // não existe outro jeito de virar owner além de mexer direto no banco).
+    const memberCount = await tx.membership.count({ where: { workspaceId } });
+    const role: MembershipRole = memberCount === 0 ? 'owner' : DEFAULT_ROLE;
+
+    try {
+      return await tx.membership.create({
+        data: {
+          workspaceId,
+          userId,
+          role,
+          status: 'active',
+          joinedAt: new Date(),
+        },
+      });
+    } catch {
+      // Corrida rara: duas requests do mesmo usuário criando ao mesmo
+      // tempo (ex.: dois cliques de login quase simultâneos). Quem perdeu
+      // a corrida do unique constraint busca o que a outra já criou.
+      return tx.membership.findUniqueOrThrow({
+        where: { workspaceId_userId: { workspaceId, userId } },
+      });
+    }
   }
 }

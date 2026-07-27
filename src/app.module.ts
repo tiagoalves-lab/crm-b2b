@@ -10,6 +10,7 @@ import { validate } from './config/env.validation';
 import { ContactModule } from './contacts/contact.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { MeController } from './me/me.controller';
+import { MembershipModule } from './memberships/membership.module';
 import { OpportunityModule } from './opportunities/opportunity.module';
 import { PipelineModule } from './pipelines/pipeline.module';
 import { PolicyModule } from './policy/policy.module';
@@ -42,6 +43,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     PipelineModule,
     OpportunityModule,
     TaskModule,
+    MembershipModule,
   ],
   controllers: [AppController, MeController],
   providers: [{ provide: APP_FILTER, useClass: PrismaExceptionFilter }],
