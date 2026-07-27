@@ -1,7 +1,17 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getServerAccessToken } from "@/lib/api/auth";
+import { getMe } from "@/lib/api/me";
 import { signOut } from "../login/actions";
 import DashboardNav from "./dashboard-nav";
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  manager: "Gerente",
+  sales_rep: "Representante",
+  readonly: "Leitura",
+};
 
 export default async function DashboardLayout({
   children,
@@ -17,6 +27,10 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  const token = await getServerAccessToken();
+  const me = await getMe(token);
+  const roleLabel = ROLE_LABELS[me.membership.role] ?? me.membership.role;
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -24,7 +38,7 @@ export default async function DashboardLayout({
           <div className="mark">GB</div>
           <div>
             <div className="name">Gama Brasil</div>
-            <div className="plan">Plano Pro</div>
+            <div className="plan">{roleLabel}</div>
           </div>
         </div>
 
