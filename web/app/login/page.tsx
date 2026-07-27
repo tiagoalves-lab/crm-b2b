@@ -13,12 +13,9 @@ export default async function LoginPage({
         <img
           src="/logo-gama.svg"
           alt="Gama Brasil"
-          className="auth-logo logo-light"
-        />
-        <img
-          src="/logo-gama-dark.svg"
-          alt="Gama Brasil"
-          className="auth-logo logo-dark"
+          className="auth-logo"
+          width={138}
+          height={34}
         />
         <p className="auth-sub">Entrar no CRM</p>
 

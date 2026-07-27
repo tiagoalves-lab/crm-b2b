@@ -112,22 +112,7 @@ a {
 }
 
 .auth-logo {
-  height: 34px;
-  width: auto;
   margin-bottom: 10px;
-}
-
-.logo-dark {
-  display: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .logo-light {
-    display: none;
-  }
-  .logo-dark {
-    display: inline-block;
-  }
 }
 
 .auth-sub {
@@ -208,14 +193,13 @@ a {
 
 .workspace-switch {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
   padding: 8px;
 }
 
 .sidebar-logo {
-  height: 22px;
-  width: auto;
+  flex: none;
 }
 
 .workspace-switch .plan {

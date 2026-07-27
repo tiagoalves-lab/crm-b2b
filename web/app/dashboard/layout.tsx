@@ -38,12 +38,9 @@ export default async function DashboardLayout({
           <img
             src="/logo-gama.svg"
             alt="Gama Brasil"
-            className="sidebar-logo logo-light"
-          />
-          <img
-            src="/logo-gama-dark.svg"
-            alt="Gama Brasil"
-            className="sidebar-logo logo-dark"
+            className="sidebar-logo"
+            width={97}
+            height={24}
           />
           <div className="plan">{roleLabel}</div>
         </div>
