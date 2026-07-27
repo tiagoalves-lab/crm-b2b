@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { redirectWithError } from "@/lib/api/action-helpers";
-import { updateMembership } from "@/lib/api/memberships";
+import { deleteMembership, updateMembership } from "@/lib/api/memberships";
 import type { MembershipRole, MembershipStatus } from "@/lib/api/types";
 
 export async function updateMemberAction(formData: FormData) {
@@ -24,6 +24,19 @@ export async function updateMemberAction(formData: FormData) {
             ? String(managerIdRaw)
             : undefined,
     });
+  } catch (error) {
+    redirectWithError("/dashboard/membros", error);
+  }
+
+  revalidatePath("/dashboard/membros");
+}
+
+export async function removeMemberAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const id = String(formData.get("id"));
+
+  try {
+    await deleteMembership(token, id);
   } catch (error) {
     redirectWithError("/dashboard/membros", error);
   }

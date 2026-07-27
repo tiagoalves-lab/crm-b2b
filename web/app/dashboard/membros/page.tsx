@@ -2,7 +2,7 @@ import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { listMemberships } from "@/lib/api/memberships";
 import type { Membership, MembershipRole } from "@/lib/api/types";
-import { updateMemberAction } from "./actions";
+import { removeMemberAction, updateMemberAction } from "./actions";
 
 const ROLE_OPTIONS: MembershipRole[] = [
   "owner",
@@ -103,6 +103,14 @@ export default async function MembrosPage({
                       Salvar
                     </button>
                   </form>
+                  {member.userId !== me.user.id && (
+                    <form action={removeMemberAction} className="row-form">
+                      <input type="hidden" name="id" value={member.id} />
+                      <button type="submit" className="btn btn-danger btn-sm">
+                        Remover
+                      </button>
+                    </form>
+                  )}
                 </td>
               ) : (
                 <>

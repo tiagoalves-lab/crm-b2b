@@ -90,4 +90,40 @@ export class MembershipService {
       },
     });
   }
+
+  async remove(
+    tx: TenantTx,
+    membership: MembershipContext,
+    id: string,
+  ): Promise<Membership> {
+    if (!WRITE_ROLES.has(membership.role)) {
+      throw new ForbiddenException('Só owner/admin podem gerenciar membros.');
+    }
+
+    const existing = await tx.membership.findFirst({
+      where: { id, workspaceId: membership.workspaceId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Membro não encontrado.');
+    }
+
+    if (existing.role === 'owner' && existing.status === 'active') {
+      const activeOwners = await tx.membership.count({
+        where: {
+          workspaceId: membership.workspaceId,
+          role: 'owner',
+          status: 'active',
+        },
+      });
+      if (activeOwners <= 1) {
+        throw new BadRequestException(
+          'Não é possível remover o último owner ativo do workspace.',
+        );
+      }
+    }
+
+    // manager_id tem ON DELETE SET NULL (ver migration) — quem reportava
+    // pra esse membro fica sem gerente automaticamente, sem violar FK.
+    return tx.membership.delete({ where: { id: existing.id } });
+  }
 }

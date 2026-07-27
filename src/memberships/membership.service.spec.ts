@@ -52,6 +52,7 @@ function fakeTx(
         .mockImplementation(({ data }: { data: object }) =>
           Promise.resolve({ ...target, ...data }),
         ),
+      delete: jest.fn().mockResolvedValue(target),
     },
   } as unknown as TenantTx;
 }
@@ -135,5 +136,41 @@ describe('MembershipService', () => {
         managerId: 'membership-owner',
       }),
     ).resolves.toBeDefined();
+  });
+
+  it('remove: rejeita quem não é owner/admin', async () => {
+    const tx = fakeTx();
+    await expect(
+      service.remove(
+        tx,
+        callerMembership({ role: 'sales_rep' }),
+        'membership-target',
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('remove: CRÍTICO bloqueia remover o último owner ativo', async () => {
+    const tx = fakeTx({ activeOwnerCount: 1 });
+    await expect(
+      service.remove(tx, callerMembership(), 'membership-target'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('remove: permite remover owner quando existe outro owner ativo', async () => {
+    const tx = fakeTx({ activeOwnerCount: 2 });
+    await expect(
+      service.remove(tx, callerMembership(), 'membership-target'),
+    ).resolves.toBeDefined();
+  });
+
+  it('remove: permite remover sales_rep sem checar contagem de owners', async () => {
+    const tx = fakeTx({
+      target: targetRow({ role: 'sales_rep' }),
+      activeOwnerCount: 1,
+    });
+    await expect(
+      service.remove(tx, callerMembership(), 'membership-target'),
+    ).resolves.toBeDefined();
+    expect(tx.membership.count).not.toHaveBeenCalled();
   });
 });

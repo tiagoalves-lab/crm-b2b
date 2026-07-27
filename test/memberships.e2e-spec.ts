@@ -20,6 +20,7 @@ describe('MembershipController (e2e)', () => {
   let workspace: { id: string };
   let owner: MembershipContext;
   let repMembership: MembershipContext;
+  let deletableMembership: MembershipContext;
 
   beforeAll(async () => {
     workspace = await prisma.workspace.create({
@@ -53,6 +54,23 @@ describe('MembershipController (e2e)', () => {
           joinedAt: new Date(),
         },
       }),
+    );
+
+    const deletableUserId = randomUUID();
+    deletableMembership = await withTenant(
+      prisma,
+      deletableUserId,
+      workspace.id,
+      (tx) =>
+        tx.membership.create({
+          data: {
+            workspaceId: workspace.id,
+            userId: deletableUserId,
+            role: 'sales_rep',
+            status: 'active',
+            joinedAt: new Date(),
+          },
+        }),
     );
 
     app = await createFakeAuthApp(owner, 'owner@gamabrasil.com.br');
@@ -121,5 +139,40 @@ describe('MembershipController (e2e)', () => {
       .patch(`/memberships/${owner.id}`)
       .send({ role: 'admin' })
       .expect(200);
+  });
+
+  it('DELETE /memberships/:id rejeitado pra sales_rep (403)', async () => {
+    await request(readonlyApp.getHttpServer())
+      .delete(`/memberships/${deletableMembership.id}`)
+      .expect(403);
+  });
+
+  it('DELETE /memberships/:id remove um membro comum', async () => {
+    await request(app.getHttpServer())
+      .delete(`/memberships/${deletableMembership.id}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/memberships')
+      .expect(200)
+      .expect((res) => {
+        const body = res.body as MembershipBody[];
+        expect(body.find((m) => m.id === deletableMembership.id)).toBeUndefined();
+      });
+  });
+
+  it('CRÍTICO: DELETE bloqueia remover o último owner ativo', async () => {
+    // Neste ponto do arquivo, repMembership é o único owner ativo (ver
+    // teste "promove o segundo membro a owner e então permite rebaixar o
+    // primeiro" acima — owner virou admin).
+    await request(app.getHttpServer())
+      .delete(`/memberships/${repMembership.id}`)
+      .expect(400);
+  });
+
+  it('DELETE 404 pra id inexistente', async () => {
+    await request(app.getHttpServer())
+      .delete(`/memberships/${randomUUID()}`)
+      .expect(404);
   });
 });

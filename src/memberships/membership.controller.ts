@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -36,6 +37,17 @@ export class MembershipController {
     return this.tenantContext.run(
       { userId: membership.userId, workspaceId: membership.workspaceId },
       (tx) => this.memberships.update(tx, membership, id, dto),
+    );
+  }
+
+  @Delete(':id')
+  remove(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tenantContext.run(
+      { userId: membership.userId, workspaceId: membership.workspaceId },
+      (tx) => this.memberships.remove(tx, membership, id),
     );
   }
 }

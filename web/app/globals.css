@@ -202,11 +202,6 @@ a {
   flex: none;
 }
 
-.workspace-switch .plan {
-  font-size: 11.5px;
-  color: var(--text-secondary);
-}
-
 .primary-nav {
   display: flex;
   flex-direction: column;

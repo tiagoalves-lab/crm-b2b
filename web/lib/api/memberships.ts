@@ -22,3 +22,10 @@ export function updateMembership(
     body: input,
   });
 }
+
+export function deleteMembership(token: string, id: string): Promise<Membership> {
+  return apiFetch<Membership>(`/memberships/${id}`, {
+    method: "DELETE",
+    token,
+  });
+}
