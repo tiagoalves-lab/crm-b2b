@@ -4,8 +4,10 @@ import { APP_FILTER } from '@nestjs/core';
 import { ActivityModule } from './activities/activity.module';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
+import { CompanyModule } from './companies/company.module';
 import configuration from './config/configuration';
 import { validate } from './config/env.validation';
+import { ContactModule } from './contacts/contact.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { MeController } from './me/me.controller';
 import { PolicyModule } from './policy/policy.module';
@@ -32,6 +34,8 @@ import { TenancyModule } from './tenancy/tenancy.module';
     TenancyModule,
     PolicyModule,
     ActivityModule,
+    CompanyModule,
+    ContactModule,
   ],
   controllers: [AppController, MeController],
   providers: [{ provide: APP_FILTER, useClass: PrismaExceptionFilter }],

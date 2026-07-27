@@ -4,9 +4,12 @@ import { TenantContextService } from './tenant-context.service';
 import { TenantMembershipGuard } from './tenant-membership.guard';
 
 @Module({
+  // Mesmo motivo do AuthModule: TenantMembershipGuard precisa de token
+  // próprio pra `overrideGuard` conseguir substituí-lo nos testes e2e.
   providers: [
     TenantContextService,
-    { provide: APP_GUARD, useClass: TenantMembershipGuard },
+    TenantMembershipGuard,
+    { provide: APP_GUARD, useExisting: TenantMembershipGuard },
   ],
   exports: [TenantContextService],
 })
