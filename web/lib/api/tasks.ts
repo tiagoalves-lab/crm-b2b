@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { PaginatedResult, Task, TaskStatus } from "./types";
+import type { PaginatedResult, Task, TaskStatus, TaskWithDetails } from "./types";
 
 export function listTasks(
   token: string,
@@ -13,12 +13,18 @@ export function listTasks(
   });
 }
 
+export function getTask(token: string, id: string): Promise<TaskWithDetails> {
+  return apiFetch<TaskWithDetails>(`/tasks/${id}`, { token });
+}
+
 export interface CreateTaskInput {
   title: string;
+  description?: string;
   dueAt?: string;
   companyId?: string;
   contactId?: string;
   opportunityId?: string;
+  listId?: string;
 }
 
 export function createTask(token: string, input: CreateTaskInput): Promise<Task> {
@@ -27,8 +33,12 @@ export function createTask(token: string, input: CreateTaskInput): Promise<Task>
 
 export interface UpdateTaskInput {
   title?: string;
+  description?: string;
   dueAt?: string;
   status?: TaskStatus;
+  assigneeUserId?: string;
+  listId?: string;
+  position?: number;
 }
 
 export function updateTask(

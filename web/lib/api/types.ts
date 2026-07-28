@@ -93,17 +93,51 @@ export interface Opportunity {
 
 export type TaskStatus = "pending" | "done";
 
+export interface TaskList {
+  id: string;
+  workspaceId: string;
+  name: string;
+  order: number;
+  isDoneList: boolean;
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
+  description: string | null;
   dueAt: string | null;
   assigneeUserId: string;
   companyId: string | null;
   contactId: string | null;
   opportunityId: string | null;
+  listId: string;
+  position: number;
   status: TaskStatus;
   createdBy: string;
   createdAt: string;
+}
+
+export interface TaskChecklistItem {
+  id: string;
+  taskId: string;
+  text: string;
+  done: boolean;
+  position: number;
+  createdAt: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorUserId: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface TaskWithDetails extends Task {
+  checklistItems: TaskChecklistItem[];
+  comments: TaskComment[];
 }
 
 export interface Activity {

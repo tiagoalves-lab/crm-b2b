@@ -13,8 +13,20 @@ export class CreateTaskDto {
   title!: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  description?: string;
+
+  @IsOptional()
   @IsDateString()
   dueAt?: string;
+
+  // Coluna do Kanban — se não informada, cai na primeira coluna do
+  // workspace (bootstrap preguiçoso via TaskListService se ainda não
+  // existir nenhuma).
+  @IsOptional()
+  @IsUUID()
+  listId?: string;
 
   // Default (não informado): quem está criando. Se informado, precisa ser
   // Membership ativo do mesmo workspace (checado no service).

@@ -3,7 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma, Task } from '@prisma/client';
+import type {
+  Prisma,
+  Task,
+  TaskChecklistItem,
+  TaskComment,
+  TaskList,
+} from '@prisma/client';
 import { ActivityService } from '../activities/activity.service';
 import { assertActiveMembership } from '../common/assert-active-membership';
 import type { PaginatedResult } from '../companies/company.service';
@@ -11,17 +17,24 @@ import { PolicyService } from '../policy/policy.service';
 import type { OwnerScopeFilter } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
+import { TaskListService } from './task-list.service';
 import type { CreateTaskDto } from './dto/create-task.dto';
 import type { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import type { UpdateTaskDto } from './dto/update-task.dto';
 
 const NO_MATCH_SENTINEL = '__none__';
 
+export type TaskWithDetails = Task & {
+  checklistItems: TaskChecklistItem[];
+  comments: TaskComment[];
+};
+
 @Injectable()
 export class TaskService {
   constructor(
     private readonly policy: PolicyService,
     private readonly activities: ActivityService,
+    private readonly taskLists: TaskListService,
   ) {}
 
   async create(
@@ -33,15 +46,24 @@ export class TaskService {
     await assertActiveMembership(tx, membership.workspaceId, assigneeUserId);
     await this.mustTargetExist(tx, membership.workspaceId, dto);
 
+    const listId = dto.listId
+      ? (await this.mustListExist(tx, membership.workspaceId, dto.listId)).id
+      : (await this.taskLists.ensureDefaultLists(tx, membership.workspaceId))[0]
+          .id;
+    const position = await this.nextPosition(tx, listId);
+
     const task = await tx.task.create({
       data: {
         workspaceId: membership.workspaceId,
         title: dto.title,
+        description: dto.description,
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
         assigneeUserId,
         companyId: dto.companyId,
         contactId: dto.contactId,
         opportunityId: dto.opportunityId,
+        listId,
+        position,
         createdBy: membership.userId,
       },
     });
@@ -103,12 +125,19 @@ export class TaskService {
     return { items, total, page, pageSize };
   }
 
-  findOne(
+  async findOne(
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
-  ): Promise<Task> {
-    return this.mustBeVisible(tx, membership, id);
+  ): Promise<TaskWithDetails> {
+    await this.mustBeVisible(tx, membership, id);
+    return tx.task.findUniqueOrThrow({
+      where: { id },
+      include: {
+        checklistItems: { orderBy: { position: 'asc' } },
+        comments: { orderBy: { createdAt: 'asc' } },
+      },
+    });
   }
 
   async update(
@@ -127,19 +156,38 @@ export class TaskService {
       );
     }
 
+    let targetList: TaskList | undefined;
+    if (dto.listId && dto.listId !== existing.listId) {
+      targetList = await this.mustListExist(
+        tx,
+        membership.workspaceId,
+        dto.listId,
+      );
+    }
+
+    // Mover pra uma coluna is_done_list marca status=done automaticamente;
+    // sair dela pra uma coluna comum volta pra pending. Um status
+    // explícito no mesmo request sempre vence (ex.: reabrir uma tarefa
+    // concluída sem precisar mover ela de coluna ao mesmo tempo).
+    const derivedStatus =
+      dto.status ?? (targetList ? (targetList.isDoneList ? 'done' : 'pending') : undefined);
+
     const updated = await tx.task.update({
       where: { id: existing.id },
       data: {
         title: dto.title,
+        description: dto.description,
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
-        status: dto.status,
+        status: derivedStatus,
         assigneeUserId: dto.assigneeUserId,
+        listId: dto.listId,
+        position: dto.position,
       },
     });
 
     // Só emite Activity na conclusão — edits triviais de título/data não
     // valem virar entrada no log (poluiria a timeline sem agregar nada).
-    if (dto.status === 'done' && existing.status !== 'done') {
+    if (derivedStatus === 'done' && existing.status !== 'done') {
       await this.activities.emit(tx, {
         workspaceId: membership.workspaceId,
         actorUserId: membership.userId,
@@ -239,7 +287,10 @@ export class TaskService {
     return allowedIds.includes(requested) ? requested : NO_MATCH_SENTINEL;
   }
 
-  private async mustBeVisible(
+  // Público de propósito — TaskChecklistService/TaskCommentService
+  // reusam essa checagem em vez de duplicar a regra de visibilidade
+  // (ownership via PolicyService, mesmo critério de Task.update).
+  async mustBeVisible(
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
@@ -259,5 +310,28 @@ export class TaskService {
       throw new NotFoundException('Tarefa não encontrada.');
     }
     return task;
+  }
+
+  private async mustListExist(
+    tx: TenantTx,
+    workspaceId: string,
+    listId: string,
+  ): Promise<TaskList> {
+    const list = await tx.taskList.findFirst({
+      where: { id: listId, workspaceId },
+    });
+    if (!list) {
+      throw new BadRequestException(`Coluna "${listId}" não encontrada.`);
+    }
+    return list;
+  }
+
+  private async nextPosition(tx: TenantTx, listId: string): Promise<number> {
+    const last = await tx.task.findFirst({
+      where: { listId },
+      orderBy: { position: 'desc' },
+      select: { position: true },
+    });
+    return (last?.position ?? -1) + 1;
   }
 }

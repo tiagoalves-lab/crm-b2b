@@ -2,6 +2,7 @@ import type { TaskStatus } from '@prisma/client';
 import {
   IsDateString,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -20,6 +21,11 @@ export class UpdateTaskDto {
   title?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  description?: string;
+
+  @IsOptional()
   @IsDateString()
   dueAt?: string;
 
@@ -30,4 +36,18 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsUUID()
   assigneeUserId?: string;
+
+  // Mover entre colunas (drag-and-drop) — ver TaskService.update pra
+  // sincronização automática com `status` quando a coluna de destino é
+  // is_done_list.
+  @IsOptional()
+  @IsUUID()
+  listId?: string;
+
+  // Posição fracionária dentro da coluna (fractional indexing) — o
+  // cliente calcula a média entre os vizinhos ao redor do drop; o backend
+  // só armazena o valor, sem recalcular os outros cartões.
+  @IsOptional()
+  @IsNumber()
+  position?: number;
 }

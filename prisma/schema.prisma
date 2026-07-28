@@ -87,6 +87,7 @@ model Workspace {
   contacts      Contact[]
   pipelines     Pipeline[]
   opportunities Opportunity[]
+  taskLists     TaskList[]
   tasks         Task[]
   activities    Activity[]
 
@@ -258,6 +259,27 @@ model Opportunity {
 // raw na migration).
 // ─────────────────────────────────────────────────────────────────────────
 
+// TaskList — colunas do Kanban de tarefas, configuráveis por workspace
+// (mesmo papel que Stage cumpre pro Pipeline de Opportunity). `isDoneList`
+// marca qual(is) coluna(s) equivalem a "concluída" — mover uma Task pra
+// uma coluna com isDoneList=true seta status=done automaticamente (e
+// vice-versa), preservando a semântica de `status` já usada em filtros
+// (overdue) e no feed de Activity.
+model TaskList {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  name        String
+  order       Int
+  isDoneList  Boolean  @default(false) @map("is_done_list")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  tasks     Task[]
+
+  @@index([workspaceId])
+  @@map("task_lists")
+}
+
 model Task {
   id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId    String     @map("workspace_id") @db.Uuid
@@ -265,19 +287,56 @@ model Task {
   companyId      String?    @map("company_id") @db.Uuid
   contactId      String?    @map("contact_id") @db.Uuid
   opportunityId  String?    @map("opportunity_id") @db.Uuid
+  listId         String     @map("list_id") @db.Uuid
+  position       Float      @default(0)
   title          String
+  description    String?
   dueAt          DateTime?  @map("due_at")
   status         TaskStatus @default(pending)
   createdBy      String     @map("created_by") @db.Uuid
   createdAt      DateTime   @default(now()) @map("created_at")
 
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id])
-  company     Company?     @relation(fields: [companyId], references: [id])
-  contact     Contact?     @relation(fields: [contactId], references: [id])
-  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id])
+  company        Company?            @relation(fields: [companyId], references: [id])
+  contact        Contact?            @relation(fields: [contactId], references: [id])
+  opportunity    Opportunity?        @relation(fields: [opportunityId], references: [id])
+  list           TaskList            @relation(fields: [listId], references: [id])
+  checklistItems TaskChecklistItem[]
+  comments       TaskComment[]
 
   @@index([workspaceId])
+  @@index([listId])
   @@map("tasks")
+}
+
+// Checklist simples (uma lista de itens marcáveis por Task, sem grupos
+// nomeados — suficiente pro caso de uso, evita modelar TaskChecklist como
+// entidade própria só pra ter um nome de grupo).
+model TaskChecklistItem {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  text      String
+  done      Boolean  @default(false)
+  position  Float    @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_checklist_items")
+}
+
+model TaskComment {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId       String   @map("task_id") @db.Uuid
+  authorUserId String   @map("author_user_id") @db.Uuid
+  body         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_comments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
