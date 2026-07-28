@@ -73,6 +73,16 @@ completo em `docs/seguranca.md` — resumo do que nunca pode acontecer:
   completo em memória (`project_fase6_frontend_integrado`).
 - **`leads/`**: módulo de geração/qualificação de leads, staging separado
   do CRM (DuckDB local, nunca commitado — ver `.gitignore`).
+- **Tarefas (2026-07-28)**: virou Kanban configurável (colunas
+  criadas/removidas por owner/admin) com drag-and-drop real + visão
+  Calendário + cartão completo (descrição/checklist/comentários). Schema
+  novo: `TaskList`, `TaskChecklistItem`, `TaskComment`. Primeira UI
+  client-side interativa do projeto (`@dnd-kit`, em
+  `web/app/dashboard/tarefas/kanban-board.tsx`) — todo o resto continua
+  Server Components/Server Actions. Detalhe completo, inclusive um
+  gotcha real de migration (baseline necessário via `prisma migrate
+  resolve --applied`) e um bug latente de CHECK constraint documentado
+  (não corrigido), em memória (`project_tarefas_kanban_trello`).
 - **Deploy de teste (2026-07-27)**: MVP publicado pra validação — backend
   (NestJS) no Railway (`https://backend-production-bc44.up.railway.app`,
   projeto `crm-b2b-api`, serviço `backend`), frontend (Next.js) na Vercel
