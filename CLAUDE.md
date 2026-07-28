@@ -5,6 +5,32 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 `geracao-qualificacao-leads.md` (módulo de leads), `seguranca.md`
 (segurança — leia antes de tocar em `web/` ou em endpoints do backend).
 
+## Retomando a sessão (última atualização: 2026-07-28)
+
+Tudo commitado localmente (`git log` até `3ae67a5`, working tree limpo
+exceto `.claude/settings.json` — edição própria do usuário, nunca tocar).
+**Sem remote git configurado** (`git remote -v` vazio) — deploy é direto
+via CLI (Railway/Vercel), não via push/CI.
+
+**Primeira coisa a perguntar na próxima sessão:** o usuário já testou o
+Kanban de Tarefas (drag-and-drop, Calendário, cartão com
+checklist/comentários) no navegador? Foi construído e verificado só por
+build/type-check/e2e — nunca clicado de verdade (sem credencial real na
+sessão que construiu). Se achou bug, comece por `kanban-board.tsx`
+(primeira UI client-side do projeto, `@dnd-kit`) — ver
+`project_tarefas_kanban_trello` na memória pro que já foi verificado e o
+que não foi.
+
+URLs de teste publicadas (mesmo Supabase real, sem banco de teste
+separado): frontend `https://web-gamma-olive-80.vercel.app`, backend
+`https://backend-production-bc44.up.railway.app`. Redeploy: `railway up`
+(raiz) / `vercel --prod` (dentro de `web/`) — não é automático por push.
+
+Servidores locais de dev podem ou não continuar rodando dependendo de
+como a sessão anterior foi encerrada — backend em `:3001`, frontend
+tipicamente em `:3002` (não `:3000`, que costuma já estar ocupado por
+processo antigo; checar com `netstat` antes de assumir a porta).
+
 ## Comunicação
 
 Instrução explícita do usuário (2026-07-27): **responder sempre em
