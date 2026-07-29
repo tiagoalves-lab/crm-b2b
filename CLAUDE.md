@@ -5,15 +5,18 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 `geracao-qualificacao-leads.md` (módulo de leads), `seguranca.md`
 (segurança — leia antes de tocar em `web/` ou em endpoints do backend).
 
-## Retomando a sessão (última atualização: 2026-07-28)
+## Retomando a sessão (última atualização: 2026-07-29)
 
-Tudo commitado localmente até `3ae67a5` — **as mudanças desta sessão
-(remoção de Contact, expansão de Company, busca por CNPJ, migração de
-região do Railway) ainda NÃO foram commitadas**, só publicadas em
-produção via CLI. Working tree sujo além do `.claude/settings.json`
-(edição própria do usuário, nunca tocar) — checar `git status` antes de
-qualquer coisa. **Sem remote git configurado** (`git remote -v` vazio) —
-deploy é direto via CLI (Railway/Vercel), não via push/CI.
+**Repositório remoto criado (2026-07-29)**: `origin` aponta pra
+`https://github.com/tiagoalves-lab/crm-b2b.git` (privado). Commit
+`24ed5b9` (remoção de Contact/expansão de Company/CNPJ) já está
+publicado lá — `git status` deve mostrar só `.claude/settings.json`
+modificado (edição própria do usuário, nunca tocar/commitar). Varredura
+de segredo (working tree + histórico inteiro) feita antes do push —
+limpo. **Deploy em Railway/Vercel continua manual via CLI, não
+depende do GitHub** — o `.github/workflows/ci.yml` (Fase 0) só dispara em
+push pra `main`; o branch local se chama `master`, então CI não roda
+automaticamente ainda (não é bug, só branch diferente do trigger).
 
 **Primeira coisa a perguntar na próxima sessão:** o usuário já testou no
 navegador o fluxo completo depois da mudança grande desta sessão? Nada
