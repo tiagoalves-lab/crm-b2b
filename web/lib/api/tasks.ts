@@ -22,7 +22,6 @@ export interface CreateTaskInput {
   description?: string;
   dueAt?: string;
   companyId?: string;
-  contactId?: string;
   opportunityId?: string;
   listId?: string;
 }

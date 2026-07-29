@@ -60,7 +60,6 @@ export class TaskService {
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
         assigneeUserId,
         companyId: dto.companyId,
-        contactId: dto.contactId,
         opportunityId: dto.opportunityId,
         listId,
         position,
@@ -74,7 +73,6 @@ export class TaskService {
       type: 'field_update',
       payload: { action: 'created', title: task.title },
       companyId: dto.companyId,
-      contactId: dto.contactId,
       opportunityId: dto.opportunityId,
     });
 
@@ -101,7 +99,6 @@ export class TaskService {
         ? { assigneeUserId: assigneeFilter }
         : {}),
       ...(query.companyId ? { companyId: query.companyId } : {}),
-      ...(query.contactId ? { contactId: query.contactId } : {}),
       ...(query.opportunityId ? { opportunityId: query.opportunityId } : {}),
       ...(query.status ? { status: query.status } : {}),
       // overdue implica status=pending — vence quem passou overdue por
@@ -194,7 +191,6 @@ export class TaskService {
         type: 'field_update',
         payload: { action: 'completed', title: updated.title },
         companyId: existing.companyId ?? undefined,
-        contactId: existing.contactId ?? undefined,
         opportunityId: existing.opportunityId ?? undefined,
       });
     }
@@ -210,25 +206,25 @@ export class TaskService {
     const existing = await this.mustBeVisible(tx, membership, id, 'write');
     // Sem soft delete — Task não tem deletedAt no schema, e
     // docs/arquitetura-dados.md só pede soft delete pra
-    // Company/Contact/Opportunity. Assimetria intencional, não descuido.
+    // Company/Opportunity. Assimetria intencional, não descuido.
     await tx.task.delete({ where: { id: existing.id } });
   }
 
   private async mustTargetExist(
     tx: TenantTx,
     workspaceId: string,
-    dto: Pick<CreateTaskDto, 'companyId' | 'contactId' | 'opportunityId'>,
+    dto: Pick<CreateTaskDto, 'companyId' | 'opportunityId'>,
   ): Promise<void> {
     // Defesa em profundidade independente do decorator @ExactlyOneOf do
     // DTO (que já bloqueia isso na borda HTTP) — mesmo princípio aplicado
     // em OpportunityService pra lost/lostReason: o service nunca confia
     // só na validação de entrada.
-    const targets = [dto.companyId, dto.contactId, dto.opportunityId].filter(
+    const targets = [dto.companyId, dto.opportunityId].filter(
       (value) => value !== undefined,
     );
     if (targets.length !== 1) {
       throw new BadRequestException(
-        'Exatamente um de companyId/contactId/opportunityId deve ser informado.',
+        'Exatamente um de companyId/opportunityId deve ser informado.',
       );
     }
 
@@ -239,17 +235,6 @@ export class TaskService {
       if (!company || company.deletedAt) {
         throw new BadRequestException(
           `Empresa "${dto.companyId}" não encontrada.`,
-        );
-      }
-      return;
-    }
-    if (dto.contactId) {
-      const contact = await tx.contact.findFirst({
-        where: { id: dto.contactId, workspaceId },
-      });
-      if (!contact || contact.deletedAt) {
-        throw new BadRequestException(
-          `Contato "${dto.contactId}" não encontrado.`,
         );
       }
       return;
@@ -269,7 +254,7 @@ export class TaskService {
   // PolicyService foi desenhado em torno de "ownerUserId" (Fase 2); Task
   // usa "assigneeUserId" com a mesma semântica de ownership — remapeado
   // aqui na borda em vez de generalizar o PolicyService (que já está
-  // testado e usado por Company/Contact/Opportunity com o nome real).
+  // testado e usado por Company/Opportunity com o nome real).
   private resolveAssigneeFilter(
     scope: OwnerScopeFilter,
     requested?: string,

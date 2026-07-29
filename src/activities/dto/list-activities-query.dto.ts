@@ -2,16 +2,12 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 import { ExactlyOneOf } from '../../common/validators/exactly-one-of.decorator';
 
-// Mesmo padrão do Task: relação polimórfica, exatamente um dos três.
+// Mesmo padrão do Task: relação polimórfica, exatamente um dos dois.
 export class ListActivitiesQueryDto {
-  @ExactlyOneOf(['companyId', 'contactId', 'opportunityId'])
+  @ExactlyOneOf(['companyId', 'opportunityId'])
   @IsOptional()
   @IsUUID()
   companyId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  contactId?: string;
 
   @IsOptional()
   @IsUUID()

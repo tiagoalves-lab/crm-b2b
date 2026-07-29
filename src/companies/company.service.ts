@@ -20,6 +20,41 @@ export interface PaginatedResult<T> {
   pageSize: number;
 }
 
+// Retorno da busca por CNPJ — mesmos nomes de campo de CreateCompanyDto,
+// pra o frontend poder jogar isto direto no form sem remapear nada.
+export interface CnpjLookupResult {
+  razaoSocial?: string;
+  fantasia?: string;
+  cpfCnpj: string;
+  tipo: 'PJ';
+  emails: string[];
+  fones: string[];
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cep?: string;
+  cidade?: string;
+  uf?: string;
+}
+
+// Formato de resposta da BrasilAPI (https://brasilapi.com.br/api/cnpj/v1) —
+// só os campos que a gente de fato usa, o resto da resposta é ignorado.
+interface BrasilApiCnpjResponse {
+  razao_social?: string;
+  nome_fantasia?: string;
+  email?: string;
+  ddd_telefone_1?: string;
+  ddd_telefone_2?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cep?: string;
+  municipio?: string;
+  uf?: string;
+}
+
 @Injectable()
 export class CompanyService {
   constructor(
@@ -49,6 +84,23 @@ export class CompanyService {
         ownerUserId,
         parentCompanyId: dto.parentCompanyId,
         customFields: (dto.customFields ?? {}) as Prisma.InputJsonValue,
+        razaoSocial: dto.razaoSocial,
+        fantasia: dto.fantasia,
+        nomeParaContato: dto.nomeParaContato,
+        cpfCnpj: dto.cpfCnpj,
+        tipo: dto.tipo,
+        dtNasc: dto.dtNasc ? new Date(dto.dtNasc) : undefined,
+        dtCad: dto.dtCad ? new Date(dto.dtCad) : undefined,
+        emails: dto.emails ?? [],
+        fones: dto.fones ?? [],
+        logradouro: dto.logradouro,
+        numero: dto.numero,
+        complemento: dto.complemento,
+        bairro: dto.bairro,
+        cep: dto.cep,
+        cidade: dto.cidade,
+        uf: dto.uf,
+        tags: dto.tags ?? [],
       },
     });
 
@@ -128,6 +180,23 @@ export class CompanyService {
         ownerUserId: dto.ownerUserId,
         parentCompanyId: dto.parentCompanyId,
         customFields: dto.customFields as Prisma.InputJsonValue | undefined,
+        razaoSocial: dto.razaoSocial,
+        fantasia: dto.fantasia,
+        nomeParaContato: dto.nomeParaContato,
+        cpfCnpj: dto.cpfCnpj,
+        tipo: dto.tipo,
+        dtNasc: dto.dtNasc ? new Date(dto.dtNasc) : undefined,
+        dtCad: dto.dtCad ? new Date(dto.dtCad) : undefined,
+        emails: dto.emails,
+        fones: dto.fones,
+        logradouro: dto.logradouro,
+        numero: dto.numero,
+        complemento: dto.complemento,
+        bairro: dto.bairro,
+        cep: dto.cep,
+        cidade: dto.cidade,
+        uf: dto.uf,
+        tags: dto.tags,
       },
     });
 
@@ -197,6 +266,49 @@ export class CompanyService {
     });
 
     return restored;
+  }
+
+  // Consulta pública (sem chave/custo) da Receita Federal via BrasilAPI —
+  // não existe API unificada de SEFAZ pra dado cadastral de CNPJ (SEFAZ é
+  // por estado, sem padrão comum); o que devolve razão social/fantasia/
+  // endereço é a base da Receita, que é o que BrasilAPI espelha. Só busca
+  // e devolve o dado mapeado — não cria/atualiza nada, quem decide se usa
+  // é o chamador (form no frontend).
+  async lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
+    const digits = cnpj.replace(/\D/g, '');
+    if (digits.length !== 14) {
+      throw new BadRequestException('CNPJ precisa ter 14 dígitos.');
+    }
+
+    const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
+    if (response.status === 404) {
+      throw new NotFoundException(`CNPJ "${digits}" não encontrado.`);
+    }
+    if (!response.ok) {
+      throw new BadRequestException(
+        'Não foi possível consultar o CNPJ agora — tente novamente em instantes.',
+      );
+    }
+
+    const data = (await response.json()) as BrasilApiCnpjResponse;
+
+    return {
+      razaoSocial: data.razao_social,
+      fantasia: data.nome_fantasia,
+      cpfCnpj: digits,
+      tipo: 'PJ',
+      emails: data.email ? [data.email] : [],
+      fones: [data.ddd_telefone_1, data.ddd_telefone_2].filter(
+        (value): value is string => !!value,
+      ),
+      logradouro: data.logradouro,
+      numero: data.numero,
+      complemento: data.complemento,
+      bairro: data.bairro,
+      cep: data.cep,
+      cidade: data.municipio,
+      uf: data.uf,
+    };
   }
 
   private async mustExist(

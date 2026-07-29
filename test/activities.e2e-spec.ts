@@ -84,7 +84,7 @@ describe('ActivityController (e2e)', () => {
 
   it('GET /activities com dois filtros retorna 400', async () => {
     await request(app.getHttpServer())
-      .get(`/activities?companyId=${companyId}&contactId=${randomUUID()}`)
+      .get(`/activities?companyId=${companyId}&opportunityId=${randomUUID()}`)
       .expect(400);
   });
 

@@ -68,6 +68,14 @@ enum ActivityType {
   field_update
 }
 
+// PF (pessoa física, identificada por CPF) ou PJ (pessoa jurídica, CNPJ) —
+// Company passou a cobrir os dois casos depois que Contact foi removido
+// (ver docs/arquitetura-dados.md).
+enum PessoaTipo {
+  PF
+  PJ
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Workspace — unidade de tenant. Toda tabela abaixo (exceto esta) carrega
 // workspace_id e tem RLS baseada em `app.current_workspace_id`.
@@ -84,7 +92,6 @@ model Workspace {
 
   memberships   Membership[]
   companies     Company[]
-  contacts      Contact[]
   pipelines     Pipeline[]
   opportunities Opportunity[]
   taskLists     TaskList[]
@@ -124,58 +131,53 @@ model Membership {
 // ─────────────────────────────────────────────────────────────────────────
 
 model Company {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId     String    @map("workspace_id") @db.Uuid
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String      @map("workspace_id") @db.Uuid
   name            String
   domain          String?
   industry        String?
   size            String?
-  ownerUserId     String?   @map("owner_user_id") @db.Uuid
-  parentCompanyId String?   @map("parent_company_id") @db.Uuid
-  customFields    Json      @default("{}") @map("custom_fields")
-  deletedAt       DateTime? @map("deleted_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  ownerUserId     String?     @map("owner_user_id") @db.Uuid
+  parentCompanyId String?     @map("parent_company_id") @db.Uuid
+  customFields    Json        @default("{}") @map("custom_fields")
+
+  // Cadastro completo (ex-Contact, dobrado em Company — ver
+  // docs/arquitetura-dados.md, decisão de 2026-07-28): pessoa física ou
+  // jurídica, dados fiscais/cadastrais e endereço. Todos opcionais porque
+  // `name` continua sendo o único campo obrigatório de criação (mesmo
+  // padrão anterior) — estes se preenchem depois, inclusive via busca por
+  // CNPJ (ver CompanyController#lookupCnpj).
+  razaoSocial     String?     @map("razao_social")
+  fantasia        String?
+  nomeParaContato String?     @map("nome_para_contato")
+  cpfCnpj         String?     @map("cpf_cnpj")
+  tipo            PessoaTipo?
+  dtNasc          DateTime?   @map("dt_nasc") @db.Date
+  dtCad           DateTime?   @map("dt_cad") @db.Date
+  emails          String[]    @default([])
+  fones           String[]    @default([])
+  logradouro      String?
+  numero          String?
+  complemento     String?
+  bairro          String?
+  cep             String?
+  cidade          String?
+  uf              String?     @db.Char(2)
+  tags            String[]    @default([])
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   workspace     Workspace     @relation(fields: [workspaceId], references: [id])
   parentCompany Company?      @relation("CompanyHierarchy", fields: [parentCompanyId], references: [id])
   subsidiaries  Company[]     @relation("CompanyHierarchy")
-  contacts      Contact[]
   opportunities Opportunity[]
   tasks         Task[]
   activities    Activity[]
 
   @@index([workspaceId])
   @@map("companies")
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Contact
-// ─────────────────────────────────────────────────────────────────────────
-
-model Contact {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId String    @map("workspace_id") @db.Uuid
-  companyId   String?   @map("company_id") @db.Uuid
-  name        String
-  email       String?
-  phone       String?
-  title       String?
-  ownerUserId String?   @map("owner_user_id") @db.Uuid
-  deletedAt   DateTime? @map("deleted_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  workspace              Workspace     @relation(fields: [workspaceId], references: [id])
-  company                Company?      @relation(fields: [companyId], references: [id])
-  opportunitiesAsPrimary Opportunity[] @relation("OpportunityPrimaryContact")
-  tasks                  Task[]
-  activities             Activity[]
-
-  @@unique([workspaceId, email])
-  @@index([workspaceId])
-  @@index([companyId])
-  @@map("contacts")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -224,7 +226,6 @@ model Opportunity {
   id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId       String            @map("workspace_id") @db.Uuid
   companyId         String            @map("company_id") @db.Uuid
-  primaryContactId  String?           @map("primary_contact_id") @db.Uuid
   pipelineId        String            @map("pipeline_id") @db.Uuid
   stageId           String            @map("stage_id") @db.Uuid
   ownerUserId       String            @map("owner_user_id") @db.Uuid
@@ -241,7 +242,6 @@ model Opportunity {
 
   workspace      Workspace  @relation(fields: [workspaceId], references: [id])
   company        Company    @relation(fields: [companyId], references: [id])
-  primaryContact Contact?   @relation("OpportunityPrimaryContact", fields: [primaryContactId], references: [id])
   pipeline       Pipeline   @relation(fields: [pipelineId], references: [id])
   stage          Stage      @relation(fields: [stageId], references: [id])
   tasks          Task[]
@@ -254,9 +254,9 @@ model Opportunity {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Task — ação futura. Relação polimórfica (company/contact/opportunity)
-// via 3 FKs nullable lado a lado + CHECK "exatamente um preenchido" (SQL
-// raw na migration).
+// Task — ação futura. Relação polimórfica (company/opportunity) via 2 FKs
+// nullable lado a lado + CHECK "exatamente um preenchido" (SQL raw na
+// migration).
 // ─────────────────────────────────────────────────────────────────────────
 
 // TaskList — colunas do Kanban de tarefas, configuráveis por workspace
@@ -285,7 +285,6 @@ model Task {
   workspaceId    String     @map("workspace_id") @db.Uuid
   assigneeUserId String     @map("assignee_user_id") @db.Uuid
   companyId      String?    @map("company_id") @db.Uuid
-  contactId      String?    @map("contact_id") @db.Uuid
   opportunityId  String?    @map("opportunity_id") @db.Uuid
   listId         String     @map("list_id") @db.Uuid
   position       Float      @default(0)
@@ -298,7 +297,6 @@ model Task {
 
   workspace      Workspace           @relation(fields: [workspaceId], references: [id])
   company        Company?            @relation(fields: [companyId], references: [id])
-  contact        Contact?            @relation(fields: [contactId], references: [id])
   opportunity    Opportunity?        @relation(fields: [opportunityId], references: [id])
   list           TaskList            @relation(fields: [listId], references: [id])
   checklistItems TaskChecklistItem[]
@@ -348,7 +346,6 @@ model Activity {
   workspaceId   String       @map("workspace_id") @db.Uuid
   actorUserId   String?      @map("actor_user_id") @db.Uuid
   companyId     String?      @map("company_id") @db.Uuid
-  contactId     String?      @map("contact_id") @db.Uuid
   opportunityId String?      @map("opportunity_id") @db.Uuid
   type          ActivityType
   payload       Json         @default("{}")
@@ -356,7 +353,6 @@ model Activity {
 
   workspace   Workspace    @relation(fields: [workspaceId], references: [id])
   company     Company?     @relation(fields: [companyId], references: [id])
-  contact     Contact?     @relation(fields: [contactId], references: [id])
   opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
 
   @@index([workspaceId])

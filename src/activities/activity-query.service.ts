@@ -26,7 +26,6 @@ export class ActivityQueryService {
     const where = {
       workspaceId: membership.workspaceId,
       companyId: query.companyId,
-      contactId: query.contactId,
       opportunityId: query.opportunityId,
     };
 
@@ -44,7 +43,7 @@ export class ActivityQueryService {
   }
 
   // A visibilidade da timeline segue a visibilidade da entidade
-  // referenciada — repete a mesma checagem pontual que Company/Contact/
+  // referenciada — repete a mesma checagem pontual que Company/
   // OpportunityService já fazem (não reusa os services diretamente pra
   // não criar import circular com ActivityModule, que eles já importam
   // pra escrita).
@@ -60,14 +59,12 @@ export class ActivityQueryService {
     // nunca pega o caso "0 de 3" (todos undefined, todos os decorators
     // pulados). Mesmo problema existiria em CreateTaskDto se não fosse a
     // checagem equivalente em TaskService.mustTargetExist.
-    const targets = [
-      query.companyId,
-      query.contactId,
-      query.opportunityId,
-    ].filter((value) => value !== undefined);
+    const targets = [query.companyId, query.opportunityId].filter(
+      (value) => value !== undefined,
+    );
     if (targets.length !== 1) {
       throw new BadRequestException(
-        'Exatamente um de companyId/contactId/opportunityId deve ser informado.',
+        'Exatamente um de companyId/opportunityId deve ser informado.',
       );
     }
 
@@ -81,19 +78,6 @@ export class ActivityQueryService {
         !(await this.policy.can(tx, membership, 'read', company))
       ) {
         throw new NotFoundException('Empresa não encontrada.');
-      }
-      return;
-    }
-    if (query.contactId) {
-      const contact = await tx.contact.findFirst({
-        where: { id: query.contactId, workspaceId: membership.workspaceId },
-      });
-      if (
-        !contact ||
-        contact.deletedAt ||
-        !(await this.policy.can(tx, membership, 'read', contact))
-      ) {
-        throw new NotFoundException('Contato não encontrado.');
       }
       return;
     }

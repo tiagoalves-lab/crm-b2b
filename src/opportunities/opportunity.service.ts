@@ -47,13 +47,6 @@ export class OpportunityService {
     const ownerUserId = dto.ownerUserId ?? membership.userId;
     await assertActiveMembership(tx, membership.workspaceId, ownerUserId);
     await this.mustCompanyExist(tx, membership.workspaceId, dto.companyId);
-    if (dto.primaryContactId) {
-      await this.mustContactExist(
-        tx,
-        membership.workspaceId,
-        dto.primaryContactId,
-      );
-    }
     await this.mustStageBelongToPipeline(
       tx,
       membership.workspaceId,
@@ -65,7 +58,6 @@ export class OpportunityService {
       data: {
         workspaceId: membership.workspaceId,
         companyId: dto.companyId,
-        primaryContactId: dto.primaryContactId,
         pipelineId: dto.pipelineId,
         stageId: dto.stageId,
         ownerUserId,
@@ -216,13 +208,6 @@ export class OpportunityService {
     if (dto.companyId) {
       await this.mustCompanyExist(tx, membership.workspaceId, dto.companyId);
     }
-    if (dto.primaryContactId) {
-      await this.mustContactExist(
-        tx,
-        membership.workspaceId,
-        dto.primaryContactId,
-      );
-    }
 
     const closing = existing.status === 'open' && nextStatus !== 'open';
     const reopening = existing.status !== 'open' && nextStatus === 'open';
@@ -236,7 +221,6 @@ export class OpportunityService {
       where: { id: existing.id, version: existing.version },
       data: {
         companyId: dto.companyId,
-        primaryContactId: dto.primaryContactId,
         pipelineId: dto.pipelineId,
         stageId: dto.stageId,
         ownerUserId: dto.ownerUserId,
@@ -297,7 +281,6 @@ export class OpportunityService {
     }
     const otherFieldsChanged = [
       dto.companyId,
-      dto.primaryContactId,
       dto.ownerUserId,
       dto.amount,
       dto.currency,
@@ -398,19 +381,6 @@ export class OpportunityService {
     });
     if (!company || company.deletedAt) {
       throw new BadRequestException(`Empresa "${companyId}" não encontrada.`);
-    }
-  }
-
-  private async mustContactExist(
-    tx: TenantTx,
-    workspaceId: string,
-    contactId: string,
-  ): Promise<void> {
-    const contact = await tx.contact.findFirst({
-      where: { id: contactId, workspaceId },
-    });
-    if (!contact || contact.deletedAt) {
-      throw new BadRequestException(`Contato "${contactId}" não encontrado.`);
     }
   }
 

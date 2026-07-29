@@ -13,7 +13,7 @@ import {
 const STATUSES: TaskStatus[] = ['pending', 'done'];
 
 // Não estende ListQueryDto — Task não tem deletedAt (sem soft delete,
-// diferente de Company/Contact/Opportunity), então "includeDeleted" não
+// diferente de Company/Opportunity), então "includeDeleted" não
 // faz sentido aqui.
 export class ListTasksQueryDto {
   @IsOptional()
@@ -40,10 +40,6 @@ export class ListTasksQueryDto {
   @IsOptional()
   @IsUUID()
   companyId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  contactId?: string;
 
   @IsOptional()
   @IsUUID()

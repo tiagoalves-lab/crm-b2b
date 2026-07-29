@@ -64,8 +64,8 @@ describe('RLS — isolamento entre workspaces', () => {
     // task_checklist_items/task_comments somem em cascata com o task.
     // ORDEM IMPORTA: apagar a company antes da task violaria a CHECK
     // "tasks_exactly_one_relation" — o FK company_id é ON DELETE SET
-    // NULL, e a task deste arquivo só tem companyId preenchido (contact/
-    // opportunity já são null), então zerar company_id deixaria os três
+    // NULL, e a task deste arquivo só tem companyId preenchido
+    // (opportunity_id já é null), então zerar company_id deixaria os dois
     // null ao mesmo tempo. Task sempre primeiro.
     await withWorkspace(workspaceA.id, (tx) =>
       tx.task.deleteMany({ where: { workspaceId: workspaceA.id } }),
@@ -161,7 +161,7 @@ describe('RLS — isolamento entre workspaces', () => {
     ).rejects.toThrow();
   });
 
-  it('CHECK constraint: Task exige exatamente um de company/contact/opportunity', async () => {
+  it('CHECK constraint: Task exige exatamente um de company/opportunity', async () => {
     await expect(
       withWorkspace(workspaceA.id, (tx) =>
         tx.task.create({

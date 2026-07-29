@@ -26,6 +26,8 @@ export interface MeResponse {
   membership: Membership;
 }
 
+export type PessoaTipo = "PF" | "PJ";
+
 export interface Company {
   id: string;
   name: string;
@@ -34,19 +36,24 @@ export interface Company {
   size: string | null;
   ownerUserId: string | null;
   parentCompanyId: string | null;
-  deletedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Contact {
-  id: string;
-  name: string;
-  companyId: string | null;
-  email: string | null;
-  phone: string | null;
-  title: string | null;
-  ownerUserId: string | null;
+  // Cadastro completo (ex-Contact, dobrado em Company) — todos opcionais.
+  razaoSocial: string | null;
+  fantasia: string | null;
+  nomeParaContato: string | null;
+  cpfCnpj: string | null;
+  tipo: PessoaTipo | null;
+  dtNasc: string | null;
+  dtCad: string | null;
+  emails: string[];
+  fones: string[];
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cep: string | null;
+  cidade: string | null;
+  uf: string | null;
+  tags: string[];
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -75,7 +82,6 @@ export type OpportunityStatus = "open" | "won" | "lost";
 export interface Opportunity {
   id: string;
   companyId: string;
-  primaryContactId: string | null;
   pipelineId: string;
   stageId: string;
   ownerUserId: string;
@@ -109,7 +115,6 @@ export interface Task {
   dueAt: string | null;
   assigneeUserId: string;
   companyId: string | null;
-  contactId: string | null;
   opportunityId: string | null;
   listId: string;
   position: number;
@@ -146,7 +151,6 @@ export interface Activity {
   payload: Record<string, unknown>;
   actorUserId: string | null;
   companyId: string | null;
-  contactId: string | null;
   opportunityId: string | null;
   occurredAt: string;
 }

@@ -46,6 +46,14 @@ export class CompanyController {
     );
   }
 
+  // Rota fixa de 2 segmentos ("cnpj/:cnpj") não colide com ":id" (1
+  // segmento) — ordem no controller não importa aqui, mas fica antes por
+  // convenção (mais específico primeiro).
+  @Get('cnpj/:cnpj')
+  lookupCnpj(@Param('cnpj') cnpj: string) {
+    return this.companies.lookupCnpj(cnpj);
+  }
+
   @Get(':id')
   findOne(
     @CurrentMembership() membership: MembershipContext,

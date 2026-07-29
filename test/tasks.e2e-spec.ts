@@ -35,7 +35,6 @@ describe('TaskController (e2e)', () => {
   let repMembership: MembershipContext;
   let adminMembership: MembershipContext;
   let companyId: string;
-  let contactId: string;
   let taskId: string;
 
   beforeAll(async () => {
@@ -64,13 +63,6 @@ describe('TaskController (e2e)', () => {
       }),
     );
     companyId = company.id;
-
-    const contact = await withTenant(prisma, userId, workspace.id, (tx) =>
-      tx.contact.create({
-        data: { workspaceId: workspace.id, name: 'Contato Tasks' },
-      }),
-    );
-    contactId = contact.id;
 
     const repUserId = randomUUID();
     repMembership = await withTenant(prisma, repUserId, workspace.id, (tx) =>
@@ -124,9 +116,6 @@ describe('TaskController (e2e)', () => {
       tx.company.deleteMany({ where: { workspaceId: workspace.id } }),
     );
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
-      tx.contact.deleteMany({ where: { workspaceId: workspace.id } }),
-    );
-    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.membership.deleteMany({ where: { workspaceId: workspace.id } }),
     );
     await prisma.workspace.delete({ where: { id: workspace.id } });
@@ -157,7 +146,7 @@ describe('TaskController (e2e)', () => {
   it('POST /tasks com dois alvos retorna 400', async () => {
     await request(app.getHttpServer())
       .post('/tasks')
-      .send({ title: 'Dois alvos', companyId, contactId })
+      .send({ title: 'Dois alvos', companyId, opportunityId: randomUUID() })
       .expect(400);
   });
 

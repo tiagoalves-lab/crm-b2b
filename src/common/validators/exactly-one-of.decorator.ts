@@ -27,7 +27,7 @@ class ExactlyOneOfConstraint implements ValidatorConstraintInterface {
  * Aplicar em UM dos campos do grupo (a checagem em si é sobre o objeto
  * inteiro, não sobre o campo decorado). Usado por CreateTaskDto/
  * ListActivitiesQueryDto — Task e Activity têm relação polimórfica
- * (company/contact/opportunity), com exatamente um preenchido garantido
+ * (company/opportunity), com exatamente um preenchido garantido
  * por CHECK constraint no Postgres (ver
  * prisma/migrations/20260724120000_init_core_schema). Este decorator dá
  * 400 limpo antes de chegar no banco, em vez de deixar a constraint

@@ -7,24 +7,36 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 
 ## Retomando a sessão (última atualização: 2026-07-28)
 
-Tudo commitado localmente (`git log` até `3ae67a5`, working tree limpo
-exceto `.claude/settings.json` — edição própria do usuário, nunca tocar).
-**Sem remote git configurado** (`git remote -v` vazio) — deploy é direto
-via CLI (Railway/Vercel), não via push/CI.
+Tudo commitado localmente até `3ae67a5` — **as mudanças desta sessão
+(remoção de Contact, expansão de Company, busca por CNPJ, migração de
+região do Railway) ainda NÃO foram commitadas**, só publicadas em
+produção via CLI. Working tree sujo além do `.claude/settings.json`
+(edição própria do usuário, nunca tocar) — checar `git status` antes de
+qualquer coisa. **Sem remote git configurado** (`git remote -v` vazio) —
+deploy é direto via CLI (Railway/Vercel), não via push/CI.
 
-**Primeira coisa a perguntar na próxima sessão:** o usuário já testou o
-Kanban de Tarefas (drag-and-drop, Calendário, cartão com
-checklist/comentários) no navegador? Foi construído e verificado só por
-build/type-check/e2e — nunca clicado de verdade (sem credencial real na
-sessão que construiu). Se achou bug, comece por `kanban-board.tsx`
-(primeira UI client-side do projeto, `@dnd-kit`) — ver
-`project_tarefas_kanban_trello` na memória pro que já foi verificado e o
-que não foi.
+**Primeira coisa a perguntar na próxima sessão:** o usuário já testou no
+navegador o fluxo completo depois da mudança grande desta sessão? Nada
+disso foi clicado de verdade (sem credencial real na sessão que
+construiu) — só build/testes automatizados. Prioridade de teste:
+1. Tela Empresas nova (`/dashboard/empresas`) — form expandido (endereço,
+   CPF/CNPJ, tags) + botão "Buscar CNPJ" (chama BrasilAPI via
+   `web/app/api/cnpj/route.ts`).
+2. Menu não tem mais "Contatos" nem "Aquisição > Leads" (removidos a
+   pedido do usuário) — só Pipeline/Empresas/Tarefas/Membros.
+3. Kanban de Tarefas (drag-and-drop) — ainda pendente de teste desde a
+   sessão anterior, ver `project_tarefas_kanban_trello` na memória.
+
+Se achar bug na tela Empresas ou na busca de CNPJ, ver
+`project_contact_removido_empresa_expandida` na memória pro que mudou e
+por quê (Contact foi removido de propósito, não é regressão).
 
 URLs de teste publicadas (mesmo Supabase real, sem banco de teste
 separado): frontend `https://web-gamma-olive-80.vercel.app`, backend
-`https://backend-production-bc44.up.railway.app`. Redeploy: `railway up`
-(raiz) / `vercel --prod` (dentro de `web/`) — não é automático por push.
+`https://backend-production-bc44.up.railway.app` (agora rodando em
+**US East**, não mais `sfo` — migração de região completou nesta sessão).
+Redeploy: `railway up` (raiz) / `vercel --prod` (dentro de `web/`) — não
+é automático por push.
 
 Servidores locais de dev podem ou não continuar rodando dependendo de
 como a sessão anterior foi encerrada — backend em `:3001`, frontend
@@ -88,15 +100,28 @@ completo em `docs/seguranca.md` — resumo do que nunca pode acontecer:
   esse caminho.
 - **Fase 6** (frontend) foi adiantada fora de ordem, a pedido do usuário.
   Login real via Supabase Auth funciona desde 2026-07-24. **Desde
-  2026-07-27, 5 das 6 telas têm dado real** (Membros, Empresas, Contatos,
-  Pipeline, Tarefas) via Server Components/Server Actions — só `Leads`
-  segue placeholder (depende de módulo separado, fora de escopo). Backend
-  roda em `PORT=3001` (Next dev usa `:3000` por padrão, colidiam).
-  **Pendência real:** fluxo autenticado completo (criar empresa → contato
-  → oportunidade → mover no pipeline → ganhar/perder) ainda não foi
-  confirmado pelo usuário no navegador — próxima sessão, perguntar
-  primeiro se isso já foi testado antes de construir mais telas. Detalhe
-  completo em memória (`project_fase6_frontend_integrado`).
+  2026-07-27, telas com dado real** via Server Components/Server Actions
+  — `Leads` segue placeholder (depende de módulo separado, fora de
+  escopo), menu de "Aquisição > Leads" removido do sidebar em 2026-07-28
+  (rota ainda existe no disco, só não linkada). Backend roda em
+  `PORT=3001` (Next dev usa `:3000` por padrão, colidiam).
+  **Pendência real:** fluxo autenticado completo ainda não foi confirmado
+  pelo usuário no navegador — próxima sessão, perguntar primeiro se isso
+  já foi testado antes de construir mais telas. Detalhe completo em
+  memória (`project_fase6_frontend_integrado`).
+- **Contact removido (2026-07-28)**: a pedido explícito do usuário,
+  `Contact` deixou de existir como tabela — virou campos dentro de
+  `Company` (`razaoSocial`, `fantasia`, `nomeParaContato`, `cpfCnpj`,
+  `tipo` PF/PJ, endereço completo, `emails`/`fones`/`tags` como arrays).
+  `Task`/`Opportunity`/`Activity` perderam o vínculo com uma pessoa
+  específica do cliente (só ligam a Company/Opportunity agora — decisão
+  de produto, não bug). Tela "Contatos" e o menu correspondente foram
+  removidos. Nova funcionalidade: busca de dados por CNPJ via BrasilAPI
+  (`GET /companies/cnpj/:cnpj` no backend, proxied por
+  `web/app/api/cnpj/route.ts` no frontend pra nunca expor o
+  access_token do Supabase ao navegador). Detalhe completo — inclusive
+  por que não é SEFAZ e a migration que dropou a tabela — em memória
+  (`project_contact_removido_empresa_expandida`).
 - **`leads/`**: módulo de geração/qualificação de leads, staging separado
   do CRM (DuckDB local, nunca commitado — ver `.gitignore`).
 - **Tarefas (2026-07-28)**: virou Kanban configurável (colunas

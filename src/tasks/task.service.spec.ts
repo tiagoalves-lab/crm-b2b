@@ -9,7 +9,7 @@ import { TaskService } from './task.service';
 const WORKSPACE_ID = 'workspace-1';
 const USER_ID = 'user-1';
 const COMPANY_ID = 'company-1';
-const CONTACT_ID = 'contact-1';
+const OPPORTUNITY_ID = 'opportunity-1';
 const LIST_ID = 'list-1';
 
 function membership(
@@ -37,13 +37,10 @@ function fakeTx(options: { existingTask?: object } = {}): TenantTx {
         .fn()
         .mockResolvedValue({ id: COMPANY_ID, deletedAt: null }),
     },
-    contact: {
+    opportunity: {
       findFirst: jest
         .fn()
-        .mockResolvedValue({ id: CONTACT_ID, deletedAt: null }),
-    },
-    opportunity: {
-      findFirst: jest.fn().mockResolvedValue(null),
+        .mockResolvedValue({ id: OPPORTUNITY_ID, deletedAt: null }),
     },
     task: {
       create: jest
@@ -123,7 +120,7 @@ describe('TaskService', () => {
       ).resolves.toBeDefined();
     });
 
-    it('CRÍTICO: rejeita quando nenhum alvo é informado (0 de 3)', async () => {
+    it('CRÍTICO: rejeita quando nenhum alvo é informado (0 de 2)', async () => {
       const tx = fakeTx();
       await expect(
         service.create(tx, membership(), {
@@ -132,13 +129,13 @@ describe('TaskService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('CRÍTICO: rejeita quando mais de um alvo é informado (2 de 3)', async () => {
+    it('CRÍTICO: rejeita quando mais de um alvo é informado (2 de 2)', async () => {
       const tx = fakeTx();
       await expect(
         service.create(tx, membership(), {
           title: 'Tarefa ambígua',
           companyId: COMPANY_ID,
-          contactId: CONTACT_ID,
+          opportunityId: OPPORTUNITY_ID,
         }),
       ).rejects.toThrow(BadRequestException);
     });
@@ -150,7 +147,6 @@ describe('TaskService', () => {
       workspaceId: WORKSPACE_ID,
       assigneeUserId: USER_ID,
       companyId: COMPANY_ID,
-      contactId: null,
       opportunityId: null,
       listId: LIST_ID,
       status: 'pending',

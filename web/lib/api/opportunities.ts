@@ -13,7 +13,6 @@ export interface CreateOpportunityInput {
   stageId: string;
   amount: number;
   currency: string;
-  primaryContactId?: string;
   expectedCloseDate?: string;
 }
 

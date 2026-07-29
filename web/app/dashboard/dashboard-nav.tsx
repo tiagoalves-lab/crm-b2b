@@ -4,10 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/dashboard/leads", label: "Leads", group: "Aquisição" },
   { href: "/dashboard/pipeline", label: "Pipeline", group: "Vendas" },
   { href: "/dashboard/empresas", label: "Empresas", group: "Vendas" },
-  { href: "/dashboard/contatos", label: "Contatos", group: "Vendas" },
   { href: "/dashboard/tarefas", label: "Tarefas", group: "Trabalho" },
   { href: "/dashboard/membros", label: "Membros", group: "Workspace" },
 ];

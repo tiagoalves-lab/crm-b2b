@@ -19,17 +19,15 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { Company, Contact, Opportunity, Task, TaskList } from "@/lib/api/types";
+import type { Company, Opportunity, Task, TaskList } from "@/lib/api/types";
 import { moveTaskAction } from "./actions";
 
 function targetLabel(
   task: Task,
   companies: Company[],
-  contacts: Contact[],
   opportunities: Opportunity[],
 ): string {
   if (task.companyId) return companies.find((c) => c.id === task.companyId)?.name ?? "—";
-  if (task.contactId) return contacts.find((c) => c.id === task.contactId)?.name ?? "—";
   if (task.opportunityId) {
     const opp = opportunities.find((o) => o.id === task.opportunityId);
     return opp ? (companies.find((c) => c.id === opp.companyId)?.name ?? "—") : "—";
@@ -45,13 +43,11 @@ function Card({
   task,
   cardHref,
   companies,
-  contacts,
   opportunities,
 }: {
   task: Task;
   cardHref: string;
   companies: Company[];
-  contacts: Contact[];
   opportunities: Opportunity[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -67,7 +63,7 @@ function Card({
       className="kanban-card"
     >
       <Link href={cardHref} className="kanban-card-link">
-        <div className="company">{targetLabel(task, companies, contacts, opportunities)}</div>
+        <div className="company">{targetLabel(task, companies, opportunities)}</div>
         <div className="task-title">{task.title}</div>
         <div className="row-form" style={{ marginTop: 6 }}>
           {task.dueAt && (
@@ -86,14 +82,12 @@ export default function KanbanBoard({
   lists,
   tasks,
   companies,
-  contacts,
   opportunities,
   baseHref,
 }: {
   lists: TaskList[];
   tasks: Task[];
   companies: Company[];
-  contacts: Contact[];
   opportunities: Opportunity[];
   baseHref: string;
 }) {
@@ -201,7 +195,6 @@ export default function KanbanBoard({
                       task={task}
                       cardHref={`${baseHref}&card=${task.id}`}
                       companies={companies}
-                      contacts={contacts}
                       opportunities={opportunities}
                     />
                   ))}

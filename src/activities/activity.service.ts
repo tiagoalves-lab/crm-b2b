@@ -8,7 +8,6 @@ export interface EmitActivityInput {
   type: ActivityType;
   payload?: Record<string, unknown>;
   companyId?: string | null;
-  contactId?: string | null;
   opportunityId?: string | null;
 }
 
@@ -18,14 +17,12 @@ export interface EmitActivityInput {
 @Injectable()
 export class ActivityService {
   emit(tx: TenantTx, input: EmitActivityInput): Promise<Activity> {
-    const targets = [
-      input.companyId,
-      input.contactId,
-      input.opportunityId,
-    ].filter((id): id is string => id !== undefined && id !== null);
+    const targets = [input.companyId, input.opportunityId].filter(
+      (id): id is string => id !== undefined && id !== null,
+    );
     if (targets.length !== 1) {
       throw new Error(
-        'ActivityService.emit exige exatamente um de companyId/contactId/opportunityId — erro de chamador, não de input de usuário.',
+        'ActivityService.emit exige exatamente um de companyId/opportunityId — erro de chamador, não de input de usuário.',
       );
     }
 
@@ -36,7 +33,6 @@ export class ActivityService {
         type: input.type,
         payload: (input.payload ?? {}) as Prisma.InputJsonValue,
         companyId: input.companyId ?? undefined,
-        contactId: input.contactId ?? undefined,
         opportunityId: input.opportunityId ?? undefined,
       },
     });

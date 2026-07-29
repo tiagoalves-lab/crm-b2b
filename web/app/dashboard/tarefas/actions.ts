@@ -38,7 +38,6 @@ export async function createTaskAction(formData: FormData) {
       title: String(formData.get("title") ?? "").trim(),
       dueAt: emptyToUndefined(formData.get("dueAt")),
       companyId: emptyToUndefined(formData.get("companyId")),
-      contactId: emptyToUndefined(formData.get("contactId")),
       opportunityId: emptyToUndefined(formData.get("opportunityId")),
       listId: emptyToUndefined(formData.get("listId")),
     });

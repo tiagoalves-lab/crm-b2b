@@ -11,10 +11,6 @@ export class CreateOpportunityDto {
   @IsUUID()
   companyId!: string;
 
-  @IsOptional()
-  @IsUUID()
-  primaryContactId?: string;
-
   @IsUUID()
   pipelineId!: string;
 

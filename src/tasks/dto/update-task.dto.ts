@@ -11,7 +11,7 @@ import {
 
 const STATUSES: TaskStatus[] = ['pending', 'done'];
 
-// Alvo polimórfico (company/contact/opportunity) é imutável após criação
+// Alvo polimórfico (company/opportunity) é imutável após criação
 // — de propósito não estende CreateTaskDto, pra não reabrir a checagem de
 // "exatamente um" a cada edição.
 export class UpdateTaskDto {

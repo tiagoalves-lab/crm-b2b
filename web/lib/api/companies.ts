@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { Company, PaginatedResult } from "./types";
+import type { Company, PaginatedResult, PessoaTipo } from "./types";
 
 export function listCompanies(
   token: string,
@@ -17,6 +17,23 @@ export interface CreateCompanyInput {
   domain?: string;
   industry?: string;
   size?: string;
+  razaoSocial?: string;
+  fantasia?: string;
+  nomeParaContato?: string;
+  cpfCnpj?: string;
+  tipo?: PessoaTipo;
+  dtNasc?: string;
+  dtCad?: string;
+  emails?: string[];
+  fones?: string[];
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cep?: string;
+  cidade?: string;
+  uf?: string;
+  tags?: string[];
 }
 
 export function createCompany(
@@ -24,6 +41,29 @@ export function createCompany(
   input: CreateCompanyInput,
 ): Promise<Company> {
   return apiFetch<Company>("/companies", { method: "POST", token, body: input });
+}
+
+export interface CnpjLookupResult {
+  razaoSocial?: string;
+  fantasia?: string;
+  cpfCnpj: string;
+  tipo: "PJ";
+  emails: string[];
+  fones: string[];
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cep?: string;
+  cidade?: string;
+  uf?: string;
+}
+
+export function lookupCnpj(
+  token: string,
+  cnpj: string,
+): Promise<CnpjLookupResult> {
+  return apiFetch<CnpjLookupResult>(`/companies/cnpj/${cnpj}`, { token });
 }
 
 export function deleteCompany(token: string, id: string): Promise<Company> {

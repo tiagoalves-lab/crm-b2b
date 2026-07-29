@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Company, Contact, Membership, Opportunity, TaskWithDetails } from "@/lib/api/types";
+import type { Company, Membership, Opportunity, TaskWithDetails } from "@/lib/api/types";
 import {
   createChecklistItemAction,
   createCommentAction,
@@ -19,14 +19,10 @@ function memberLabel(userId: string, members: Membership[], currentUserId: strin
 function targetLabel(
   task: TaskWithDetails,
   companies: Company[],
-  contacts: Contact[],
   opportunities: Opportunity[],
 ): string {
   if (task.companyId) {
     return `Empresa: ${companies.find((c) => c.id === task.companyId)?.name ?? "—"}`;
-  }
-  if (task.contactId) {
-    return `Contato: ${contacts.find((c) => c.id === task.contactId)?.name ?? "—"}`;
   }
   if (task.opportunityId) {
     const opp = opportunities.find((o) => o.id === task.opportunityId);
@@ -40,7 +36,6 @@ export default function TaskDetail({
   task,
   backHref,
   companies,
-  contacts,
   opportunities,
   members,
   currentUserId,
@@ -49,7 +44,6 @@ export default function TaskDetail({
   task: TaskWithDetails;
   backHref: string;
   companies: Company[];
-  contacts: Contact[];
   opportunities: Opportunity[];
   members: Membership[];
   currentUserId: string;
@@ -99,7 +93,7 @@ export default function TaskDetail({
             </label>
           </div>
           <p className="sub" style={{ marginTop: 8 }}>
-            {targetLabel(task, companies, contacts, opportunities)}
+            {targetLabel(task, companies, opportunities)}
           </p>
           <button type="submit" className="btn btn-primary btn-sm" style={{ marginTop: 10 }}>
             Salvar

@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 
 // Seed de desenvolvimento — critério de saída da Fase 1 (roadmap.md):
 // "consegue criar um workspace, um usuário, logar, e inserir/consultar
-// Company/Contact via query direta respeitando RLS".
+// Company via query direta respeitando RLS".
 //
 // Não cria o usuário — identidade vem do Supabase Auth (ver
 // web/README.md, seção 1: criar um usuário manualmente no painel antes
@@ -103,22 +103,6 @@ async function main() {
         },
       }));
     console.log(`Company: ${company.name} (${company.id})`);
-
-    const existingContact = await tx.contact.findFirst({
-      where: { workspaceId: workspace.id, companyId: company.id },
-    });
-    const contact =
-      existingContact ??
-      (await tx.contact.create({
-        data: {
-          workspaceId: workspace.id,
-          companyId: company.id,
-          name: 'Contato de Teste',
-          email: 'contato@empresateste.com.br',
-          ownerUserId: devUserId,
-        },
-      }));
-    console.log(`Contact: ${contact.name} (${contact.id})`);
   });
 
   console.log('Seed concluído.');

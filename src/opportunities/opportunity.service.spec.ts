@@ -34,7 +34,6 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     id: OPPORTUNITY_ID,
     workspaceId: WORKSPACE_ID,
     companyId: COMPANY_ID,
-    primaryContactId: null,
     pipelineId: PIPELINE_ID,
     stageId: STAGE_ID,
     ownerUserId: OWNER_USER_ID,
@@ -83,11 +82,6 @@ function fakeTx(options: FakeTxOptions = {}): TenantTx {
       findFirst: jest
         .fn()
         .mockResolvedValue({ id: COMPANY_ID, deletedAt: null }),
-    },
-    contact: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValue({ id: 'contact-1', deletedAt: null }),
     },
     pipeline: {
       findFirst: jest

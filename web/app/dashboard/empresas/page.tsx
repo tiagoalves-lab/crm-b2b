@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { listCompanies } from "@/lib/api/companies";
-import { createCompanyAction, deleteCompanyAction, restoreCompanyAction } from "./actions";
+import { deleteCompanyAction, restoreCompanyAction } from "./actions";
+import CompanyForm from "./company-form";
 
 export default async function EmpresasPage({
   searchParams,
@@ -32,37 +33,16 @@ export default async function EmpresasPage({
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="form-panel">
-        <form action={createCompanyAction} className="form-grid">
-          <label>
-            Nome*
-            <input name="name" required />
-          </label>
-          <label>
-            Domínio
-            <input name="domain" placeholder="empresa.com.br" />
-          </label>
-          <label>
-            Setor
-            <input name="industry" />
-          </label>
-          <label>
-            Porte
-            <input name="size" />
-          </label>
-          <button type="submit" className="btn btn-primary">
-            Nova empresa
-          </button>
-        </form>
-      </div>
+      <CompanyForm />
 
       <table className="data-table">
         <thead>
           <tr>
             <th>Nome</th>
-            <th>Domínio</th>
-            <th>Setor</th>
-            <th>Porte</th>
+            <th>Razão social</th>
+            <th>CPF/CNPJ</th>
+            <th>Cidade/UF</th>
+            <th>Tags</th>
             <th>Ação</th>
           </tr>
         </thead>
@@ -70,9 +50,12 @@ export default async function EmpresasPage({
           {companies.map((company) => (
             <tr key={company.id}>
               <td>{company.name}</td>
-              <td>{company.domain ?? "—"}</td>
-              <td>{company.industry ?? "—"}</td>
-              <td>{company.size ?? "—"}</td>
+              <td>{company.razaoSocial ?? "—"}</td>
+              <td>{company.cpfCnpj ?? "—"}</td>
+              <td>
+                {company.cidade ? `${company.cidade}${company.uf ? `/${company.uf}` : ""}` : "—"}
+              </td>
+              <td>{company.tags.length > 0 ? company.tags.join(", ") : "—"}</td>
               <td>
                 {company.deletedAt ? (
                   <form action={restoreCompanyAction}>
@@ -94,7 +77,7 @@ export default async function EmpresasPage({
           ))}
           {companies.length === 0 && (
             <tr>
-              <td colSpan={5} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>
+              <td colSpan={6} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>
                 Nenhuma empresa ainda.
               </td>
             </tr>

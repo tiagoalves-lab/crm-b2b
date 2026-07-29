@@ -57,9 +57,9 @@ describe('CompanyController (e2e)', () => {
     // Activity precisa ser limpa antes de Company: a FK
     // activities_company_id_fkey é ON DELETE SET NULL (default do Prisma
     // pra relação opcional), e um SET NULL que zere o único id preenchido
-    // de uma Activity viola a CHECK "exatamente um de company/contact/
-    // opportunity" — só acontece nesse cleanup de teste porque a API nunca
-    // faz hard delete de Company (sempre soft delete via deletedAt).
+    // de uma Activity viola a CHECK "exatamente um de company/opportunity"
+    // — só acontece nesse cleanup de teste porque a API nunca faz hard
+    // delete de Company (sempre soft delete via deletedAt).
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.activity.deleteMany({ where: { workspaceId: workspace.id } }),
     );

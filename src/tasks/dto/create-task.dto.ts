@@ -34,17 +34,13 @@ export class CreateTaskDto {
   @IsUUID()
   assigneeUserId?: string;
 
-  // Relação polimórfica — exatamente um dos três, garantido tanto aqui
+  // Relação polimórfica — exatamente um dos dois, garantido tanto aqui
   // (400 limpo) quanto por CHECK constraint no Postgres (backstop). O
   // decorator é aplicado num campo só, mas valida o objeto inteiro.
-  @ExactlyOneOf(['companyId', 'contactId', 'opportunityId'])
+  @ExactlyOneOf(['companyId', 'opportunityId'])
   @IsOptional()
   @IsUUID()
   companyId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  contactId?: string;
 
   @IsOptional()
   @IsUUID()

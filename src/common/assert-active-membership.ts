@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 
-// Company/Contact/Task permitem atribuir owner/assignee diferente de quem
+// Company/Task permitem atribuir owner/assignee diferente de quem
 // chama — docs/arquitetura-dados.md exige isso pra Company
 // ("owner_user_id deve ser um Membership ativo do mesmo workspace");
 // estendido por consistência pros demais campos equivalentes.

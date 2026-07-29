@@ -7,7 +7,6 @@ import { AuthModule } from './auth/auth.module';
 import { CompanyModule } from './companies/company.module';
 import configuration from './config/configuration';
 import { validate } from './config/env.validation';
-import { ContactModule } from './contacts/contact.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { MeController } from './me/me.controller';
 import { MembershipModule } from './memberships/membership.module';
@@ -39,7 +38,6 @@ import { TenancyModule } from './tenancy/tenancy.module';
     PolicyModule,
     ActivityModule,
     CompanyModule,
-    ContactModule,
     PipelineModule,
     OpportunityModule,
     TaskModule,

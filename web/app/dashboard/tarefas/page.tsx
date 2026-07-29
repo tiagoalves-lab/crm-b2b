@@ -2,7 +2,6 @@ import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { listCompanies } from "@/lib/api/companies";
-import { listContacts } from "@/lib/api/contacts";
 import { listMemberships } from "@/lib/api/memberships";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listTaskLists } from "@/lib/api/task-lists";
@@ -44,13 +43,12 @@ export default async function TarefasPage({
   const currentView: ViewName =
     view === "kanban" || view === "calendario" ? view : "lista";
 
-  const [me, { items: tasks }, taskLists, { items: companies }, { items: contacts }, { items: opportunities }, members] =
+  const [me, { items: tasks }, taskLists, { items: companies }, { items: opportunities }, members] =
     await Promise.all([
       getMe(token),
       listTasks(token, showOverdueOnly ? { overdue: true } : {}),
       listTaskLists(token),
       listCompanies(token),
-      listContacts(token),
       listOpportunities(token),
       listMemberships(token),
     ]);
@@ -67,7 +65,6 @@ export default async function TarefasPage({
         task={detail}
         backHref={baseHref}
         companies={companies}
-        contacts={contacts}
         opportunities={opportunities}
         members={members}
         currentUserId={me.user.id}
@@ -79,9 +76,6 @@ export default async function TarefasPage({
   const targetLabel = (task: Task) => {
     if (task.companyId) {
       return `Empresa: ${companies.find((c) => c.id === task.companyId)?.name ?? "—"}`;
-    }
-    if (task.contactId) {
-      return `Contato: ${contacts.find((c) => c.id === task.contactId)?.name ?? "—"}`;
     }
     if (task.opportunityId) {
       const opp = opportunities.find((o) => o.id === task.opportunityId);
@@ -164,17 +158,6 @@ export default async function TarefasPage({
               </select>
             </label>
             <label>
-              Contato
-              <select name="contactId" defaultValue="">
-                <option value="">—</option>
-                {contacts.map((contact) => (
-                  <option key={contact.id} value={contact.id}>
-                    {contact.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
               Oportunidade
               <select name="opportunityId" defaultValue="">
                 <option value="">—</option>
@@ -193,7 +176,7 @@ export default async function TarefasPage({
             </button>
           </form>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
-            Escolha exatamente um vínculo (empresa, contato OU oportunidade).
+            Escolha exatamente um vínculo (empresa OU oportunidade).
           </p>
         </div>
       )}
@@ -330,7 +313,6 @@ export default async function TarefasPage({
           lists={taskLists}
           tasks={tasks}
           companies={companies}
-          contacts={contacts}
           opportunities={opportunities}
           baseHref={baseHref}
         />
