@@ -14,6 +14,8 @@ import { OpportunityModule } from './opportunities/opportunity.module';
 import { PipelineModule } from './pipelines/pipeline.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RawLeadModule } from './raw-leads/raw-lead.module';
+import { SearchModule } from './search/search.module';
 import { TaskModule } from './tasks/task.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
@@ -42,6 +44,8 @@ import { TenancyModule } from './tenancy/tenancy.module';
     OpportunityModule,
     TaskModule,
     MembershipModule,
+    RawLeadModule,
+    SearchModule,
   ],
   controllers: [AppController, MeController],
   providers: [{ provide: APP_FILTER, useClass: PrismaExceptionFilter }],

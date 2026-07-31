@@ -1,17 +1,18 @@
+import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
+import type { Opportunity } from "@/lib/api/types";
 import {
   createOpportunityAction,
   createPipelineAction,
   createStageAction,
-  markLostAction,
-  markWonAction,
-  moveStageAction,
   reopenAction,
 } from "./actions";
+import CompanyPicker from "./company-picker";
+import PipelineBoard from "./pipeline-board";
 
 const STATUS_LABEL: Record<string, string> = {
   open: "Aberto",
@@ -19,12 +20,41 @@ const STATUS_LABEL: Record<string, string> = {
   lost: "Perdido",
 };
 
+function brl(value: number, currency = "BRL"): string {
+  return `${currency} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+}
+
+// "2026-07" -> [primeiro dia, primeiro dia do mês seguinte) — comparação
+// por intervalo half-open evita problema de fuso em comparação por string.
+function monthRange(mes: string): { start: Date; end: Date } {
+  const [y, m] = mes.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 1));
+  return { start, end };
+}
+
+function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftMonth(mes: string, delta: number): string {
+  const [y, m] = mes.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(mes: string): string {
+  const { start } = monthRange(mes);
+  return start.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
 export default async function PipelinePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; mes?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, mes } = await searchParams;
   const token = await getServerAccessToken();
   const [me, { items: pipelines }, { items: companies }, { items: opportunities }] =
     await Promise.all([
@@ -68,43 +98,77 @@ export default async function PipelinePage({
   }
 
   const stages = [...pipeline.stages].sort((a, b) => a.order - b.order);
-  const companyName = (id: string) =>
-    companies.find((c) => c.id === id)?.name ?? "—";
-  const opportunitiesByStage = (stageId: string) =>
-    opportunities.filter(
-      (o) => o.pipelineId === pipeline.id && o.stageId === stageId && !o.deletedAt,
-    );
+  const companyName = (id: string) => companies.find((c) => c.id === id)?.name ?? "—";
+
+  const pipelineOpps = opportunities.filter(
+    (o) => o.pipelineId === pipeline.id && !o.deletedAt,
+  );
+  const openOpps = pipelineOpps.filter((o) => o.status === "open");
+  const wonOpps = pipelineOpps.filter((o) => o.status === "won");
+  const lostOpps = pipelineOpps.filter((o) => o.status === "lost");
+
+  // Previsão ponderada = Σ(amount × probability/100) das oportunidades
+  // abertas (SPEC-CRM-GAMA.md §4.2).
+  const stageById = new Map(stages.map((s) => [s.id, s]));
+  const previsaoPonderada = openOpps.reduce((sum, o) => {
+    const prob = stageById.get(o.stageId)?.probability ?? 0;
+    return sum + Number(o.amount) * (prob / 100);
+  }, 0);
+
+  const taxaFechamentoGlobal =
+    wonOpps.length + lostOpps.length > 0
+      ? Math.round((wonOpps.length / (wonOpps.length + lostOpps.length)) * 100)
+      : 0;
+
+  // Subform de encerradas — filtro de período por closedAt, mês corrente
+  // por padrão, navegação por mês.
+  const currentMes = mes && /^\d{4}-\d{2}$/.test(mes) ? mes : currentMonth();
+  const { start: mesStart, end: mesEnd } = monthRange(currentMes);
+  const encerradas = [...wonOpps, ...lostOpps]
+    .filter((o) => o.closedAt && new Date(o.closedAt) >= mesStart && new Date(o.closedAt) < mesEnd)
+    .sort((a, b) => new Date(b.closedAt ?? 0).getTime() - new Date(a.closedAt ?? 0).getTime());
+  const wonNoMes = encerradas.filter((o) => o.status === "won").length;
+  const lostNoMes = encerradas.filter((o) => o.status === "lost").length;
+  const taxaFechamentoMes =
+    wonNoMes + lostNoMes > 0 ? Math.round((wonNoMes / (wonNoMes + lostNoMes)) * 100) : 0;
+
+  const mesHref = (m: string) => `/dashboard/pipeline?mes=${m}`;
 
   return (
     <div className="content-wide">
       <div className="toolbar">
         <div className="panel-head">
           <h2>Pipeline — {pipeline.name}</h2>
-          <p className="sub">
-            {opportunities.filter((o) => o.pipelineId === pipeline.id && !o.deletedAt).length}{" "}
-            oportunidade(s)
-          </p>
+          <p className="sub">{openOpps.length} oportunidade(s) em aberto</p>
         </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
 
+      <div className="stat-grid">
+        <div className="stat-tile">
+          <div className="stat-label">Previsão ponderada</div>
+          <div className="stat-value">{brl(previsaoPonderada)}</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-label">Taxa de fechamento</div>
+          <div className="stat-value">{taxaFechamentoGlobal}%</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-label">Ganhas / encerradas</div>
+          <div className="stat-value">
+            {wonOpps.length} / {wonOpps.length + lostOpps.length}
+          </div>
+        </div>
+      </div>
+
       <div className="form-panel">
         <form action={createOpportunityAction} className="form-grid">
           <input type="hidden" name="pipelineId" value={pipeline.id} />
-          <label>
-            Empresa*
-            <select name="companyId" required defaultValue="">
-              <option value="" disabled>
-                selecione
-              </option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ marginBottom: 4, display: "block" }}>Empresa*</label>
+            <CompanyPicker />
+          </div>
           <label>
             Stage*
             <select name="stageId" required defaultValue={stages[0]?.id ?? ""}>
@@ -145,7 +209,7 @@ export default async function PipelinePage({
               <input type="hidden" name="pipelineId" value={pipeline.id} />
               <label>
                 Nome*
-                <input name="name" required />
+                <input name="name" required minLength={2} maxLength={60} />
               </label>
               <label>
                 Ordem*
@@ -170,83 +234,71 @@ export default async function PipelinePage({
         </details>
       )}
 
-      <div className="kanban">
-        {stages.map((stage) => {
-          const stageOpportunities = opportunitiesByStage(stage.id);
-          return (
-            <div key={stage.id} className="kanban-column">
-              <div className="kanban-column-head">
-                <span>{stage.name}</span>
-                <span className="count">{stageOpportunities.length}</span>
-              </div>
-              {stageOpportunities.map((opp) => (
-                <div key={opp.id} className="kanban-card">
-                  <div className="company">{companyName(opp.companyId)}</div>
-                  <div className="amount">
-                    {opp.currency} {Number(opp.amount).toLocaleString("pt-BR")}
-                  </div>
-                  <span
-                    className={
-                      opp.status === "won"
-                        ? "badge badge-accent"
-                        : opp.status === "lost"
-                          ? "badge badge-danger"
-                          : "badge"
-                    }
-                  >
-                    {STATUS_LABEL[opp.status]}
-                  </span>
+      <PipelineBoard stages={stages} openOpportunities={openOpps} companies={companies} />
 
-                  {opp.status === "open" ? (
-                    <>
-                      <form action={moveStageAction} className="row-form">
-                        <input type="hidden" name="id" value={opp.id} />
-                        <input type="hidden" name="version" value={opp.version} />
-                        <select name="stageId" defaultValue={opp.stageId}>
-                          {stages.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button type="submit" className="btn btn-sm">
-                          Mover
-                        </button>
-                      </form>
-                      <form action={markWonAction}>
-                        <input type="hidden" name="id" value={opp.id} />
-                        <input type="hidden" name="version" value={opp.version} />
-                        <button type="submit" className="btn btn-sm btn-primary">
-                          Ganhar
-                        </button>
-                      </form>
-                      <form action={markLostAction} className="row-form">
-                        <input type="hidden" name="id" value={opp.id} />
-                        <input type="hidden" name="version" value={opp.version} />
-                        <input name="lostReason" placeholder="Motivo" />
-                        <button type="submit" className="btn btn-sm btn-danger">
-                          Perder
-                        </button>
-                      </form>
-                    </>
-                  ) : (
-                    <form action={reopenAction}>
-                      <input type="hidden" name="id" value={opp.id} />
-                      <input type="hidden" name="version" value={opp.version} />
-                      <button type="submit" className="btn btn-sm">
-                        Reabrir
-                      </button>
-                    </form>
-                  )}
-                </div>
-              ))}
-              {stageOpportunities.length === 0 && (
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Vazio</p>
-              )}
-            </div>
-          );
-        })}
+      <div className="toolbar" style={{ marginTop: 28 }}>
+        <div className="panel-head">
+          <h3 style={{ fontSize: 15 }}>Encerradas — {monthLabel(currentMes)}</h3>
+          <p className="sub">
+            {wonNoMes} ganha(s) · {lostNoMes} perdida(s) · {taxaFechamentoMes}% de fechamento no mês
+          </p>
+        </div>
+        <div className="row-form">
+          <Link href={mesHref(shiftMonth(currentMes, -1))} className="btn btn-ghost btn-sm">
+            ← Mês anterior
+          </Link>
+          <Link href={mesHref(currentMonth())} className="btn btn-ghost btn-sm">
+            Mês atual
+          </Link>
+          <Link href={mesHref(shiftMonth(currentMes, 1))} className="btn btn-ghost btn-sm">
+            Próximo mês →
+          </Link>
+        </div>
       </div>
+
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Empresa</th>
+            <th>Valor</th>
+            <th>Status</th>
+            <th>Fechamento</th>
+            <th>Motivo</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {encerradas.map((opp: Opportunity) => (
+            <tr key={opp.id}>
+              <td>{companyName(opp.companyId)}</td>
+              <td>{brl(Number(opp.amount), opp.currency)}</td>
+              <td>
+                <span className={opp.status === "won" ? "badge badge-accent" : "badge badge-danger"}>
+                  {STATUS_LABEL[opp.status]}
+                </span>
+              </td>
+              <td>{opp.closedAt ? new Date(opp.closedAt).toLocaleDateString("pt-BR") : "—"}</td>
+              <td>{opp.lostReason ?? "—"}</td>
+              <td>
+                <form action={reopenAction}>
+                  <input type="hidden" name="id" value={opp.id} />
+                  <input type="hidden" name="version" value={opp.version} />
+                  <button type="submit" className="btn btn-sm">
+                    Reabrir
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+          {encerradas.length === 0 && (
+            <tr>
+              <td colSpan={6} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>
+                Nenhuma oportunidade encerrada nesse período.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

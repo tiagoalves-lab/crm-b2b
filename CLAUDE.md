@@ -5,34 +5,67 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 `geracao-qualificacao-leads.md` (módulo de leads), `seguranca.md`
 (segurança — leia antes de tocar em `web/` ou em endpoints do backend).
 
-## Retomando a sessão (última atualização: 2026-07-29)
+## Retomando a sessão (última atualização: 2026-07-31)
 
-**Repositório remoto criado (2026-07-29)**: `origin` aponta pra
-`https://github.com/tiagoalves-lab/crm-b2b.git` (privado). Commit
-`24ed5b9` (remoção de Contact/expansão de Company/CNPJ) já está
-publicado lá — `git status` deve mostrar só `.claude/settings.json`
-modificado (edição própria do usuário, nunca tocar/commitar). Varredura
-de segredo (working tree + histórico inteiro) feita antes do push —
-limpo. **Deploy em Railway/Vercel continua manual via CLI, não
-depende do GitHub** — o `.github/workflows/ci.yml` (Fase 0) só dispara em
-push pra `main`; o branch local se chama `master`, então CI não roda
-automaticamente ainda (não é bug, só branch diferente do trigger).
+**HANDOFF — sessão anterior foi interrompida por falta de crédito da
+IA no meio da execução do `SPEC-CRM-GAMA.md`.** Se você é um colega
+retomando isso pra outra pessoa: leia `SPEC-CRM-GAMA.md` inteiro primeiro
+(é a ordem de serviço), depois esta seção.
 
-**Primeira coisa a perguntar na próxima sessão:** o usuário já testou no
-navegador o fluxo completo depois da mudança grande desta sessão? Nada
-disso foi clicado de verdade (sem credencial real na sessão que
-construiu) — só build/testes automatizados. Prioridade de teste:
-1. Tela Empresas nova (`/dashboard/empresas`) — form expandido (endereço,
-   CPF/CNPJ, tags) + botão "Buscar CNPJ" (chama BrasilAPI via
-   `web/app/api/cnpj/route.ts`).
-2. Menu não tem mais "Contatos" nem "Aquisição > Leads" (removidos a
-   pedido do usuário) — só Pipeline/Empresas/Tarefas/Membros.
-3. Kanban de Tarefas (drag-and-drop) — ainda pendente de teste desde a
-   sessão anterior, ver `project_tarefas_kanban_trello` na memória.
+### Estado da execução do SPEC-CRM-GAMA.md (seção 6 — 9 fatias)
 
-Se achar bug na tela Empresas ou na busca de CNPJ, ver
-`project_contact_removido_empresa_expandida` na memória pro que mudou e
-por quê (Contact foi removido de propósito, não é regressão).
+- [x] **Fatia 1** — Migrations `raw_leads`, `task_attachments`, view
+      `v_busca_empresa_lead` (§3.1/§3.2/§3.5). RLS confirmada.
+- [x] **Fatia 2** — Seed das 4 stages do pipeline + limpeza de 3 stages
+      sujas ("Tiago Alves", dado de teste) que existiam no banco real
+      (§5). Validação de `name` no DTO de Stage corrigida (2-60 chars).
+- [x] **Fatia 3** — Tela Empresas ganhou filtro Todas/Leads/Clientes +
+      ficha (`?empresa=<id>&aba=`, 6 abas). Endpoint novo
+      `POST /activities` (só existia leitura — gap real achado na tabela
+      de reconciliação do spec, §2).
+- [x] **Fatia 4** — Pipeline: seletor de empresa/lead (`CompanyPicker`,
+      3 caminhos: empresa direta / aprovar lead na hora / cadastrar por
+      CNPJ), drag-and-drop real (`@dnd-kit`, substituindo o
+      `<select>+botão` antigo), previsão ponderada + taxa de fechamento,
+      subform de encerradas com filtro de mês. Endpoints novos:
+      `GET /busca-empresa-lead`, `POST /raw-leads/:id/approve`.
+- [ ] **Fatia 5** — Tarefas: comentários (§4.3) — **próxima a fazer**.
+- [ ] **Fatia 6** — Leads/Triagem (§4.4) — cria o módulo `raw_leads`
+      completo (hoje só tem `approve()`, da Fatia 4) + `LeadScoringService`
+      (fórmula exata em `gama-crm-mvp.html`, função `scoreRaw()` ~linha
+      694). **Importante**: até esta fatia rodar, `raw_leads` fica vazio
+      (0 linhas) — o seletor de empresa/lead da Fatia 4 só casa empresas,
+      nunca leads, e o `POST /raw-leads/:id/approve` não tem dado real
+      pra aprovar ainda (só testado com fixture manual em
+      `test/raw-leads.e2e-spec.ts`).
+- [ ] **Fatia 7** — Dashboard + Relatórios (§4.5).
+- [ ] **Fatia 8** — Anexos: bucket Storage privado `task-attachments`
+      (a tabela já existe, da Fatia 1) + upload via signed URL.
+- [ ] **Fatia 9** — Papéis Admin/Operador (§7.5) — **fazer por último**,
+      só depois de Empresas/Pipeline/Tarefas testados com um usuário só.
+      Sequência de segurança não-negociável: middleware injeta
+      `app.current_user_id`/`app.current_role` → testar → só então
+      aplicar as policies de RLS por papel → retestar com dois usuários.
+
+**NÃO testado no navegador em nenhuma fatia** (sem credencial real
+disponível nas sessões que construíram isso) — só build + testes
+automatizados (unit/e2e) a cada fatia, todos passando. **Prioridade de
+teste manual quando alguém logar:**
+1. Pipeline: arrastar um cartão entre colunas (drag-and-drop novo,
+   Fatia 4) — os cartões têm botões reais (Ganhar/Perder) dentro, usei
+   um padrão de "punho de arrasto" pra não conflitar, mas nunca cliquei
+   de verdade.
+2. Seletor de empresa no "Nova oportunidade" — buscar por nome/CNPJ,
+   cadastrar empresa nova pelo CNPJ direto do seletor.
+3. Ficha da empresa (`/dashboard/empresas`, clicar numa linha) — 6 abas,
+   registrar uma nota na Timeline.
+4. Tela Empresas — form expandido + botão "Buscar CNPJ".
+
+Cada fatia tem os detalhes de decisão/gotcha registrados na memória do
+Claude Code (`project_spec_crm_gama_execucao` — mas isso é local da
+máquina/conta que rodou, **não vai junto no git**; se outra pessoa/conta
+retomar sem acesso a essa memória, este arquivo + o `SPEC-CRM-GAMA.md`
+são a fonte de verdade completa).
 
 URLs de teste publicadas (mesmo Supabase real, sem banco de teste
 separado): frontend `https://web-gamma-olive-80.vercel.app`, backend
