@@ -76,6 +76,20 @@ enum PessoaTipo {
   PJ
 }
 
+// Módulo de Leads/Triagem (SPEC-CRM-GAMA.md, §3.1).
+enum RawLeadStatus {
+  novo
+  aprovado
+  descartado
+}
+
+enum LeadFonte {
+  econodata
+  apify
+  comexstat
+  manual
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Workspace — unidade de tenant. Toda tabela abaixo (exceto esta) carrega
 // workspace_id e tem RLS baseada em `app.current_workspace_id`.
@@ -97,6 +111,7 @@ model Workspace {
   taskLists     TaskList[]
   tasks         Task[]
   activities    Activity[]
+  rawLeads      RawLead[]
 
   @@map("workspaces")
 }
@@ -175,9 +190,50 @@ model Company {
   opportunities Opportunity[]
   tasks         Task[]
   activities    Activity[]
+  // Lead(s) da triagem que originaram (ou apontam pra) esta company — ver
+  // RawLead.promotedCompany. Normalmente 0 ou 1, mas sem constraint de
+  // unicidade: nada impede reprocessar/reimportar o mesmo CNPJ como lead
+  // de novo depois de já ter virado empresa.
+  originLeads   RawLead[]
 
   @@index([workspaceId])
   @@map("companies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// RawLead — staging de leads brutos do crawler/import (SPEC-CRM-GAMA.md,
+// §3.1). É a "peneira" antes do pipeline: cada lead é pontuado (score) e
+// filtrado por faixa quente/morno/frio na tela de triagem. Aprovar um lead
+// não recria uma Company do zero — ele já nasce com uma Company própria
+// (marcada via `tags` contendo "lead-triagem", ver §4.4 do spec), então
+// promotedCompanyId aponta pra ela desde a importação e "aprovar" é só
+// remover o marcador — histórico de activities/tasks nunca migra.
+// ─────────────────────────────────────────────────────────────────────────
+
+model RawLead {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId       String        @map("workspace_id") @db.Uuid
+  razaoSocial       String        @map("razao_social")
+  cnpj              String?
+  cnaePrincipal     String?       @map("cnae_principal")
+  cnaeDescricao     String?       @map("cnae_descricao")
+  porte             String?
+  uf                String?       @db.Char(2)
+  municipio         String?
+  situacao          String?
+  importador        Boolean       @default(false)
+  fonte             LeadFonte     @default(manual)
+  score             Int           @default(0)
+  status            RawLeadStatus @default(novo)
+  promotedCompanyId String?       @map("promoted_company_id") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  promotedCompany Company?  @relation(fields: [promotedCompanyId], references: [id])
+
+  @@index([workspaceId, status])
+  @@map("raw_leads")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -301,6 +357,7 @@ model Task {
   list           TaskList            @relation(fields: [listId], references: [id])
   checklistItems TaskChecklistItem[]
   comments       TaskComment[]
+  attachments    TaskAttachment[]
 
   @@index([workspaceId])
   @@index([listId])
@@ -335,6 +392,27 @@ model TaskComment {
 
   @@index([taskId])
   @@map("task_comments")
+}
+
+// Anexo de tarefa (SPEC-CRM-GAMA.md, §3.2) — a tabela guarda só o caminho
+// no bucket do Supabase Storage + metadados, nunca o binário. Upload real
+// via signed URL assinada pelo backend (fatia de frontend, não desta
+// migration) — o bucket `task-attachments` (privado) é criado fora de SQL
+// de tabela, no painel/CLI do Supabase.
+model TaskAttachment {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId      String   @map("task_id") @db.Uuid
+  storagePath String   @map("storage_path")
+  fileName    String   @map("file_name")
+  mimeType    String?  @map("mime_type")
+  sizeBytes   BigInt?  @map("size_bytes")
+  uploadedBy  String   @map("uploaded_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_attachments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

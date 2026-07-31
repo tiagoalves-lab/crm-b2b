@@ -5,7 +5,7 @@
 > `CLAUDE.md` na raiz do repo aponta pra cá e traz um resumo — qualquer
 > sessão (humana ou do Claude Code) deve ler isso antes de tocar em
 > `web/`, autenticação, ou qualquer endpoint que retorne dado de
-> Company/Contact/Opportunity.
+> Company/Opportunity.
 
 ## 1. Regra de ouro: o frontend é público
 
@@ -108,7 +108,7 @@ pré-requisito de segurança, não só de funcionalidade:
   mas revisar se não deveria entrar antes, junto com a Fase 2, dado que
   auth é superfície de ataque desde o primeiro deploy real).
 - **Logs nunca imprimem payload de request/response inteiro** em rota que
-  lida com dado de Company/Contact — nem em dev. Log estruturado, campos
+  lida com dado de Company — nem em dev. Log estruturado, campos
   específicos, nunca `console.log(req.body)` genérico.
 - Segredos do backend (`.env`) seguem exclusivamente por variável de
   ambiente — nunca hardcoded, nunca em `docs/`, nunca colados em chat.

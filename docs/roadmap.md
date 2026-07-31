@@ -41,7 +41,7 @@
       guarda que falha alto se a conexão usar um papel com BYPASSRLS (ver
       `docs/seguranca.md`, seção 3.1) — sem isso o teste podia "passar"
       sem provar nada.
-- [x] DDL de `Company`, `Contact`, `Pipeline`, `Stage`, `Opportunity`,
+- [x] DDL de `Company`, `Pipeline`, `Stage`, `Opportunity`,
       `Task`, `Activity` — inclui CHECK constraints (Task/Activity exigem
       exatamente uma relação polimórfica preenchida; `Opportunity` com
       `status = lost` exige `lost_reason`)
@@ -55,7 +55,7 @@
       `apply_migration` do conector Supabase (não `prisma migrate deploy`
       — ver nota abaixo). 9 tabelas criadas em `rrhcibsutyralogpwkxe`, RLS
       + `FORCE ROW LEVEL SECURITY` confirmados em `memberships`,
-      `companies`, `contacts`, `pipelines`, `stages`, `opportunities`,
+      `companies`, `pipelines`, `stages`, `opportunities`,
       `tasks`, `activities`. Papel `app_runtime` criado e confirmado
       (`rolsuper=false`, `rolbypassrls=false`, `rolcanlogin=false`).
 - [x] **Achado crítico corrigido na mesma sessão:** o event trigger nativo
@@ -102,7 +102,7 @@ localizado (`rrhcibsutyralogpwkxe`, região us-east-2, Postgres 17,
 `ACTIVE_HEALTHY`). Migration aplicada na mesma sessão — ver acima.
 
 **Critério de saída:** consegue criar um workspace, um usuário, logar, e
-inserir/consultar Company/Contact via query direta (sem API ainda) respeitando RLS.
+inserir/consultar Company via query direta (sem API ainda) respeitando RLS.
 **Atingido em 2026-07-24** — schema/RLS aplicados e confirmados contra o banco
 real, papel `app_runtime` configurado e validado, `test:e2e` passando de ponta
 a ponta (isolamento entre workspaces provado, não só SQL aplicado sem erro).
@@ -182,11 +182,10 @@ os dois itens adiados acima não bloqueiam a Fase 3.
 - [x] Infraestrutura compartilhada: `ValidationPipe` global (whitelist +
       forbidNonWhitelisted + transform), `PrismaExceptionFilter`
       (P2002/P2025/P2003 → 409/404/400), `ActivityService` central.
-- [x] **Company + Contact** (2026-07-24): CRUD completo, soft delete +
+- [x] **Company** (2026-07-24): CRUD completo, soft delete +
       restore, `PolicyService` aplicado em toda leitura/escrita, Activity
       emitida em create/update/delete/restore. `ownerUserId` validado
-      contra Membership ativo do workspace. E-mail de Contact único por
-      workspace. Testes: HTTP e2e (supertest + `overrideProvider` dos
+      contra Membership ativo do workspace. Testes: HTTP e2e (supertest + `overrideProvider` dos
       guards globais — `overrideGuard()` não funciona pra guards
       registrados via `APP_GUARD` nesta versão do Nest, ver
       `test/utils/fake-auth.ts`) cobrindo roteamento, validação e o ciclo
@@ -226,7 +225,7 @@ os dois itens adiados acima não bloqueiam a Fase 3.
       `@ExactlyOneOf` no DTO (400 na borda) + checagem independente no
       service (mesmo princípio do `lost`/`lostReason`). Alvo imutável
       após criação. Sem soft delete (schema não tem `deletedAt`, doc só
-      pede pra Company/Contact/Opportunity — assimetria intencional).
+      pede pra Company/Opportunity — assimetria intencional).
       Filtro `overdue` computado, nunca persistido. `PolicyService` foi
       desenhado em torno de `ownerUserId` (Fase 2); Task usa
       `assigneeUserId` com a mesma semântica — remapeado na borda do
@@ -234,23 +233,23 @@ os dois itens adiados acima não bloqueiam a Fase 3.
 - [x] Regras de negócio aplicadas na camada de serviço — todas cobertas
       acima (stage∈pipeline, `lost_reason`, Activity por mudança,
       versionamento otimista).
-- [x] Soft delete + endpoint de restauração — Company, Contact, Opportunity.
+- [x] Soft delete + endpoint de restauração — Company, Opportunity.
 
-**Critério de saída:** fluxo completo via API — criar company → contact →
+**Critério de saída:** fluxo completo via API — criar company →
 opportunity → mover pelo pipeline → marcar como ganho/perdido — com Activity
 sendo gerada automaticamente em cada passo. **Atingido em 2026-07-24.**
-**Fase 3 fechada** — 57 testes e2e + 26 unitários passando, todos os 5
-recursos (Company, Contact, Pipeline/Stage, Opportunity, Task) com CRUD via
+**Fase 3 fechada** — 57 testes e2e + 26 unitários passando, todos os
+recursos (Company, Pipeline/Stage, Opportunity, Task) com CRUD via
 REST, RBAC+ownership (`PolicyService`) e RLS (Fase 1) aplicados em toda
 leitura/escrita.
 
 ## Fase 4 — Atividades, tarefas e auditoria
-- [x] Feed de Activity por Company/Contact/Opportunity (timeline) —
-      `GET /activities?companyId=|contactId=|opportunityId=` (exatamente
+- [x] Feed de Activity por Company/Opportunity (timeline) —
+      `GET /activities?companyId=|opportunityId=` (exatamente
       um, `@ExactlyOneOf` + checagem redundante no service — ver achado
       abaixo), paginado, ordenado por `occurredAt desc`. Visibilidade
       segue a da entidade referenciada (`PolicyService.can`, mesma regra
-      de Company/Contact/Opportunity).
+      de Company/Opportunity).
 - [x] Tasks com `due_at`, atribuição, cálculo de overdue — já entregue na
       Fase 3 (`GET /tasks?overdue=true`, computado, nunca persistido).
 - [x] Notificações básicas — sem infraestrutura de push/e-mail neste

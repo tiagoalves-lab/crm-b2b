@@ -1,0 +1,2263 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gama CRM — MVP</title>
+<style>
+  :root{
+    /* Tema dark grafite (original) com accent azul da Gama (#052df4) no lugar do âmbar. */
+    --steel-900:#14181d; --steel-800:#1c222a; --steel-700:#252d37;
+    --steel-600:#323b47; --steel-500:#48525f; --steel-400:#6b7683;
+    --line:#2c343e; --line-bright:#3d4855;
+    --paper:#e8eaed; --paper-dim:#9ba4b0; --paper-faint:#6b7480;
+    /* accent = azul Gama; mantém o nome --amber para não reescrever usos */
+    --amber:#052df4; --amber-dim:#0423b8; --amber-glow:rgba(5,45,244,.16);
+    --amber-text:#6f93ff;
+    --brand:#052df4;
+    --on-accent:#ffffff;
+    --green:#3fb96b; --green-dim:rgba(63,185,107,.15);
+    --blue:#4a9fe0; --blue-dim:rgba(74,159,224,.15);
+    --purple:#9b7fe0; --purple-dim:rgba(155,127,224,.15);
+    --red:#e05a4a; --red-dim:rgba(224,90,74,.15);
+    --radius:6px;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--steel-900);color:var(--paper);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  ::selection{background:var(--amber-glow)}
+
+  /* ---------- shell ---------- */
+  .shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+  .sidebar{background:var(--steel-800);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .brand{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .brand-mark{width:28px;height:28px;border-radius:5px;background:linear-gradient(135deg,var(--brand),#3d8bff);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;color:var(--on-accent);font-size:15px;flex-shrink:0}
+  .brand-name{font-family:var(--mono);font-weight:600;letter-spacing:.5px;font-size:15px}
+  .brand-sub{font-family:var(--mono);font-size:9px;color:var(--paper-faint);letter-spacing:2px;text-transform:uppercase;margin-top:1px}
+  .nav{padding:10px;flex:1;overflow-y:auto}
+  .nav-label{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--paper-faint);padding:14px 10px 6px}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius);color:var(--paper-dim);cursor:pointer;font-size:13px;font-weight:500;transition:all .12s;border:1px solid transparent}
+  .nav-item:hover{background:var(--steel-700);color:var(--paper)}
+  .nav-item.active{background:var(--amber-glow);color:var(--amber-text);border-color:rgba(5,45,244,.35)}
+  .nav-item .ic{width:16px;height:16px;flex-shrink:0}
+  .nav-badge{margin-left:auto;font-family:var(--mono);font-size:10px;background:var(--steel-600);color:var(--paper-dim);padding:1px 6px;border-radius:8px}
+  .nav-item.active .nav-badge{background:var(--amber);color:var(--on-accent)}
+  .sidebar-foot{padding:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--steel-600);border:1px solid var(--line-bright);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--amber-text)}
+  .who{font-size:12px;font-weight:600;line-height:1.2}
+  .who-sub{font-size:10px;color:var(--paper-faint);font-family:var(--mono)}
+
+  /* ---------- main ---------- */
+  .main{overflow-y:auto;height:100vh}
+  .topbar{padding:16px 28px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:rgba(20,24,29,.85);backdrop-filter:blur(8px);position:sticky;top:0;z-index:20}
+  .page-title{font-size:18px;font-weight:600;letter-spacing:-.2px}
+  .page-sub{font-size:12px;color:var(--paper-faint);font-family:var(--mono);margin-top:1px}
+  .content{padding:24px 28px 60px}
+
+  /* ---------- buttons ---------- */
+  .btn{font-family:var(--sans);font-size:13px;font-weight:600;padding:8px 14px;border-radius:var(--radius);border:1px solid var(--line-bright);background:var(--steel-700);color:var(--paper);cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .12s;white-space:nowrap}
+  .btn:hover{background:var(--steel-600);border-color:var(--steel-500)}
+  .btn-primary{background:var(--amber);border-color:var(--amber);color:var(--on-accent)}
+  .btn-primary:hover{background:#ffb92e;border-color:#ffb92e}
+  .btn-ghost{background:transparent;border-color:transparent;color:var(--paper-dim)}
+  .btn-ghost:hover{background:var(--steel-700);color:var(--paper)}
+  .btn-danger:hover{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+  .btn-sm{padding:5px 10px;font-size:12px}
+  .btn .ic{width:15px;height:15px}
+
+  /* ---------- KPI cards ---------- */
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+  .kpi{background:var(--steel-800);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;position:relative;overflow:hidden}
+  .kpi::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--amber)}
+  .kpi.blue::before{background:var(--blue)} .kpi.green::before{background:var(--green)} .kpi.purple::before{background:var(--purple)}
+  .kpi-label{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-faint)}
+  .kpi-value{font-size:26px;font-weight:700;letter-spacing:-.5px;margin-top:6px;font-variant-numeric:tabular-nums}
+  .kpi-delta{font-family:var(--mono);font-size:11px;margin-top:4px;display:flex;align-items:center;gap:4px}
+  .up{color:var(--green)} .down{color:var(--red)}
+
+  /* ---------- panels ---------- */
+  .panel{background:var(--steel-800);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:20px}
+  .panel-head{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .panel-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .panel-title .ic{width:16px;height:16px;color:var(--amber)}
+  .panel-body{padding:18px}
+
+  /* ---------- pipeline board ---------- */
+  .board{display:grid;gap:12px;overflow-x:auto}
+  .board.b5{grid-template-columns:repeat(5,minmax(200px,1fr))}
+  .board.b3{grid-template-columns:repeat(3,minmax(220px,1fr))}
+  .board.b4{grid-template-columns:repeat(4,minmax(210px,1fr))}
+  .col{background:var(--steel-900);border:1px solid var(--line);border-radius:var(--radius);min-height:120px;display:flex;flex-direction:column}
+  .col.drag-over{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber) inset}
+  .col-head{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+  .col-head-top{display:flex;align-items:center;justify-content:space-between}
+  .col-name{font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px}
+  .col-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+  .col-count{font-family:var(--mono);font-size:10px;background:var(--steel-700);color:var(--paper-dim);padding:1px 7px;border-radius:8px}
+  .col-sum{font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+  .col-body{padding:10px;display:flex;flex-direction:column;gap:8px;flex:1}
+  .card{background:var(--steel-800);border:1px solid var(--line-bright);border-radius:5px;padding:11px;cursor:grab;transition:all .12s;border-left:2px solid var(--amber)}
+  .card:hover{border-color:var(--steel-500);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .card:active{cursor:grabbing}
+  .card.dragging{opacity:.4}
+  .card-co{font-size:13px;font-weight:600;line-height:1.3}
+  .card-prod{font-size:11px;color:var(--paper-dim);margin-top:3px;display:flex;align-items:center;gap:5px}
+  .card-foot{display:flex;align-items:center;justify-content:space-between;margin-top:9px}
+  .card-val{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--amber-text)}
+  .card-badge{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:4px;letter-spacing:.5px}
+  .mini-avatar{width:20px;height:20px;border-radius:50%;background:var(--steel-600);border:1px solid var(--line-bright);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;font-weight:600;color:var(--paper-dim)}
+  .card-score{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600}
+  .add-card{margin:0 10px 10px;padding:7px;border:1px dashed var(--line-bright);border-radius:5px;color:var(--paper-faint);font-size:11px;text-align:center;cursor:pointer;transition:all .12s}
+  .add-card:hover{border-color:var(--amber);color:var(--amber)}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-faint);padding:10px 14px;border-bottom:1px solid var(--line);font-weight:500;white-space:nowrap}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:13px}
+  tbody tr{transition:background .1s}
+  tbody tr:hover{background:var(--steel-700)}
+  tbody tr:last-child td{border-bottom:none}
+  .t-co{font-weight:600}
+  .t-sub{font-size:11px;color:var(--paper-faint);font-family:var(--mono)}
+  .cell-actions{display:flex;gap:4px;opacity:0;transition:opacity .1s}
+  tr:hover .cell-actions{opacity:1}
+  .icon-btn{width:28px;height:28px;border-radius:5px;border:1px solid var(--line);background:var(--steel-700);color:var(--paper-dim);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}
+  .icon-btn:hover{background:var(--steel-600);color:var(--paper)}
+  .icon-btn.danger:hover{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+  .icon-btn .ic{width:14px;height:14px}
+
+  /* ---------- pills ---------- */
+  .pill{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .pill::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+  .pill-green{background:var(--green-dim);color:var(--green)}
+  .pill-blue{background:var(--blue-dim);color:var(--blue)}
+  .pill-amber{background:var(--amber-glow);color:var(--amber-text)}
+  .pill-purple{background:var(--purple-dim);color:var(--purple)}
+  .pill-red{background:var(--red-dim);color:var(--red)}
+  .pill-gray{background:var(--steel-600);color:var(--paper-dim)}
+
+  /* ---------- kanban tarefas ---------- */
+  .task-card{background:var(--steel-800);border:1px solid var(--line-bright);border-radius:5px;padding:10px;cursor:grab;transition:all .12s;border-top:2px solid var(--paper-faint)}
+  .task-card:hover{border-color:var(--steel-500);transform:translateY(-1px)}
+  .task-card.dragging{opacity:.4}
+  .task-card.t-ligacao{border-top-color:var(--blue)}
+  .task-card.t-email{border-top-color:var(--purple)}
+  .task-card.t-visita{border-top-color:var(--amber)}
+  .task-card.t-proposta{border-top-color:var(--green)}
+  .task-card.t-followup{border-top-color:var(--red)}
+  .task-title{font-size:12px;font-weight:600;line-height:1.35}
+  .task-meta{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .task-link{font-size:10px;color:var(--paper-dim);font-family:var(--mono);display:flex;align-items:center;gap:4px}
+  .task-type{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.5px;padding:1px 5px;border-radius:3px;background:var(--steel-700);color:var(--paper-dim)}
+  .task-due{font-family:var(--mono);font-size:10px;margin-left:auto}
+  .due-late{color:var(--red)} .due-today{color:var(--amber-text)} .due-ok{color:var(--paper-faint)}
+
+  /* ---------- modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(10,12,15,.7);backdrop-filter:blur(3px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:60px 20px;overflow-y:auto}
+  .overlay.open{display:flex}
+  .modal{background:var(--steel-800);border:1px solid var(--line-bright);border-radius:8px;width:100%;max-width:520px;box-shadow:0 24px 60px rgba(0,0,0,.5);animation:pop .16s ease}
+  @keyframes pop{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+  .modal-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .modal-title{font-size:16px;font-weight:600}
+  .modal-body{padding:22px}
+  .modal-foot{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-dim);margin-bottom:6px}
+  .field input,.field select,.field textarea{width:100%;background:var(--steel-900);border:1px solid var(--line-bright);border-radius:var(--radius);padding:9px 12px;color:var(--paper);font-family:var(--sans);font-size:13px;transition:border .12s}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--amber)}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .field-hint{font-size:11px;color:var(--paper-faint);margin-top:5px;font-family:var(--mono)}
+
+  /* ---------- filters bar ---------- */
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+  .search{flex:1;min-width:200px;position:relative}
+  .search input{width:100%;background:var(--steel-800);border:1px solid var(--line);border-radius:var(--radius);padding:9px 12px 9px 36px;color:var(--paper);font-size:13px}
+  .search input:focus{outline:none;border-color:var(--line-bright)}
+  .search .ic{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--paper-faint)}
+  .seg{display:flex;background:var(--steel-800);border:1px solid var(--line);border-radius:var(--radius);padding:2px}
+  .seg button{padding:6px 12px;font-size:12px;font-weight:600;border:none;background:transparent;color:var(--paper-dim);border-radius:4px;cursor:pointer;font-family:var(--sans)}
+  .seg button.active{background:var(--steel-600);color:var(--paper)}
+
+  /* ---------- reports ---------- */
+  .report-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:20px}
+  .funnel-bar{display:flex;flex-direction:column;gap:10px}
+  .fbar{display:flex;align-items:center;gap:12px}
+  .fbar-label{width:110px;font-size:12px;color:var(--paper-dim);text-align:right;flex-shrink:0}
+  .fbar-track{flex:1;height:32px;background:var(--steel-900);border-radius:4px;overflow:hidden;position:relative;border:1px solid var(--line)}
+  .fbar-fill{height:100%;background:linear-gradient(90deg,var(--brand),#3d8bff);display:flex;align-items:center;padding-left:10px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--on-accent);transition:width .5s ease}
+  .fbar-val{width:70px;font-family:var(--mono);font-size:12px;color:var(--paper);flex-shrink:0}
+  .bars{display:flex;align-items:flex-end;gap:14px;height:180px;padding-top:20px}
+  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end}
+  .bar{width:100%;max-width:44px;background:linear-gradient(180deg,#3d8bff,var(--brand));border-radius:4px 4px 0 0;position:relative;transition:height .5s ease;min-height:4px}
+  .bar-v{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;color:var(--paper-dim);white-space:nowrap}
+  .bar-l{font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+  .donut-wrap{display:flex;align-items:center;gap:24px}
+  .legend{display:flex;flex-direction:column;gap:10px}
+  .leg-item{display:flex;align-items:center;gap:9px;font-size:12px}
+  .leg-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+  .leg-val{font-family:var(--mono);color:var(--paper-dim);margin-left:auto}
+
+  /* ---------- detail drawer ---------- */
+  .kv{display:grid;grid-template-columns:120px 1fr;gap:10px 16px;font-size:13px}
+  .kv dt{font-family:var(--mono);font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--paper-faint);padding-top:2px}
+  .kv dd{color:var(--paper)}
+
+  /* triagem */
+  .triage-bulkbar{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--amber-glow);border:1px solid rgba(5,45,244,.3);border-radius:var(--radius);margin-bottom:16px}
+  .triage-bulkbar.hidden{display:none}
+  .score-cell{display:flex;align-items:center;gap:10px;min-width:150px}
+  .score-mini{width:70px;height:6px;background:var(--steel-900);border-radius:3px;overflow:hidden;border:1px solid var(--line)}
+  .score-mini-fill{height:100%;border-radius:3px}
+  .tier-tag{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 7px;border-radius:4px;letter-spacing:.5px;text-transform:uppercase}
+  .tier-quente{background:var(--green-dim);color:var(--green)}
+  .tier-morno{background:var(--amber-glow);color:var(--amber-text)}
+  .tier-frio{background:var(--red-dim);color:var(--red)}
+  .checkcol{width:36px}
+  .triage-row.picked{background:var(--amber-glow)}
+  .score-why{font-size:11px;color:var(--paper-faint);cursor:help}
+  .funnel-stat{display:flex;gap:20px;margin-bottom:18px;flex-wrap:wrap}
+  .fstat{flex:1;min-width:120px;background:var(--steel-800);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;border-left:3px solid var(--paper-faint)}
+  .fstat.q{border-left-color:var(--green)} .fstat.m{border-left-color:var(--amber)} .fstat.f{border-left-color:var(--red)}
+  .fstat-v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .fstat-l{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--paper-faint);margin-top:2px}
+
+  /* ficha da empresa (drawer full-height à direita) */
+  .drawer-overlay{position:fixed;inset:0;background:rgba(10,12,15,.6);backdrop-filter:blur(2px);z-index:90;display:none}
+  .drawer-overlay.open{display:block}
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:640px;max-width:92vw;background:var(--steel-900);border-left:1px solid var(--line-bright);z-index:95;transform:translateX(100%);transition:transform .22s ease;display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.4)}
+  .drawer.open{transform:translateX(0)}
+  .drawer-head{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--steel-800)}
+  .drawer-head-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .drawer-co-name{font-size:19px;font-weight:600;letter-spacing:-.3px;line-height:1.25}
+  .drawer-co-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-top:4px}
+  .drawer-tabs{display:flex;gap:2px;padding:0 24px;background:var(--steel-800);border-bottom:1px solid var(--line);overflow-x:auto}
+  .drawer-tab{padding:11px 14px;font-size:13px;font-weight:500;color:var(--paper-dim);border:none;background:transparent;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:6px;font-family:var(--sans)}
+  .drawer-tab:hover{color:var(--paper)}
+  .drawer-tab.active{color:var(--amber-text);border-bottom-color:var(--amber)}
+  .drawer-tab .tab-count{font-family:var(--mono);font-size:10px;background:var(--steel-600);color:var(--paper-dim);padding:1px 6px;border-radius:8px}
+  .drawer-tab.active .tab-count{background:var(--amber);color:var(--on-accent)}
+  .drawer-body{flex:1;overflow-y:auto;padding:22px 24px}
+  .drawer-tabpane{display:none} .drawer-tabpane.active{display:block}
+
+  /* timeline */
+  .add-note{background:var(--steel-800);border:1px solid var(--line-bright);border-radius:8px;padding:14px;margin-bottom:20px}
+  .add-note-types{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .note-type-btn{padding:5px 11px;font-size:12px;font-weight:500;border:1px solid var(--line-bright);background:var(--steel-900);color:var(--paper-dim);border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .12s;font-family:var(--sans)}
+  .note-type-btn:hover{border-color:var(--steel-500);color:var(--paper)}
+  .note-type-btn.active{background:var(--amber-glow);border-color:var(--amber);color:var(--amber-text)}
+  .note-type-btn .ic{width:13px;height:13px}
+  .add-note textarea{width:100%;background:var(--steel-900);border:1px solid var(--line-bright);border-radius:6px;padding:10px;color:var(--paper);font-family:var(--sans);font-size:13px;resize:vertical;min-height:60px}
+  .add-note textarea:focus{outline:none;border-color:var(--amber)}
+  .add-note-foot{display:flex;justify-content:flex-end;margin-top:10px}
+
+  .timeline{position:relative;padding-left:28px}
+  .timeline::before{content:'';position:absolute;left:9px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .tl-item{position:relative;margin-bottom:20px}
+  .tl-item:last-child{margin-bottom:0}
+  .tl-dot{position:absolute;left:-28px;top:0;width:20px;height:20px;border-radius:50%;background:var(--steel-800);border:2px solid var(--line-bright);display:flex;align-items:center;justify-content:center}
+  .tl-dot .ic{width:11px;height:11px}
+  .tl-head{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+  .tl-type{font-family:var(--mono);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:1px 7px;border-radius:4px}
+  .tl-author{font-size:12px;font-weight:600;color:var(--paper)}
+  .tl-date{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-left:auto}
+  .tl-text{font-size:13px;color:var(--paper-dim);line-height:1.55;background:var(--steel-800);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+  .tl-item.sistema .tl-text{background:transparent;border-style:dashed;color:var(--paper-faint);font-style:italic}
+
+  /* mini list dentro das abas */
+  .drawer-list-item{background:var(--steel-800);border:1px solid var(--line);border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .drawer-list-item:hover{border-color:var(--line-bright)}
+  .dli-title{font-size:13px;font-weight:600}
+  .dli-sub{font-size:11px;color:var(--paper-faint);font-family:var(--mono);margin-top:2px}
+  .overview-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}
+  .ov-stat{background:var(--steel-800);border:1px solid var(--line);border-radius:6px;padding:12px 14px;border-left:3px solid var(--amber)}
+  .ov-stat.blue{border-left-color:var(--blue)} .ov-stat.green{border-left-color:var(--green)} .ov-stat.purple{border-left-color:var(--purple)}
+  .ov-stat-l{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-faint)}
+  .ov-stat-v{font-size:19px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .drawer-section-title{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--paper-faint);margin:22px 0 12px;display:flex;align-items:center;gap:8px}
+  .drawer-section-title::after{content:'';flex:1;height:1px;background:var(--line)}
+  .posvenda-empty{text-align:center;padding:30px;color:var(--paper-faint);border:1px dashed var(--line-bright);border-radius:8px}
+  .posvenda-empty .ic{width:28px;height:28px;margin:0 auto 10px;opacity:.5}
+
+  .row-clickable{cursor:pointer}
+  .row-clickable:hover .t-co{color:var(--amber)}
+
+  /* dados cadastrais */
+  .cnpj-search{background:var(--steel-800);border:1px solid var(--line-bright);border-radius:8px;padding:16px;margin-bottom:20px}
+  .cnpj-search-row{display:flex;gap:10px;align-items:flex-end}
+  .cnpj-search .field{margin:0;flex:1}
+  .cad-source{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-bottom:14px;padding:7px 11px;background:var(--green-dim);border-radius:5px;border:1px solid rgba(63,185,107,.25)}
+  .cad-source.estadual{background:var(--amber-glow);border-color:rgba(5,45,244,.25)}
+  .cad-source .ic{width:13px;height:13px;color:var(--green)}
+  .cad-source.estadual .ic{color:var(--amber)}
+  .cad-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
+  .cad-cell{background:var(--steel-800);padding:11px 14px}
+  .cad-cell.full{grid-column:1/-1}
+  .cad-k{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-faint)}
+  .cad-v{font-size:13px;color:var(--paper);margin-top:3px;line-height:1.4}
+  .cad-v.mono{font-family:var(--mono);font-size:12px}
+  .cnae-list{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+  .cnae-chip{font-size:11px;color:var(--paper-dim);background:var(--steel-900);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block;width:fit-content}
+  .cad-empty{text-align:center;padding:34px 20px;border:1px dashed var(--line-bright);border-radius:8px}
+  .cad-empty .ic{width:30px;height:30px;margin:0 auto 12px;opacity:.5;color:var(--paper-faint)}
+  .cad-empty p{font-size:13px;color:var(--paper-dim);margin-bottom:16px;max-width:340px;margin-left:auto;margin-right:auto}
+  .spin{animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .badge-contrib{font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px}
+  .badge-contrib.sim{background:var(--green-dim);color:var(--green)}
+  .badge-contrib.nao{background:var(--steel-600);color:var(--paper-dim)}
+
+  /* dados cadastrais */
+  /* tarefas: tabela */
+  .task-type-dot{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:7px;vertical-align:middle}
+  .task-check{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line-bright);background:var(--steel-900);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}
+  .task-check:hover{border-color:var(--amber)}
+  .task-check.done{background:var(--green);border-color:var(--green)}
+  .task-check.done .ic{width:12px;height:12px;color:var(--steel-900)}
+  .task-title-cell{font-weight:500}
+  .task-title-cell.done{text-decoration:line-through;color:var(--paper-faint)}
+  .attach-count{font-family:var(--mono);font-size:10px;color:var(--paper-faint);display:inline-flex;align-items:center;gap:3px;margin-left:8px}
+  .attach-count .ic{width:12px;height:12px}
+
+  /* tarefas: calendário */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .cal-title{font-size:16px;font-weight:600}
+  .cal-nav{display:flex;gap:6px}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal-dow{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-faint);text-align:center;padding-bottom:6px}
+  .cal-cell{background:var(--steel-800);border:1px solid var(--line);border-radius:6px;min-height:96px;padding:7px;display:flex;flex-direction:column;gap:4px;overflow:hidden}
+  .cal-cell.other-month{opacity:.35}
+  .cal-cell.today{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber) inset}
+  .cal-daynum{font-family:var(--mono);font-size:11px;color:var(--paper-dim);font-weight:600}
+  .cal-cell.today .cal-daynum{color:var(--amber-text)}
+  .cal-task{font-size:10px;padding:3px 6px;border-radius:4px;background:var(--steel-700);border-left:2px solid var(--paper-faint);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .1s}
+  .cal-task:hover{background:var(--steel-600)}
+  .cal-task.done{opacity:.5;text-decoration:line-through}
+  .cal-more{font-size:9px;color:var(--paper-faint);font-family:var(--mono);cursor:pointer}
+
+  /* detalhe da tarefa: anexos + chat */
+  .task-detail-section{margin-top:22px}
+  .attach-drop{border:1.5px dashed var(--line-bright);border-radius:8px;padding:16px;text-align:center;cursor:pointer;transition:all .12s;margin-bottom:12px}
+  .attach-drop:hover{border-color:var(--amber);background:var(--amber-glow)}
+  .attach-drop .ic{width:22px;height:22px;color:var(--paper-faint);margin-bottom:6px}
+  .attach-drop-text{font-size:12px;color:var(--paper-dim)}
+  .attach-item{display:flex;align-items:center;gap:11px;background:var(--steel-800);border:1px solid var(--line);border-radius:6px;padding:9px 12px;margin-bottom:7px}
+  .attach-icon{width:34px;height:34px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .attach-icon.pdf{background:var(--red-dim);color:var(--red)}
+  .attach-icon.imagem{background:var(--purple-dim);color:var(--purple)}
+  .attach-icon.planilha{background:var(--green-dim);color:var(--green)}
+  .attach-icon.outro{background:var(--steel-600);color:var(--paper-dim)}
+  .attach-icon .ic{width:17px;height:17px}
+  .attach-info{flex:1;min-width:0}
+  .attach-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .attach-meta{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-top:1px}
+
+  .chat-thread{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
+  .chat-msg{display:flex;gap:10px}
+  .chat-avatar{width:28px;height:28px;border-radius:50%;background:var(--steel-600);border:1px solid var(--line-bright);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--amber-text);flex-shrink:0}
+  .chat-bubble{flex:1;background:var(--steel-800);border:1px solid var(--line);border-radius:8px;border-top-left-radius:2px;padding:9px 12px}
+  .chat-msg-head{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+  .chat-author{font-size:12px;font-weight:600}
+  .chat-time{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-left:auto}
+  .chat-text{font-size:13px;color:var(--paper-dim);line-height:1.5}
+  .chat-input-row{display:flex;gap:8px;align-items:flex-end}
+  .chat-input-row textarea{flex:1;background:var(--steel-900);border:1px solid var(--line-bright);border-radius:8px;padding:9px 12px;color:var(--paper);font-family:var(--sans);font-size:13px;resize:none;min-height:40px}
+  .chat-input-row textarea:focus{outline:none;border-color:var(--amber)}
+  .chat-empty{text-align:center;padding:20px;color:var(--paper-faint);font-size:12px}
+
+  /* tarefas: tabela */
+  /* subform oportunidades encerradas */
+  .closed-section{margin-top:28px;border-top:1px solid var(--line);padding-top:20px}
+  .closed-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .closed-title{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--paper-faint)}
+  .closed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+  .closed-card{border-radius:8px;padding:12px 14px;border:1px solid;border-left-width:3px;cursor:pointer;transition:all .12s}
+  .closed-card:hover{transform:translateY(-1px)}
+  .closed-card.ganho{background:var(--blue-dim);border-color:rgba(61,139,255,.3);border-left-color:var(--blue)}
+  .closed-card.perdido{background:var(--red-dim);border-color:rgba(224,90,74,.3);border-left-color:var(--red)}
+  .closed-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .closed-co{font-size:13px;font-weight:600}
+  .closed-tag{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 7px;border-radius:4px;letter-spacing:.5px;text-transform:uppercase}
+  .closed-tag.ganho{background:var(--blue);color:#fff}
+  .closed-tag.perdido{background:var(--red);color:#fff}
+  .closed-prod{font-size:11px;color:var(--paper-dim);margin-bottom:6px}
+  .closed-foot{display:flex;align-items:center;justify-content:space-between}
+  .closed-val{font-family:var(--mono);font-size:13px;font-weight:600}
+  .closed-val.ganho{color:var(--blue)}
+  .closed-val.perdido{color:var(--red)}
+  .closed-motivo{font-size:10px;color:var(--red);font-style:italic}
+
+  /* subform oportunidades encerradas */
+  /* filtro de período do subform */
+  .period-filter{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .period-nav{display:flex;align-items:center;gap:2px;background:var(--steel-800);border:1px solid var(--line);border-radius:var(--radius);padding:2px}
+  .period-arrow{width:28px;height:26px;border:none;background:transparent;color:var(--paper-dim);cursor:pointer;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .12s}
+  .period-arrow:hover{background:var(--steel-600);color:var(--paper)}
+  .period-label{font-size:13px;font-weight:500;min-width:110px;text-align:center;color:var(--paper);padding:0 4px}
+  .period-custom-btn{width:30px;height:30px;border:1px solid var(--line-bright);background:var(--amber);color:var(--on-accent);border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s}
+  .period-custom-btn:hover{background:#0740ff}
+  .period-custom-btn.active{background:var(--amber-dim)}
+  .period-range{display:flex;align-items:center;gap:8px;background:var(--steel-800);border:1px solid var(--line-bright);border-radius:var(--radius);padding:6px 10px;margin-bottom:14px}
+  .period-range.hidden{display:none}
+  .period-range label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--paper-faint)}
+  .period-range input{background:var(--steel-900);border:1px solid var(--line-bright);border-radius:5px;padding:5px 8px;color:var(--paper);font-size:12px;font-family:var(--sans)}
+  .period-range input:focus{outline:none;border-color:var(--amber)}
+  .closed-summary{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+  .cs-stat{font-size:12px;color:var(--paper-dim)}
+  .cs-stat b{font-family:var(--mono);font-size:14px}
+
+  /* filtro de período do subform */
+  /* seletor de empresa unificado (empresas + leads) */
+  .co-picker{position:relative}
+  .co-picker-selected{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--steel-800);border:1px solid var(--amber);border-radius:var(--radius)}
+  .co-picker-selected .co-nome{font-weight:600;font-size:13px}
+  .co-picker-selected .co-tag{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 7px;border-radius:4px;text-transform:uppercase}
+  .co-tag.empresa{background:var(--green-dim);color:var(--green)}
+  .co-tag.lead{background:var(--blue-dim);color:var(--amber-text)}
+  .co-tag.nova{background:var(--amber-glow);color:var(--amber-text)}
+  .co-picker-clear{margin-left:auto;cursor:pointer;color:var(--paper-faint);background:none;border:none;padding:4px}
+  .co-picker-clear:hover{color:var(--red)}
+  .co-results{border:1px solid var(--line-bright);border-radius:var(--radius);margin-top:6px;max-height:230px;overflow-y:auto;background:var(--steel-800)}
+  .co-result{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line);transition:background .1s}
+  .co-result:last-child{border-bottom:none}
+  .co-result:hover{background:var(--steel-600)}
+  .co-result-info{flex:1;min-width:0}
+  .co-result-nome{font-size:13px;font-weight:500}
+  .co-result-sub{font-size:11px;color:var(--paper-faint);font-family:var(--mono)}
+  .co-result-none{padding:16px 12px;text-align:center}
+  .co-result-none p{font-size:12px;color:var(--paper-dim);margin-bottom:10px}
+  .co-cnpj-box{padding:12px;border-top:1px solid var(--line);background:var(--steel-900)}
+
+  /* seletor de empresa unificado */
+  .empty{text-align:center;padding:40px;color:var(--paper-faint)}
+  .empty .ic{width:32px;height:32px;margin:0 auto 12px;opacity:.4}
+
+  .view{display:none}
+  .view.active{display:block}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--steel-700);border:1px solid var(--line-bright);border-left:3px solid var(--green);padding:12px 20px;border-radius:var(--radius);font-size:13px;font-weight:500;box-shadow:0 12px 30px rgba(0,0,0,.4);z-index:200;transition:transform .25s ease;display:flex;align-items:center;gap:10px}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  .toast .ic{width:16px;height:16px;color:var(--green)}
+
+  @media(max-width:1100px){.kpi-row{grid-template-columns:repeat(2,1fr)}.report-grid{grid-template-columns:1fr}}
+  @media(max-width:720px){.shell{grid-template-columns:1fr}.sidebar{display:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">G</div>
+      <div>
+        <div class="brand-name">GAMA</div>
+        <div class="brand-sub">CRM · MVP</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-label">Comercial</div>
+      <div class="nav-item active" data-view="dashboard" onclick="nav(this)">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Painel
+      </div>
+      <div class="nav-item" data-view="triagem" onclick="nav(this)">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+        Leads
+        <span class="nav-badge" id="badge-triagem">0</span>
+      </div>
+      <div class="nav-item" data-view="propostas" onclick="nav(this)">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4"/></svg>
+        Pipeline
+        <span class="nav-badge" id="badge-prop">0</span>
+      </div>
+      <div class="nav-item" data-view="tarefas" onclick="nav(this)">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Tarefas
+        <span class="nav-badge" id="badge-task">0</span>
+      </div>
+      <div class="nav-label">Cadastros</div>
+      <div class="nav-item" data-view="clientes" onclick="nav(this)">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>
+        Empresas
+        <span class="nav-badge" id="badge-cli">0</span>
+      </div>
+      <div class="nav-label">Análise</div>
+      <div class="nav-item" data-view="relatorios" onclick="nav(this)">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>
+        Relatórios
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="avatar">TF</div>
+      <div>
+        <div class="who">Tiago F.</div>
+        <div class="who-sub">Representante</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="page-title" id="pageTitle">Painel comercial</div>
+        <div class="page-sub" id="pageSub">Visão geral da carteira</div>
+      </div>
+      <div id="topActions"></div>
+    </div>
+    <div class="content">
+      <div id="view-dashboard" class="view active"></div>
+      <div id="view-triagem" class="view"></div>
+      <div id="view-propostas" class="view"></div>
+      <div id="view-tarefas" class="view"></div>
+      <div id="view-clientes" class="view"></div>
+      <div id="view-relatorios" class="view"></div>
+    </div>
+  </main>
+</div>
+
+<!-- DRAWER FICHA DA EMPRESA -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeFicha()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head" id="drawerHead"></div>
+  <div class="drawer-tabs" id="drawerTabs"></div>
+  <div class="drawer-body" id="drawerBody"></div>
+</div>
+
+<!-- MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle">Novo registro</div>
+      <button class="btn-ghost btn btn-sm" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><span id="toastMsg"></span></div>
+
+<script>
+/* =====================================================================
+   BANCO DE DADOS FICTÍCIO (em memória — simula o Supabase)
+   ===================================================================== */
+const DB = {
+  // Pipeline de PROSPECÇÃO — unidade: lead
+  leadStages: [
+    {id:'novo', nome:'Novo', cor:'#4a9fe0'},
+    {id:'contatado', nome:'Contatado', cor:'#9b7fe0'},
+    {id:'qualificado', nome:'Qualificado', cor:'#3fb96b'},
+  ],
+  // Pipeline de PROPOSTAS — unidade: oportunidade
+  dealStages: [
+    {id:'solicitacao', nome:'Solicitação de Propostas', cor:'#9b7fe0'},
+    {id:'elaboracao', nome:'Elaboração de Propostas', cor:'#4a9fe0'},
+    {id:'aprovacao', nome:'Aprovação de Propostas', cor:'#5dcaa5'},
+    {id:'negociacao', nome:'Negociação e Fechamento', cor:'#f2a71b'},
+  ],
+  // etapas de encerramento (saem do fluxo ativo, vão para o subform)
+  dealClosedStages:[
+    {id:'fechado_ganho', nome:'Ganho', cor:'#3d8bff'},
+    {id:'fechado_perdido', nome:'Perdido', cor:'#e05a4a'},
+  ],
+  probByStage:{solicitacao:15,elaboracao:35,aprovacao:60,negociacao:80,fechado_ganho:100,fechado_perdido:0},
+  produtos:['Laser fibra 3kW','Laser fibra 6kW','Laser tubo','Dobradeira CNC','Torno CNC','Centro de usinagem','Robô de solda'],
+
+  // STAGING — leads brutos do crawler/Apify (simula os ~1.500). Ainda não são pipeline.
+  rawLeads:[
+    {id:5001,razao:'Fundição Serra Gaúcha Ltda',cnpj:'11.442.887/0001-55',cnae:'24.51-2',cnaeDesc:'Fundição de ferro e aço',porte:'MÉDIO',uf:'RS',municipio:'Bento Gonçalves',fonte:'econodata',importador:true,situacao:'ATIVA',status:'novo'},
+    {id:5002,razao:'Metalúrgica Planalto SA',cnpj:'19.003.221/0001-40',cnae:'25.11-0',cnaeDesc:'Estruturas metálicas',porte:'GRANDE',uf:'RS',municipio:'Passo Fundo',fonte:'comexstat',importador:true,situacao:'ATIVA',status:'novo'},
+    {id:5003,razao:'Serralheria do Vale ME',cnpj:'27.882.114/0001-19',cnae:'25.12-8',cnaeDesc:'Esquadrias de metal',porte:'PEQUENO',uf:'RS',municipio:'Lajeado',fonte:'apify',importador:false,situacao:'ATIVA',status:'novo'},
+    {id:5004,razao:'Comércio de Aços Fronteira Ltda',cnpj:'33.221.556/0001-72',cnae:'46.85-1',cnaeDesc:'Comércio atacadista de metais',porte:'MÉDIO',uf:'RS',municipio:'Bagé',fonte:'econodata',importador:false,situacao:'ATIVA',status:'novo'},
+    {id:5005,razao:'Implementos Agrícolas Missões SA',cnpj:'41.778.003/0001-28',cnae:'28.33-0',cnaeDesc:'Máquinas para agricultura',porte:'GRANDE',uf:'RS',municipio:'Santo Ângelo',fonte:'comexstat',importador:true,situacao:'ATIVA',status:'novo'},
+    {id:5006,razao:'Caldeiraria Central Ltda',cnpj:'52.119.884/0001-63',cnae:'25.11-0',cnaeDesc:'Estruturas metálicas',porte:'MÉDIO',uf:'RS',municipio:'Santa Maria',fonte:'apify',importador:false,situacao:'ATIVA',status:'novo'},
+    {id:5007,razao:'Padaria e Confeitaria Trigo Dourado',cnpj:'60.334.221/0001-05',cnae:'10.91-1',cnaeDesc:'Fabricação de produtos de padaria',porte:'PEQUENO',uf:'RS',municipio:'Cruz Alta',fonte:'apify',importador:false,situacao:'ATIVA',status:'novo'},
+    {id:5008,razao:'Usinagem de Precisão Kunz Ltda',cnpj:'70.556.118/0001-90',cnae:'25.99-3',cnaeDesc:'Usinagem, tornearia e solda',porte:'MÉDIO',uf:'RS',municipio:'Panambi',fonte:'econodata',importador:true,situacao:'ATIVA',status:'novo'},
+    {id:5009,razao:'Estruturas Metálicas Rio Grande SA',cnpj:'81.223.447/0001-31',cnae:'25.11-0',cnaeDesc:'Estruturas metálicas',porte:'GRANDE',uf:'RS',municipio:'Rio Grande',fonte:'comexstat',importador:true,situacao:'ATIVA',status:'novo'},
+    {id:5010,razao:'Ferragem Popular do Sul ME',cnpj:'90.118.552/0001-88',cnae:'47.44-0',cnaeDesc:'Comércio varejista de ferragens',porte:'PEQUENO',uf:'RS',municipio:'Erechim',fonte:'apify',importador:false,situacao:'ATIVA',status:'novo'},
+    {id:5011,razao:'Metalúrgica Baixa Vista Ltda',cnpj:'12.887.334/0001-46',cnae:'25.39-0',cnaeDesc:'Serviços de usinagem e solda',porte:'PEQUENO',uf:'RS',municipio:'Frederico Westphalen',fonte:'econodata',importador:false,situacao:'BAIXADA',status:'novo'},
+    {id:5012,razao:'Fábrica de Máquinas Zenit SA',cnpj:'23.998.114/0001-70',cnae:'28.62-3',cnaeDesc:'Máquinas para indústria',porte:'GRANDE',uf:'RS',municipio:'Caxias do Sul',fonte:'comexstat',importador:true,situacao:'ATIVA',status:'novo'},
+    {id:5013,razao:'Marcenaria Arte em Madeira ME',cnpj:'34.552.889/0001-12',cnae:'31.01-2',cnaeDesc:'Fabricação de móveis de madeira',porte:'PEQUENO',uf:'RS',municipio:'Gramado',fonte:'apify',importador:false,situacao:'ATIVA',status:'novo'},
+    {id:5014,razao:'Tornearia Industrial Progresso Ltda',cnpj:'45.118.667/0001-59',cnae:'25.99-3',cnaeDesc:'Usinagem, tornearia e solda',porte:'MÉDIO',uf:'RS',municipio:'Novo Hamburgo',fonte:'econodata',importador:true,situacao:'ATIVA',status:'novo'},
+  ],
+
+  leads:[
+    {id:1,razao:'Metalúrgica Rio Pardo Ltda',cnpj:'04.221.118/0001-92',cnae:'25.11-0',porte:'MÉDIO',uf:'RS',municipio:'Santa Cruz do Sul',fonte:'econodata',importador:true,score:82,stage:'qualificado',contato:'Jonas Becker',fone:'(51) 99812-3344'},
+    {id:2,razao:'Serralheria Boa Vista ME',cnpj:'09.887.442/0001-10',cnae:'25.12-8',porte:'PEQUENO',uf:'RS',municipio:'Santa Maria',fonte:'apify',importador:false,score:54,stage:'contatado',contato:'Marli Souza',fone:'(55) 99677-1200'},
+    {id:3,razao:'Indústria Sant\'Ana de Implementos',cnpj:'12.334.556/0001-77',cnae:'28.33-0',porte:'GRANDE',uf:'RS',municipio:'Passo Fundo',fonte:'comexstat',importador:true,score:91,stage:'qualificado',contato:'Ricardo Menezes',fone:'(54) 99123-8890'},
+    {id:4,razao:'Caldeiraria Zanetti Ltda',cnpj:'22.998.100/0001-34',cnae:'25.99-3',porte:'MÉDIO',uf:'RS',municipio:'Caxias do Sul',fonte:'econodata',importador:false,score:67,stage:'contatado',contato:'Paulo Zanetti',fone:'(54) 99988-4521'},
+    {id:5,razao:'Tornearia Missões Precisão',cnpj:'33.110.887/0001-08',cnae:'25.99-3',porte:'PEQUENO',uf:'RS',municipio:'Santo Ângelo',fonte:'apify',importador:false,score:48,stage:'novo',contato:'Sérgio Lima',fone:'(55) 99700-3312'},
+    {id:6,razao:'Estruturas Metálicas Guarani SA',cnpj:'41.556.223/0001-61',cnae:'25.11-0',porte:'GRANDE',uf:'RS',municipio:'Ijuí',fonte:'comexstat',importador:true,score:88,stage:'novo',contato:'Helena Prass',fone:'(55) 99456-7788'},
+    {id:7,razao:'Agroimplementos Fronteira Ltda',cnpj:'55.223.998/0001-45',cnae:'28.33-0',porte:'MÉDIO',uf:'RS',municipio:'Uruguaiana',fonte:'econodata',importador:true,score:74,stage:'contatado',contato:'Ademar Rocha',fone:'(55) 99333-1140'},
+  ],
+
+  deals:[
+    {id:101,cliente:'Metalúrgica Rio Pardo Ltda',leadId:1,produto:'Laser fibra 3kW',valor:180000,stage:'elaboracao',prob:35,fechamento:'2026-08-25',responsavel:'TF',finame:true,contato:'Jonas Becker'},
+    {id:102,cliente:'Indústria Sant\'Ana de Implementos',leadId:3,produto:'Centro de usinagem',valor:320000,stage:'solicitacao',prob:15,fechamento:'2026-09-30',responsavel:'TF',finame:true,contato:'Ricardo Menezes'},
+    {id:103,cliente:'Caldeiraria Zanetti Ltda',leadId:4,produto:'Robô de solda',valor:150000,stage:'solicitacao',prob:15,fechamento:'2026-09-15',responsavel:'TF',finame:false,contato:'Paulo Zanetti'},
+    {id:104,cliente:'Estruturas Metálicas Guarani SA',leadId:6,produto:'Laser tubo',valor:290000,stage:'aprovacao',prob:55,fechamento:'2026-08-30',responsavel:'TF',finame:true,contato:'Helena Prass'},
+    {id:105,cliente:'Agroimplementos Fronteira Ltda',leadId:7,produto:'Dobradeira CNC',valor:95000,stage:'negociacao',prob:70,fechamento:'2026-08-18',responsavel:'TF',finame:true,contato:'Ademar Rocha'},
+    {id:106,cliente:'Tornearia Missões Precisão',leadId:5,produto:'Torno CNC',valor:210000,stage:'negociacao',prob:80,fechamento:'2026-08-12',responsavel:'TF',finame:false,contato:'Sérgio Lima'},
+    {id:107,cliente:'Serralheria Ferro & Arte',leadId:null,produto:'Laser fibra 3kW',valor:175000,stage:'fechado_ganho',prob:100,fechamento:'2026-07-10',encerradoEm:'2026-07-10',responsavel:'TF',finame:true,contato:'Cláudio Reis'},
+    {id:108,cliente:'MecânicaTri Rodas',leadId:null,produto:'Dobradeira CNC',valor:88000,stage:'fechado_perdido',prob:0,fechamento:'2026-07-02',encerradoEm:'2026-07-02',responsavel:'TF',finame:false,contato:'Diego Alves',motivo:'Preço / concorrente'},
+    {id:109,cliente:'Metalúrgica Céu Azul Ltda',leadId:null,produto:'Torno CNC',valor:230000,stage:'fechado_ganho',prob:100,fechamento:'2026-06-18',encerradoEm:'2026-06-18',responsavel:'TF',finame:true,contato:'Vera Lúcia'},
+    {id:110,cliente:'Ferragens União ME',leadId:null,produto:'Dobradeira CNC',valor:76000,stage:'fechado_perdido',prob:0,fechamento:'2026-06-05',encerradoEm:'2026-06-05',responsavel:'TF',finame:false,contato:'Ivo Prass',motivo:'Sem orçamento no momento'},
+    {id:111,cliente:'Indústria Nova Era SA',leadId:null,produto:'Laser tubo',valor:310000,stage:'fechado_ganho',prob:100,fechamento:'2026-05-22',encerradoEm:'2026-05-22',responsavel:'TF',finame:true,contato:'Marcos Antônio'},
+  ],
+
+  tasks:[
+    {id:201,titulo:'Ligar para Jonas — retorno da proposta',tipo:'ligacao',vinculoTipo:'oportunidade',vinculoId:101,vinculoNome:'Metalúrgica Rio Pardo',prazo:'2026-07-29',status:'hoje',
+     anexos:[{nome:'proposta_laser_3kw_v2.pdf',tipo:'pdf',tam:'480 KB'},{nome:'simulacao_finame.xlsx',tipo:'planilha',tam:'62 KB'}],
+     comentarios:[{autor:'Tiago F.',data:'2026-07-28T16:20',texto:'Jonas pediu pra ligar depois das 14h. Ele quer revisar o prazo de entrega antes de decidir.'}]},
+    {id:202,titulo:'Enviar revisão de proposta com FINAME',tipo:'proposta',vinculoTipo:'oportunidade',vinculoId:104,vinculoNome:'Estruturas Guarani',prazo:'2026-07-29',status:'hoje',
+     anexos:[{nome:'condicoes_finame_2026.pdf',tipo:'pdf',tam:'310 KB'}],comentarios:[]},
+    {id:203,titulo:'Primeiro contato — apresentação Gama',tipo:'ligacao',vinculoTipo:'lead',vinculoId:6,vinculoNome:'Estruturas Guarani',prazo:'2026-07-28',status:'afazer',anexos:[],comentarios:[]},
+    {id:204,titulo:'Visita técnica para diagnóstico',tipo:'visita',vinculoTipo:'oportunidade',vinculoId:102,vinculoNome:'Indústria Sant\'Ana',prazo:'2026-08-05',status:'afazer',
+     anexos:[{nome:'foto_galpao_cliente.jpg',tipo:'imagem',tam:'1.8 MB'},{nome:'layout_atual_producao.png',tipo:'imagem',tam:'920 KB'}],
+     comentarios:[{autor:'Tiago F.',data:'2026-07-26T09:10',texto:'Levar o notebook com o simulador de corte. Cliente quer ver a máquina rodando material dele.'}]},
+    {id:205,titulo:'Follow-up pós-envio de proposta',tipo:'followup',vinculoTipo:'oportunidade',vinculoId:106,vinculoNome:'Tornearia Missões',prazo:'2026-07-30',status:'aguardando',anexos:[],comentarios:[]},
+    {id:206,titulo:'E-mail com estudo de ROI',tipo:'email',vinculoTipo:'oportunidade',vinculoId:105,vinculoNome:'Agroimplementos Fronteira',prazo:'2026-07-31',status:'afazer',
+     anexos:[{nome:'estudo_roi_dobradeira.pdf',tipo:'pdf',tam:'540 KB'}],comentarios:[]},
+    {id:207,titulo:'Qualificar orçamento e decisor',tipo:'ligacao',vinculoTipo:'lead',vinculoId:5,vinculoNome:'Tornearia Missões',prazo:'2026-07-27',status:'aguardando',anexos:[],comentarios:[]},
+    {id:208,titulo:'Agradecer e pedir indicação',tipo:'followup',vinculoTipo:'oportunidade',vinculoId:107,vinculoNome:'Serralheria Ferro & Arte',prazo:'2026-07-25',status:'concluida',anexos:[],
+     comentarios:[{autor:'Tiago F.',data:'2026-07-25T11:00',texto:'Cliente super satisfeito. Indicou a Metalúrgica Baixa Vista. Registrei o lead na triagem.'}]},
+  ],
+
+  clientes:[
+    {id:301,razao:'Serralheria Ferro & Arte Ltda',cnpj:'18.442.771/0001-23',contato:'Cláudio Reis',fone:'(55) 99811-2030',cidade:'Santa Maria/RS',status:'ativo',ltv:175000,ultimaCompra:'2026-07-10',
+     cad:{fantasia:'Ferro & Arte',naturezaJuridica:'206-2 - Sociedade Empresária Limitada',situacao:'ATIVA',aberturaEm:'2011-03-14',porte:'ME',regime:'Simples Nacional',cnaePrincipal:'25.12-8 / Fabricação de esquadrias de metal',cnaeSecundarios:['25.42-0 / Fabricação de artigos de serralheria','43.30-4 / Obras de acabamento'],logradouro:'Rua dos Andradas, 1200 - Centro',cep:'97010-032',municipioUF:'Santa Maria/RS',telefoneReceita:'(55) 3222-1100',emailReceita:'contato@ferroearte.com.br',ie:'096/0388211',contribuinteIcms:true,ieSituacao:'HABILITADA',fonteFederal:'Receita Federal · BrasilAPI',buscadoEm:'2026-05-02'}},
+    {id:302,razao:'Metalúrgica Rio Pardo Ltda',cnpj:'04.221.118/0001-92',contato:'Jonas Becker',fone:'(51) 99812-3344',cidade:'Santa Cruz do Sul/RS',status:'negociando',ltv:0,ultimaCompra:'—',
+     cad:null},
+    {id:303,razao:'Fábrica Cima Componentes',cnpj:'27.665.410/0001-88',contato:'Renata Vidal',fone:'(51) 99220-4567',cidade:'Porto Alegre/RS',status:'ativo',ltv:410000,ultimaCompra:'2026-05-22',
+     cad:{fantasia:'Cima Componentes',naturezaJuridica:'205-4 - Sociedade Anônima Fechada',situacao:'ATIVA',aberturaEm:'2005-08-22',porte:'EPP',regime:'Lucro Presumido',cnaePrincipal:'25.39-0 / Serviços de usinagem, tornearia e solda',cnaeSecundarios:['28.40-2 / Máquinas-ferramenta'],logradouro:'Av. Assis Brasil, 3400 - Sarandi',cep:'91110-000',municipioUF:'Porto Alegre/RS',telefoneReceita:'(51) 3340-5500',emailReceita:'fiscal@cimacomp.com.br',ie:'096/2255410',contribuinteIcms:true,ieSituacao:'HABILITADA',fonteFederal:'Receita Federal · BrasilAPI',buscadoEm:'2026-04-10'}},
+  ],
+  // Base fictícia que simula o retorno da Receita/BrasilAPI ao buscar por CNPJ.
+  // No backend real, isto vem de web/app/api/cnpj/route.ts (proxy p/ BrasilAPI).
+  receitaMock:{
+    '04.221.118/0001-92':{fantasia:'Rio Pardo Metais',naturezaJuridica:'206-2 - Sociedade Empresária Limitada',situacao:'ATIVA',aberturaEm:'2009-06-30',porte:'MÉDIO',regime:'Lucro Presumido',cnaePrincipal:'25.11-0 / Fabricação de estruturas metálicas',cnaeSecundarios:['25.99-3 / Fabricação de outros produtos de metal','46.85-1 / Comércio atacadista de produtos siderúrgicos'],logradouro:'Rod. BR-471, Km 12 - Distrito Industrial',cep:'96835-000',municipioUF:'Santa Cruz do Sul/RS',telefoneReceita:'(51) 3715-8800',emailReceita:'compras@riopardometais.com.br',fonteFederal:'Receita Federal · BrasilAPI'},
+  },
+
+  // INTERAÇÕES — espelha a tabela Activity do backend (append-only: trilha de auditoria).
+  // Tipos: nota, ligacao, reuniao, visita, email, sistema (evento automático)
+  interactions:[
+    {id:401,companyId:301,tipo:'sistema',autor:'Sistema',data:'2026-05-02T09:10',texto:'Lead promovido da triagem para a prospecção · score 82, faixa A'},
+    {id:402,companyId:301,tipo:'ligacao',autor:'Tiago F.',data:'2026-05-04T14:30',texto:'Primeiro contato com Cláudio. Terceiriza corte a laser hoje, gasta ~R$ 8k/mês. Interesse real em internalizar. Decisor é ele mesmo.'},
+    {id:403,companyId:301,tipo:'visita',autor:'Tiago F.',data:'2026-05-12T10:00',texto:'Visita técnica ao galpão. Espaço adequado para laser 3kW, rede elétrica precisa de adequação (orçar com parceiro). Cliente animado.'},
+    {id:404,companyId:301,tipo:'nota',autor:'Tiago F.',data:'2026-05-18T16:45',texto:'Montei business case: payback 24 meses considerando fim da terceirização. Enviar via FINAME — parcela cabe no que já paga hoje.'},
+    {id:405,companyId:301,tipo:'reuniao',autor:'Tiago F.',data:'2026-06-20T11:00',texto:'Fechamento! Assinou proposta do laser 3kW via FINAME. Entrega prevista 45 dias. Cliente pediu treinamento de operador incluso.'},
+    {id:406,companyId:301,tipo:'sistema',autor:'Sistema',data:'2026-07-10T08:00',texto:'Oportunidade marcada como GANHO · R$ 175.000'},
+
+    {id:411,companyId:302,tipo:'sistema',autor:'Sistema',data:'2026-06-15T09:00',texto:'Lead promovido da triagem · score 82, faixa A'},
+    {id:412,companyId:302,tipo:'ligacao',autor:'Tiago F.',data:'2026-06-18T15:20',texto:'Jonas retornou. Empresa importa aço, tem capital. Avaliando trocar fornecedor terceirizado por máquina própria. Pediu proposta formal.'},
+    {id:413,companyId:302,tipo:'email',autor:'Tiago F.',data:'2026-07-02T10:15',texto:'Enviei proposta do laser fibra 3kW com estudo de ROI anexo. Aguardando retorno para agendar visita técnica.'},
+    {id:414,companyId:302,tipo:'nota',autor:'Tiago F.',data:'2026-07-22T17:30',texto:'Ainda em negociação. Jonas comparando com concorrente. Reforçar diferencial de assistência técnica local e prazo de peças.'},
+
+    {id:421,companyId:303,tipo:'reuniao',autor:'Tiago F.',data:'2026-04-10T14:00',texto:'Reunião de renovação. Cliente satisfeito com a dobradeira entregue em 2025. Falou em expandir com centro de usinagem no próximo ano.'},
+    {id:422,companyId:303,tipo:'sistema',autor:'Sistema',data:'2026-05-22T08:00',texto:'Oportunidade marcada como GANHO · R$ 410.000'},
+    {id:423,companyId:303,tipo:'nota',autor:'Tiago F.',data:'2026-06-30T09:20',texto:'PÓS-VENDA: ligar em setembro para checar satisfação e sondar o centro de usinagem que ela mencionou. Cliente indicou a Serralheria Ferro & Arte.'},
+  ],
+
+  interactionTypes:{
+    nota:{label:'Nota',icon:'M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7',cor:'#9b7fe0'},
+    ligacao:{label:'Ligação',icon:'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72',cor:'#4a9fe0'},
+    reuniao:{label:'Reunião',icon:'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8z',cor:'#3fb96b'},
+    visita:{label:'Visita',icon:'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z',cor:'#f2a71b'},
+    email:{label:'E-mail',icon:'M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zM22 6l-10 7L2 6',cor:'#e05a4a'},
+    sistema:{label:'Sistema',icon:'M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4l3 2',cor:'#6b7480'},
+  },
+
+  taskStages:[
+    {id:'afazer',nome:'A fazer'},
+    {id:'hoje',nome:'Hoje'},
+    {id:'aguardando',nome:'Aguardando cliente'},
+    {id:'concluida',nome:'Concluída'},
+  ],
+  seq:1000
+};
+const nextId=()=>++DB.seq;
+
+/* =====================================================================
+   HELPERS
+   ===================================================================== */
+const $=s=>document.querySelector(s);
+const brl=n=>'R$ '+ (n>=1000000 ? (n/1000000).toFixed(2).replace('.',',')+' mi' : (n/1000).toFixed(0)+' mil');
+const brlFull=n=>'R$ '+n.toLocaleString('pt-BR');
+const TODAY='2026-07-29';
+function scoreColor(s){ if(s>=80) return 'background:var(--green-dim);color:var(--green)'; if(s>=60) return 'background:var(--amber-glow);color:var(--amber-text)'; return 'background:var(--red-dim);color:var(--red)';}
+function fmtDate(d){ if(!d||d==='—')return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y.slice(2)}`;}
+function dueClass(d){ if(d<TODAY)return 'due-late'; if(d===TODAY)return 'due-today'; return 'due-ok';}
+function toast(msg){ $('#toastMsg').textContent=msg; $('#toast').classList.add('show'); setTimeout(()=>$('#toast').classList.remove('show'),2200);}
+
+/* Scoring automático — a "camada 1" da triagem: a máquina peneira os brutos.
+   Cada critério que o Tiago domina vira ponto. Total 0–100. */
+function scoreRaw(r){
+  let s=0; const reasons=[];
+  // CNAE aderente (divisões 25–30 = metalmecânica alvo)
+  const div=parseInt((r.cnae||'').slice(0,2),10);
+  if(div>=25 && div<=30){ s+=40; reasons.push('CNAE alvo (25–30) +40'); }
+  else if(div===24){ s+=20; reasons.push('CNAE metalurgia próxima +20'); }
+  else { reasons.push('CNAE fora do alvo +0'); }
+  // Importador (Comex Stat) — sinal forte de capital
+  if(r.importador){ s+=25; reasons.push('Importa via Comex Stat +25'); }
+  else { reasons.push('Não importa +0'); }
+  // Porte
+  if(r.porte==='GRANDE'){ s+=20; reasons.push('Porte grande +20'); }
+  else if(r.porte==='MÉDIO'){ s+=13; reasons.push('Porte médio +13'); }
+  else { s+=5; reasons.push('Porte pequeno +5'); }
+  // Situação cadastral ativa
+  if(r.situacao==='ATIVA'){ s+=10; reasons.push('Situação ativa +10'); }
+  else { s-=20; reasons.push('Situação irregular −20'); }
+  // Região RS (todos são, mas mantém a lógica explícita)
+  if(r.uf==='RS'){ s+=5; reasons.push('Região RS +5'); }
+  return { score:Math.max(0,Math.min(100,s)), reasons };
+}
+function scoreTier(s){ if(s>=70)return 'quente'; if(s>=45)return 'morno'; return 'frio'; }
+
+/* =====================================================================
+   NAV
+   ===================================================================== */
+const TITLES={dashboard:['Painel comercial','Visão geral da carteira'],triagem:['Leads','Caixa de entrada do crawler · scoring, tarefas e histórico'],propostas:['Pipeline de Oportunidades','Ciclo de vida da venda · unidade: R$'],tarefas:['Tarefas','Rotina consolidada'],clientes:['Empresas','Cadastro único · leads e clientes'],relatorios:['Relatórios','Conversão, ciclo e previsão']};
+function nav(el){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  el.classList.add('active');
+  const v=el.dataset.view;
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  $('#view-'+v).classList.add('active');
+  $('#pageTitle').textContent=TITLES[v][0];
+  $('#pageSub').textContent=TITLES[v][1];
+  renderTopActions(v);
+  render(v);
+}
+function renderTopActions(v){
+  const a=$('#topActions');
+  if(v==='triagem') a.innerHTML=`<button class="btn" onclick="reScoreAll()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Recalcular scores</button>`;
+  else if(v==='propostas') a.innerHTML=`<button class="btn btn-primary" onclick="openDealForm()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nova oportunidade</button>`;
+  else if(v==='tarefas') a.innerHTML=`<button class="btn btn-primary" onclick="openTaskForm()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nova tarefa</button>`;
+  else if(v==='clientes') a.innerHTML=`<button class="btn btn-primary" onclick="openClienteForm()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nova empresa</button>`;
+  else a.innerHTML='';
+}
+function render(v){
+  if(v==='dashboard') renderDashboard();
+  if(v==='triagem') renderTriagem();
+  if(v==='propostas') renderPropostas();
+  if(v==='tarefas') renderTarefas();
+  if(v==='clientes') renderClientes();
+  if(v==='relatorios') renderRelatorios();
+  updateBadges();
+}
+function updateBadges(){
+  const bt=$('#badge-triagem'); if(bt) bt.textContent=DB.rawLeads.filter(r=>r.status==='novo').length;
+  const bp=$('#badge-prop'); if(bp) bp.textContent=DB.deals.filter(d=>!d.stage.startsWith('fechado')).length;
+  const btk=$('#badge-task'); if(btk) btk.textContent=DB.tasks.filter(t=>t.status!=='concluida').length;
+  const bc=$('#badge-cli'); if(bc) bc.textContent=DB.clientes.length;
+}
+
+/* =====================================================================
+   DASHBOARD
+   ===================================================================== */
+function renderDashboard(){
+  const abertas=DB.deals.filter(d=>!d.stage.startsWith('fechado'));
+  const totalAberto=abertas.reduce((s,d)=>s+d.valor,0);
+  const ponderado=abertas.reduce((s,d)=>s+d.valor*d.prob/100,0);
+  const ganhas=DB.deals.filter(d=>d.stage==='fechado_ganho');
+  const ganho=ganhas.reduce((s,d)=>s+d.valor,0);
+  const taskHoje=DB.tasks.filter(t=>t.status!=='concluida' && t.prazo<=TODAY).length;
+  const filaTriagem=DB.rawLeads.filter(r=>r.status==='novo').length;
+
+  $('#view-dashboard').innerHTML=`
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Pipeline em aberto</div><div class="kpi-value">${brl(totalAberto)}</div><div class="kpi-delta up">▲ ${abertas.length} oportunidades ativas</div></div>
+      <div class="kpi blue"><div class="kpi-label">Previsão ponderada</div><div class="kpi-value">${brl(ponderado)}</div><div class="kpi-delta"><span style="color:var(--paper-faint)">valor × probabilidade</span></div></div>
+      <div class="kpi green"><div class="kpi-label">Ganho no mês</div><div class="kpi-value">${brl(ganho)}</div><div class="kpi-delta up">▲ ${ganhas.length} fechada(s)</div></div>
+      <div class="kpi purple" style="cursor:pointer" onclick="document.querySelector('[data-view=triagem]').click()"><div class="kpi-label">Fila de triagem</div><div class="kpi-value">${filaTriagem}</div><div class="kpi-delta ${filaTriagem>0?'down':''}">${filaTriagem>0?'⚠ leads a qualificar':'fila zerada'}</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4"/></svg>Funil de propostas — resumo</div>
+        <button class="btn btn-sm btn-ghost" onclick="document.querySelector('[data-view=propostas]').click()">Abrir pipeline →</button>
+      </div>
+      <div class="panel-body">
+        <div class="funnel-bar">${funnelRows()}</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Ações de hoje</div>
+        <button class="btn btn-sm btn-ghost" onclick="document.querySelector('[data-view=tarefas]').click()">Ver todas →</button>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <table><tbody>
+        ${DB.tasks.filter(t=>t.status!=='concluida'&&t.prazo<=TODAY).map(t=>`
+          <tr>
+            <td style="width:40px"><span class="task-type">${t.tipo}</span></td>
+            <td class="t-co">${t.titulo}</td>
+            <td class="t-sub">${t.vinculoTipo==='lead'?'🔍':'📈'} ${t.vinculoNome}</td>
+            <td style="text-align:right"><span class="task-due ${dueClass(t.prazo)}">${t.prazo<TODAY?'atrasada':'hoje'}</span></td>
+            <td style="width:60px;text-align:right"><button class="btn btn-sm" onclick="completeTask(${t.id})">Feita</button></td>
+          </tr>`).join('')||'<tr><td class="empty">Nenhuma ação pendente para hoje 🎉</td></tr>'}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+function funnelRows(){
+  const stages=DB.dealStages.filter(s=>!s.id.startsWith('fechado'));
+  const counts=stages.map(s=>({...s,deals:DB.deals.filter(d=>d.stage===s.id)}));
+  const max=Math.max(...counts.map(c=>c.deals.reduce((s,d)=>s+d.valor,0)),1);
+  return counts.map(c=>{
+    const sum=c.deals.reduce((s,d)=>s+d.valor,0);
+    const pct=Math.max(sum/max*100,3);
+    return `<div class="fbar">
+      <div class="fbar-label">${c.nome}</div>
+      <div class="fbar-track"><div class="fbar-fill" style="width:${pct}%">${c.deals.length} deal(s)</div></div>
+      <div class="fbar-val">${brl(sum)}</div>
+    </div>`;
+  }).join('');
+}
+
+/* =====================================================================
+   TRIAGEM — caixa de entrada do crawler (staging → prospecção)
+   ===================================================================== */
+let triageFilter='todos';
+let triagePicked=new Set();
+function renderTriagem(){
+  const novos=DB.rawLeads.filter(r=>r.status==='novo');
+  const scored=novos.map(r=>({...r,...scoreRaw(r)}));
+  const q=scored.filter(x=>scoreTier(x.score)==='quente').length;
+  const m=scored.filter(x=>scoreTier(x.score)==='morno').length;
+  const f=scored.filter(x=>scoreTier(x.score)==='frio').length;
+  const aprovados=DB.rawLeads.filter(r=>r.status==='aprovado').length;
+  const descartados=DB.rawLeads.filter(r=>r.status==='descartado').length;
+
+  $('#view-triagem').innerHTML=`
+    <div class="panel" style="background:var(--blue-dim);border-color:rgba(74,159,224,.3);margin-bottom:16px">
+      <div class="panel-body" style="padding:12px 18px;display:flex;align-items:center;gap:12px">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" style="width:18px;height:18px;flex-shrink:0"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+        <span style="font-size:12px;color:var(--paper-dim)">Estes são os leads <b>brutos</b> do crawler/Apify (aqui ~${novos.length}, na prática 1.500+). A máquina pontua; <b style="color:var(--amber-text)">você aprova os bons</b> — eles viram empresas (tipo lead) com ficha, tarefas e histórico. Nem todo lead vira cliente, mas o histórico fica registrado. O resto fica aqui, sem poluir a carteira.</span>
+      </div>
+    </div>
+
+    <div class="funnel-stat">
+      <div class="fstat"><div class="fstat-v">${novos.length}</div><div class="fstat-l">Na fila de triagem</div></div>
+      <div class="fstat q"><div class="fstat-v" style="color:var(--green)">${q}</div><div class="fstat-l">Quentes (≥70)</div></div>
+      <div class="fstat m"><div class="fstat-v" style="color:var(--amber-text)">${m}</div><div class="fstat-l">Mornos (45–69)</div></div>
+      <div class="fstat f"><div class="fstat-v" style="color:var(--red)">${f}</div><div class="fstat-l">Frios (&lt;45)</div></div>
+      <div class="fstat"><div class="fstat-v" style="color:var(--paper-dim)">${aprovados}/${descartados}</div><div class="fstat-l">Aprov. / descart.</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="seg">
+        <button class="${triageFilter==='todos'?'active':''}" onclick="setTriageFilter('todos')">Todos</button>
+        <button class="${triageFilter==='quente'?'active':''}" onclick="setTriageFilter('quente')">Quentes</button>
+        <button class="${triageFilter==='morno'?'active':''}" onclick="setTriageFilter('morno')">Mornos</button>
+        <button class="${triageFilter==='frio'?'active':''}" onclick="setTriageFilter('frio')">Frios</button>
+      </div>
+      <div class="search"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Buscar razão social ou CNAE..." oninput="filterTriage(this.value)"></div>
+      <button class="btn btn-sm" onclick="autoPickQuentes()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Selecionar quentes</button>
+    </div>
+
+    <div class="triage-bulkbar hidden" id="bulkbar">
+      <span style="font-size:13px;font-weight:600"><span id="pickCount">0</span> selecionado(s)</span>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm btn-ghost" onclick="clearPick()">Limpar</button>
+      <button class="btn btn-sm btn-danger" onclick="bulkDiscard()">Descartar</button>
+      <button class="btn btn-sm btn-primary" onclick="bulkApprove()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Aprovar p/ prospecção</button>
+    </div>
+
+    <div class="panel">
+      <table id="triageTable">
+        <thead><tr>
+          <th class="checkcol"><input type="checkbox" id="pickAll" onclick="toggleAll(this)"></th>
+          <th>Empresa</th><th>CNAE</th><th>Porte</th><th>Origem</th>
+          <th>Score de qualificação</th><th style="text-align:right">Ação</th>
+        </tr></thead>
+        <tbody id="triageBody">${triageRows(scored)}</tbody>
+      </table>
+    </div>`;
+  updatePickBar();
+}
+function triageRows(scored,search=''){
+  let rows=scored;
+  if(triageFilter!=='todos') rows=rows.filter(r=>scoreTier(r.score)===triageFilter);
+  if(search) rows=rows.filter(r=>(r.razao+r.cnae+r.cnaeDesc).toLowerCase().includes(search.toLowerCase()));
+  rows=rows.sort((a,b)=>b.score-a.score);
+  if(!rows.length) return '<tr><td colspan="7" class="empty">Nenhum lead nesta faixa 🎯</td></tr>';
+  const tierColor={quente:'var(--green)',morno:'var(--amber)',frio:'var(--red)'};
+  return rows.map(r=>{
+    const tier=scoreTier(r.score);
+    return `<tr class="triage-row ${triagePicked.has(r.id)?'picked':''}" data-id="${r.id}">
+      <td class="checkcol" onclick="event.stopPropagation()"><input type="checkbox" ${triagePicked.has(r.id)?'checked':''} onclick="togglePick(${r.id})"></td>
+      <td class="row-clickable" onclick="openLeadFicha(${r.id})"><div class="t-co">${r.razao}</div><div class="t-sub">${r.cnpj} · ${r.municipio}/${r.uf}${r.situacao!=='ATIVA'?' · <span style=\"color:var(--red)\">'+r.situacao+'</span>':''}</div></td>
+      <td><div style="font-family:var(--mono);font-size:12px">${r.cnae}</div><div class="t-sub" style="max-width:150px;white-space:normal">${r.cnaeDesc}</div></td>
+      <td><span class="pill pill-gray">${r.porte}</span></td>
+      <td><span class="task-type">${r.fonte}</span>${r.importador?'<div class="t-sub" style="color:var(--green);margin-top:3px">↧ importa</div>':''}</td>
+      <td>
+        <div class="score-cell">
+          <span class="tier-tag tier-${tier}">${r.score}</span>
+          <div class="score-mini"><div class="score-mini-fill" style="width:${r.score}%;background:${tierColor[tier]}"></div></div>
+          <span class="score-why" title="${r.reasons.join(' · ')}">ⓘ</span>
+        </div>
+      </td>
+      <td style="text-align:right"><div style="display:inline-flex;gap:4px">
+        <button class="icon-btn" title="Abrir ficha (tarefas e histórico)" onclick="openLeadFicha(${r.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg></button>
+        <button class="icon-btn" title="Aprovar" onclick="approveRaw(${r.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></button>
+        <button class="icon-btn danger" title="Descartar" onclick="discardRaw(${r.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+function currentScored(){ return DB.rawLeads.filter(r=>r.status==='novo').map(r=>({...r,...scoreRaw(r)})); }
+function setTriageFilter(f){ triageFilter=f; renderTriagem(); }
+function filterTriage(v){ $('#triageBody').innerHTML=triageRows(currentScored(),v); }
+function togglePick(id){ triagePicked.has(id)?triagePicked.delete(id):triagePicked.add(id); updatePickBar(); document.querySelector(`.triage-row[data-id="${id}"]`)?.classList.toggle('picked'); }
+function toggleAll(cb){ const scored=currentScored(); let rows=scored; if(triageFilter!=='todos') rows=rows.filter(r=>scoreTier(r.score)===triageFilter);
+  if(cb.checked) rows.forEach(r=>triagePicked.add(r.id)); else triagePicked.clear(); renderTriagem(); }
+function clearPick(){ triagePicked.clear(); renderTriagem(); }
+function autoPickQuentes(){ currentScored().filter(r=>scoreTier(r.score)==='quente').forEach(r=>triagePicked.add(r.id)); renderTriagem(); toast('Leads quentes selecionados'); }
+function updatePickBar(){ const bar=$('#bulkbar'); if(!bar)return; const n=triagePicked.size; $('#pickCount').textContent=n; bar.classList.toggle('hidden',n===0); }
+function promoteRawToCompany(r){
+  const sc=scoreRaw(r);
+  const newId=nextId();
+  DB.clientes.push({
+    id:newId, razao:r.razao, cnpj:r.cnpj, contato:'—', fone:'—',
+    cidade:`${r.municipio}/${r.uf}`, status:'negociando', ltv:0, ultimaCompra:'—',
+    origemScore:sc.score, origemFonte:r.fonte,
+    cad:{cnaePrincipal:r.cnae+' / '+(r.cnaeDesc||''), situacao:r.situacao, porte:r.porte, importador:r.importador, municipioUF:`${r.municipio}/${r.uf}`, fonteFederal:'—', buscadoEm:null, cnaeSecundarios:[], ie:null, contribuinteIcms:false, ieSituacao:null}
+  });
+  // ── Carrega o histórico feito na fase de LEAD para a empresa ──
+  // No protótipo o lead usa companyId virtual (90000+id); reassociamos à empresa nova.
+  const leadVirtualCid=90000+r.id;
+  let migradas=0;
+  DB.interactions.forEach(i=>{ if(i.companyId===leadVirtualCid){ i.companyId=newId; migradas++; } });
+  // Tarefas do lead passam a apontar para a empresa (mantêm-se no board)
+  DB.tasks.forEach(t=>{ if(t.vinculoTipo==='lead' && t.vinculoId===r.id){ t.vinculoTipo='oportunidade'; t.vinculoId=newId; t.vinculoNome=r.razao; } });
+  // registra a origem na timeline
+  DB.interactions.push({id:nextId(), companyId:newId, tipo:'sistema', autor:'Sistema', data:'2026-07-29T09:00',
+    texto:`Lead aprovado na triagem · score ${sc.score} (${scoreTier(sc.score)}) · origem ${r.fonte}.${migradas?' Histórico de '+migradas+' contato(s) da fase de lead preservado.':''}`});
+  return newId;
+}
+function approveRaw(id){
+  const r=DB.rawLeads.find(x=>x.id===id); if(!r)return;
+  r.status='aprovado';
+  promoteRawToCompany(r);
+  triagePicked.delete(id); renderTriagem(); updateBadges(); toast('✓ Lead aprovado — virou empresa, com histórico e tarefas preservados');
+}
+function discardRaw(id){ const r=DB.rawLeads.find(x=>x.id===id); if(r)r.status='descartado'; triagePicked.delete(id); renderTriagem(); updateBadges(); toast('Lead descartado (fica na staging)'); }
+function bulkApprove(){
+  const ids=[...triagePicked]; let n=0;
+  ids.forEach(id=>{ const r=DB.rawLeads.find(x=>x.id===id); if(r&&r.status==='novo'){ r.status='aprovado'; promoteRawToCompany(r); n++; } });
+  triagePicked.clear(); renderTriagem(); updateBadges(); toast(`✓ ${n} lead(s) viraram empresas com histórico`);
+}
+function bulkDiscard(){ const ids=[...triagePicked]; let n=0; ids.forEach(id=>{ const r=DB.rawLeads.find(x=>x.id===id); if(r&&r.status==='novo'){ r.status='descartado'; n++; } }); triagePicked.clear(); renderTriagem(); updateBadges(); toast(`${n} lead(s) descartado(s)`); }
+function reScoreAll(){ renderTriagem(); toast('Scores recalculados'); }
+
+/* =====================================================================
+   PIPELINE PROSPECÇÃO (leads)
+   ===================================================================== */
+function renderProspeccao(){
+  const board=DB.leadStages.map(st=>{
+    const items=DB.leads.filter(l=>l.stage===st.id);
+    return `<div class="col" data-stage="${st.id}" data-kind="lead"
+        ondragover="allowDrop(event)" ondrop="dropLead(event,'${st.id}')" ondragleave="dragLeave(event)">
+      <div class="col-head">
+        <div class="col-head-top">
+          <div class="col-name"><span class="col-dot" style="background:${st.cor}"></span>${st.nome}</div>
+          <span class="col-count">${items.length}</span>
+        </div>
+        <div class="col-sum">score médio ${items.length?Math.round(items.reduce((s,l)=>s+l.score,0)/items.length):0}</div>
+      </div>
+      <div class="col-body">
+        ${items.map(l=>`
+          <div class="card" draggable="true" ondragstart="dragLead(event,${l.id})" ondragend="dragEnd(event)" onclick="openLeadDetail(${l.id})" style="border-left-color:${st.cor}">
+            <div class="card-co">${l.razao}</div>
+            <div class="card-prod">${l.municipio}/${l.uf} · CNAE ${l.cnae}</div>
+            <div class="card-foot">
+              <span class="card-score" style="${scoreColor(l.score)}">${l.score} pts</span>
+              <span class="card-badge pill-gray" style="text-transform:uppercase">${l.fonte}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+      ${st.id==='qualificado'?'':`<div class="add-card" onclick="openLeadForm('${st.id}')">+ lead</div>`}
+      ${st.id==='qualificado'?'<div class="add-card" style="border-color:var(--green);color:var(--green)" onclick="event.stopPropagation()">↑ arraste p/ propostas no card</div>':''}
+    </div>`;
+  }).join('');
+
+  $('#view-prospeccao').innerHTML=`
+    <div class="toolbar">
+      <div class="search"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Buscar por razão social ou CNPJ..." oninput="filterLeads(this.value)"></div>
+      <div style="font-size:12px;color:var(--paper-faint);font-family:var(--mono)">${DB.leads.length} leads · fonte: Econodata / Apify / Comex Stat</div>
+    </div>
+    <div class="panel" style="background:var(--blue-dim);border-color:rgba(74,159,224,.3);margin-bottom:16px">
+      <div class="panel-body" style="padding:12px 18px;display:flex;align-items:center;gap:12px">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" style="width:18px;height:18px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <span style="font-size:12px;color:var(--paper-dim)">Ao chegar em <b style="color:var(--green)">Qualificado</b>, abra o lead e clique em <b>"Promover para propostas"</b> — o handoff cria uma oportunidade no outro funil.</span>
+      </div>
+    </div>
+    <div id="leadBoard" class="board b3">${board}</div>`;
+}
+
+/* =====================================================================
+   PIPELINE PROPOSTAS (deals)
+   ===================================================================== */
+function renderPropostas(){
+  const board=DB.dealStages.map(st=>{
+    const items=DB.deals.filter(d=>d.stage===st.id);
+    const sum=items.reduce((s,d)=>s+d.valor,0);
+    return `<div class="col" data-stage="${st.id}" data-kind="deal"
+        ondragover="allowDrop(event)" ondrop="dropDeal(event,'${st.id}')" ondragleave="dragLeave(event)">
+      <div class="col-head">
+        <div class="col-head-top">
+          <div class="col-name"><span class="col-dot" style="background:${st.cor}"></span>${st.nome}</div>
+          <span class="col-count">${items.length}</span>
+        </div>
+        <div class="col-sum">${brl(sum)}</div>
+      </div>
+      <div class="col-body">
+        ${items.map(d=>`
+          <div class="card" draggable="true" ondragstart="dragDeal(event,${d.id})" ondragend="dragEnd(event)" onclick="openDealDetail(${d.id})" style="border-left-color:${st.cor}">
+            <div class="card-co">${d.cliente}</div>
+            <div class="card-prod">🔧 ${d.produto}${d.finame?' · <span style="color:var(--green)">FINAME</span>':''}</div>
+            <div class="card-foot">
+              <span class="card-val">${brlFull(d.valor)}</span>
+              <span class="mini-avatar">${d.responsavel}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  const abertas=DB.deals.filter(d=>!d.stage.startsWith('fechado'));
+  const pond=abertas.reduce((s,d)=>s+d.valor*d.prob/100,0);
+
+  // taxa de fechamento (global, sobre todas as encerradas)
+  const ganhasAll=DB.deals.filter(d=>d.stage==='fechado_ganho');
+  const perdidasAll=DB.deals.filter(d=>d.stage==='fechado_perdido');
+  const taxaFech=(ganhasAll.length+perdidasAll.length)?Math.round(ganhasAll.length/(ganhasAll.length+perdidasAll.length)*100):0;
+
+  $('#view-propostas').innerHTML=`
+    <div class="toolbar">
+      <div class="search"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Buscar oportunidade..." oninput="filterDeals(this.value)"></div>
+      <div class="kpi green" style="padding:8px 14px;margin:0"><div class="kpi-label">Taxa de fechamento</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--green)">${taxaFech}%</div></div>
+      <div class="kpi" style="padding:8px 14px;margin:0"><div class="kpi-label">Previsão ponderada</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--amber-text)">${brlFull(Math.round(pond))}</div></div>
+    </div>
+    <div id="dealBoard" class="board b${DB.dealStages.length}">${board}</div>
+
+    <div class="closed-section">
+      <div class="closed-head">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--paper-faint)" stroke-width="2" style="width:16px;height:16px"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <span class="closed-title">Oportunidades encerradas</span>
+        <span style="font-size:11px;color:var(--paper-faint);font-family:var(--mono)">azul = fechada · vermelho = perdida</span>
+        ${renderPeriodFilter()}
+      </div>
+      <div id="closedContent"></div>
+    </div>`;
+  renderClosedContent();
+}
+
+/* ---- filtro de período do subform ---- */
+let closedPeriod={modo:'mes', ano:2026, mes:6, ini:'2026-07-01', fim:'2026-07-31'}; // padrão: julho (mês corrente)
+const MESES_CURTO=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function renderPeriodFilter(){
+  if(closedPeriod.modo==='mes'){
+    return `<div class="period-filter">
+      <div class="period-nav">
+        <button class="period-arrow" onclick="closedMonthMove(-1)" title="Mês anterior"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <span class="period-label">${MESES[closedPeriod.mes]} ${closedPeriod.ano}</span>
+        <button class="period-arrow" onclick="closedMonthMove(1)" title="Próximo mês"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+      <button class="period-custom-btn" onclick="closedToggleCustom()" title="Personalizar período"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></button>
+    </div>`;
+  } else {
+    return `<div class="period-filter">
+      <span class="period-label" style="min-width:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint)">período personalizado</span>
+      <button class="period-custom-btn active" onclick="closedToggleCustom()" title="Voltar para navegação mensal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
+    </div>`;
+  }
+}
+function renderClosedContent(){
+  const el=$('#closedContent'); if(!el)return;
+  // define intervalo [ini, fim]
+  let ini, fim;
+  if(closedPeriod.modo==='mes'){
+    const mm=String(closedPeriod.mes+1).padStart(2,'0');
+    const ultimoDia=new Date(closedPeriod.ano, closedPeriod.mes+1, 0).getDate();
+    ini=`${closedPeriod.ano}-${mm}-01`;
+    fim=`${closedPeriod.ano}-${mm}-${String(ultimoDia).padStart(2,'0')}`;
+  } else {
+    ini=closedPeriod.ini; fim=closedPeriod.fim;
+  }
+  const encerradas=DB.deals.filter(d=>d.stage.startsWith('fechado') && d.encerradoEm && d.encerradoEm>=ini && d.encerradoEm<=fim)
+    .sort((a,b)=>b.encerradoEm.localeCompare(a.encerradoEm));
+  const ganhas=encerradas.filter(d=>d.stage==='fechado_ganho');
+  const perdidas=encerradas.filter(d=>d.stage==='fechado_perdido');
+  const valGanho=ganhas.reduce((s,d)=>s+d.valor,0);
+  const taxaPeriodo=encerradas.length?Math.round(ganhas.length/encerradas.length*100):0;
+
+  const rangeInputs=closedPeriod.modo==='custom'?`
+    <div class="period-range">
+      <label>De</label><input type="date" value="${closedPeriod.ini}" onchange="closedSetRange('ini',this.value)">
+      <label>Até</label><input type="date" value="${closedPeriod.fim}" onchange="closedSetRange('fim',this.value)">
+    </div>`:'';
+
+  const closedCards=encerradas.map(d=>{
+    const won=d.stage==='fechado_ganho';
+    const cls=won?'ganho':'perdido';
+    return `<div class="closed-card ${cls}" onclick="openDealDetail(${d.id})">
+      <div class="closed-card-top">
+        <span class="closed-co">${d.cliente}</span>
+        <span class="closed-tag ${cls}">${won?'Fechada':'Perdida'}</span>
+      </div>
+      <div class="closed-prod">🔧 ${d.produto} · ${fmtDate(d.encerradoEm)}</div>
+      <div class="closed-foot">
+        <span class="closed-val ${cls}">${brlFull(d.valor)}</span>
+        ${!won&&d.motivo?`<span class="closed-motivo">${d.motivo}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML=`
+    ${rangeInputs}
+    <div class="closed-summary">
+      <span class="cs-stat">Encerradas: <b>${encerradas.length}</b></span>
+      <span class="cs-stat" style="color:var(--blue)">Fechadas: <b>${ganhas.length}</b></span>
+      <span class="cs-stat" style="color:var(--red)">Perdidas: <b>${perdidas.length}</b></span>
+      <span class="cs-stat" style="color:var(--green)">Ganho no período: <b>${brl(valGanho)}</b></span>
+      <span class="cs-stat">Taxa de fechamento: <b>${taxaPeriodo}%</b></span>
+    </div>
+    <div class="closed-grid">
+      ${closedCards||'<p style="font-size:13px;color:var(--paper-faint)">Nenhuma oportunidade encerrada neste período.</p>'}
+    </div>`;
+}
+function closedMonthMove(dir){
+  let {ano,mes}=closedPeriod; mes+=dir;
+  if(mes<0){mes=11;ano--;} if(mes>11){mes=0;ano++;}
+  closedPeriod.ano=ano; closedPeriod.mes=mes;
+  // atualiza o label e o conteúdo
+  const head=document.querySelector('.closed-head .period-filter');
+  if(head) head.outerHTML=renderPeriodFilter();
+  renderClosedContent();
+}
+function closedToggleCustom(){
+  if(closedPeriod.modo==='mes'){
+    // ao entrar no custom, inicializa o range com o mês atual
+    const mm=String(closedPeriod.mes+1).padStart(2,'0');
+    const ultimoDia=new Date(closedPeriod.ano, closedPeriod.mes+1, 0).getDate();
+    closedPeriod.ini=`${closedPeriod.ano}-${mm}-01`;
+    closedPeriod.fim=`${closedPeriod.ano}-${mm}-${String(ultimoDia).padStart(2,'0')}`;
+    closedPeriod.modo='custom';
+  } else {
+    closedPeriod.modo='mes';
+  }
+  const head=document.querySelector('.closed-head .period-filter');
+  if(head) head.outerHTML=renderPeriodFilter();
+  renderClosedContent();
+}
+function closedSetRange(campo,valor){
+  closedPeriod[campo]=valor;
+  renderClosedContent();
+}
+
+/* =====================================================================
+   TAREFAS (kanban consolidado)
+   ===================================================================== */
+let taskView='tabela';
+let calRef={ano:2026,mes:6}; // mês 6 = julho (0-indexed)
+const TASK_STATUS_LABEL={afazer:'A fazer',hoje:'Hoje',aguardando:'Aguardando',concluida:'Concluída'};
+const TASK_STATUS_PILL={afazer:'pill-gray',hoje:'pill-amber',aguardando:'pill-blue',concluida:'pill-green'};
+
+function renderTarefas(){
+  const header=`
+    <div class="toolbar">
+      <div class="seg">
+        <button class="${taskView==='tabela'?'active':''}" onclick="setTaskView('tabela')">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"/></svg>Tabela
+        </button>
+        <button class="${taskView==='calendario'?'active':''}" onclick="setTaskView('calendario')">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Calendário
+        </button>
+      </div>
+      <div style="flex:1"></div>
+      <div style="font-size:12px;color:var(--paper-faint);font-family:var(--mono)">${DB.tasks.filter(t=>t.status!=='concluida').length} abertas · clique para abrir</div>
+    </div>`;
+
+  const body = taskView==='tabela' ? renderTaskTable() : renderTaskCalendar();
+  $('#view-tarefas').innerHTML = header + body;
+}
+function setTaskView(v){ taskView=v; renderTarefas(); }
+
+/* ---- LAYOUT TABELA ---- */
+function renderTaskTable(){
+  const order={hoje:0,afazer:1,aguardando:2,concluida:3};
+  const rows=[...DB.tasks].sort((a,b)=>(order[a.status]-order[b.status])||a.prazo.localeCompare(b.prazo));
+  return `
+    <div class="panel">
+      <table>
+        <thead><tr>
+          <th style="width:40px"></th><th>Tarefa</th><th>Tipo</th><th>Vínculo</th>
+          <th>Prazo</th><th>Situação</th><th style="width:60px"></th>
+        </tr></thead>
+        <tbody>
+        ${rows.map(t=>{
+          const done=t.status==='concluida';
+          const it=DB.interactionTypes[t.tipo]||{cor:'#6b7480'};
+          const nAnexos=(t.anexos||[]).length, nCom=(t.comentarios||[]).length;
+          return `<tr class="row-clickable" onclick="openTaskDetail(${t.id})">
+            <td onclick="event.stopPropagation()"><div class="task-check ${done?'done':''}" onclick="toggleTaskDone(${t.id})">${done?'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>':''}</div></td>
+            <td><span class="task-title-cell ${done?'done':''}">${t.titulo}</span>
+              ${nAnexos?`<span class="attach-count"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>${nAnexos}</span>`:''}
+              ${nCom?`<span class="attach-count"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>${nCom}</span>`:''}
+            </td>
+            <td><span class="task-type-dot" style="background:${it.cor}"></span><span style="font-size:12px">${t.tipo}</span></td>
+            <td><span class="t-sub">${t.vinculoTipo==='lead'?'🔍':'📈'} ${t.vinculoNome}</span></td>
+            <td><span class="task-due ${dueClass(t.prazo)}" style="font-family:var(--mono);font-size:12px">${fmtDate(t.prazo)}</span></td>
+            <td><span class="pill ${TASK_STATUS_PILL[t.status]}">${TASK_STATUS_LABEL[t.status]}</span></td>
+            <td onclick="event.stopPropagation()"><div class="cell-actions">
+              <button class="icon-btn" title="Editar" onclick="openTaskForm(null,${t.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            </div></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+/* ---- LAYOUT CALENDÁRIO ---- */
+const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function renderTaskCalendar(){
+  const {ano,mes}=calRef;
+  const primeiro=new Date(ano,mes,1);
+  const inicioSemana=primeiro.getDay(); // 0=dom
+  const diasNoMes=new Date(ano,mes+1,0).getDate();
+  const hoje='2026-07-29';
+  const dow=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  // agrupa tarefas por data (YYYY-MM-DD)
+  const porDia={};
+  DB.tasks.forEach(t=>{ (porDia[t.prazo]=porDia[t.prazo]||[]).push(t); });
+
+  let cells='';
+  // dias do mês anterior (preenchimento)
+  for(let i=0;i<inicioSemana;i++) cells+=`<div class="cal-cell other-month"></div>`;
+  for(let d=1;d<=diasNoMes;d++){
+    const iso=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dayTasks=porDia[iso]||[];
+    const isToday=iso===hoje;
+    const shown=dayTasks.slice(0,3);
+    const extra=dayTasks.length-shown.length;
+    cells+=`<div class="cal-cell ${isToday?'today':''}">
+      <div class="cal-daynum">${d}</div>
+      ${shown.map(t=>{
+        const it=DB.interactionTypes[t.tipo]||{cor:'#6b7480'};
+        return `<div class="cal-task ${t.status==='concluida'?'done':''}" style="border-left-color:${it.cor}" onclick="openTaskDetail(${t.id})" title="${t.titulo}">${t.titulo}</div>`;
+      }).join('')}
+      ${extra>0?`<div class="cal-more" onclick="setTaskView('tabela')">+${extra} mais</div>`:''}
+    </div>`;
+  }
+
+  return `
+    <div class="panel">
+      <div class="panel-body">
+        <div class="cal-head">
+          <div class="cal-title">${MESES[mes]} ${ano}</div>
+          <div class="cal-nav">
+            <button class="btn btn-sm" onclick="calMove(-1)">‹ anterior</button>
+            <button class="btn btn-sm" onclick="calHoje()">hoje</button>
+            <button class="btn btn-sm" onclick="calMove(1)">próximo ›</button>
+          </div>
+        </div>
+        <div class="cal-grid">
+          ${dow.map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+          ${cells}
+        </div>
+      </div>
+    </div>`;
+}
+function calMove(dir){
+  let {ano,mes}=calRef; mes+=dir;
+  if(mes<0){mes=11;ano--;} if(mes>11){mes=0;ano++;}
+  calRef={ano,mes}; renderTarefas();
+}
+function calHoje(){ calRef={ano:2026,mes:6}; renderTarefas(); }
+function toggleTaskDone(id){
+  const t=DB.tasks.find(x=>x.id===id); if(!t)return;
+  t.status = t.status==='concluida' ? 'afazer' : 'concluida';
+  renderTarefas(); updateBadges(); toast(t.status==='concluida'?'Tarefa concluída ✓':'Tarefa reaberta');
+}
+
+/* =====================================================================
+   CLIENTES (tabela CRUD)
+   ===================================================================== */
+let empresaFilter='todas';
+// Tipo da empresa: Cliente se já comprou (LTV>0), senão Lead. Espelha o backend,
+// onde "lead vs cliente" é atributo de Company, não tabela separada.
+function companyType(c){ return c.ltv>0 ? 'cliente' : 'lead'; }
+function renderClientes(){
+  const leads=DB.clientes.filter(c=>companyType(c)==='lead').length;
+  const clientes=DB.clientes.filter(c=>companyType(c)==='cliente').length;
+  $('#view-clientes').innerHTML=`
+    <div class="toolbar">
+      <div class="seg">
+        <button class="${empresaFilter==='todas'?'active':''}" onclick="setEmpresaFilter('todas')">Todas (${DB.clientes.length})</button>
+        <button class="${empresaFilter==='lead'?'active':''}" onclick="setEmpresaFilter('lead')">Leads (${leads})</button>
+        <button class="${empresaFilter==='cliente'?'active':''}" onclick="setEmpresaFilter('cliente')">Clientes (${clientes})</button>
+      </div>
+      <div class="search"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Buscar empresa..." oninput="filterClientes(this.value)"></div>
+      <div style="font-size:12px;color:var(--paper-faint);font-family:var(--mono)">clique para abrir a ficha →</div>
+    </div>
+    <div class="panel">
+      <table id="cliTable">
+        <thead><tr><th>Empresa</th><th>Tipo</th><th>Contato</th><th>Cidade</th><th>Status</th><th style="text-align:right">LTV</th><th>Última compra</th><th></th></tr></thead>
+        <tbody>${clienteRows()}</tbody>
+      </table>
+    </div>`;
+}
+function setEmpresaFilter(f){ empresaFilter=f; renderClientes(); }
+function clienteRows(filter=''){
+  let rows=DB.clientes.filter(c=>c.razao.toLowerCase().includes(filter.toLowerCase()));
+  if(empresaFilter!=='todas') rows=rows.filter(c=>companyType(c)===empresaFilter);
+  if(!rows.length) return '<tr><td colspan="8" class="empty">Nenhuma empresa encontrada</td></tr>';
+  const map={ativo:'pill-green',negociando:'pill-amber',inativo:'pill-gray'};
+  return rows.map(c=>{
+    const tipo=companyType(c);
+    const tipoTag=tipo==='cliente'
+      ? '<span class="pill pill-green">cliente</span>'
+      : '<span class="pill pill-blue">lead</span>';
+    return `
+    <tr class="row-clickable" onclick="openFicha(${c.id})">
+      <td><div class="t-co">${c.razao}</div><div class="t-sub">${c.cnpj}</div></td>
+      <td>${tipoTag}</td>
+      <td>${c.contato}<div class="t-sub">${c.fone}</div></td>
+      <td>${c.cidade}</td>
+      <td><span class="pill ${map[c.status]}">${c.status}</span></td>
+      <td style="text-align:right;font-family:var(--mono);color:${c.ltv>0?'var(--green)':'var(--paper-faint)'}">${c.ltv>0?brlFull(c.ltv):'—'}</td>
+      <td class="t-sub">${fmtDate(c.ultimaCompra)}</td>
+      <td onclick="event.stopPropagation()"><div class="cell-actions">
+        <button class="icon-btn" title="Abrir ficha" onclick="openFicha(${c.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg></button>
+        <button class="icon-btn" title="Editar" onclick="openClienteForm(${c.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="icon-btn danger" title="Excluir" onclick="deleteCliente(${c.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+function filterClientes(v){ $('#cliTable tbody').innerHTML=clienteRows(v); }
+
+/* =====================================================================
+   RELATÓRIOS
+   ===================================================================== */
+function renderRelatorios(){
+  // conversão do funil de propostas
+  const stages=DB.dealStages.filter(s=>!s.id.startsWith('fechado'));
+  const funnelCounts=stages.map(s=>DB.deals.filter(d=>d.stage===s.id).length);
+  const ganho=DB.deals.filter(d=>d.stage==='fechado_ganho').length;
+  const perdido=DB.deals.filter(d=>d.stage==='fechado_perdido').length;
+  // por produto
+  const prodMap={};
+  DB.deals.forEach(d=>{ prodMap[d.produto]=(prodMap[d.produto]||0)+d.valor; });
+  const prodEntries=Object.entries(prodMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const maxProd=Math.max(...prodEntries.map(e=>e[1]),1);
+  // origem dos leads — agora vem da triagem (rawLeads)
+  const fonteMap={};
+  DB.rawLeads.forEach(l=>{ fonteMap[l.fonte]=(fonteMap[l.fonte]||0)+1; });
+  const fonteColors={econodata:'#4a9fe0',apify:'#9b7fe0',comexstat:'#3fb96b'};
+  const totalLeads=DB.rawLeads.length||1;
+  const aprovados=DB.rawLeads.filter(l=>l.status==='aprovado').length;
+
+  $('#view-relatorios').innerHTML=`
+    <div class="kpi-row">
+      <div class="kpi green"><div class="kpi-label">Taxa de fechamento</div><div class="kpi-value">${ganho+perdido>0?Math.round(ganho/(ganho+perdido)*100):0}%</div><div class="kpi-delta"><span style="color:var(--paper-faint)">${ganho} ganhas / ${ganho+perdido} encerradas</span></div></div>
+      <div class="kpi"><div class="kpi-label">Ciclo médio de venda</div><div class="kpi-value">47<span style="font-size:14px;color:var(--paper-faint)"> dias</span></div><div class="kpi-delta"><span style="color:var(--paper-faint)">solicitação → fechamento</span></div></div>
+      <div class="kpi blue"><div class="kpi-label">Ticket médio</div><div class="kpi-value">${brl(Math.round(DB.deals.reduce((s,d)=>s+d.valor,0)/DB.deals.length))}</div><div class="kpi-delta"><span style="color:var(--paper-faint)">por oportunidade</span></div></div>
+      <div class="kpi purple"><div class="kpi-label">Taxa de aprovação (triagem)</div><div class="kpi-value">${Math.round(aprovados/totalLeads*100)}%</div><div class="kpi-delta"><span style="color:var(--paper-faint)">leads brutos → aprovados</span></div></div>
+    </div>
+
+    <div class="report-grid">
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>Funil de conversão — nº de negócios por etapa</div></div>
+        <div class="panel-body">
+          <div class="funnel-bar">
+            ${stages.map((s,i)=>{
+              const c=funnelCounts[i]; const max=Math.max(...funnelCounts,1);
+              return `<div class="fbar"><div class="fbar-label">${s.nome}</div><div class="fbar-track"><div class="fbar-fill" style="width:${Math.max(c/max*100,5)}%">${c}</div></div><div class="fbar-val">${c} deal(s)</div></div>`;
+            }).join('')}
+            <div class="fbar"><div class="fbar-label" style="color:var(--green)">Ganho</div><div class="fbar-track"><div class="fbar-fill" style="width:${Math.max(ganho/Math.max(...funnelCounts,1)*100,5)}%;background:linear-gradient(90deg,var(--green),#2d8a4f)">${ganho}</div></div><div class="fbar-val">${ganho}</div></div>
+            <div class="fbar"><div class="fbar-label" style="color:var(--red)">Perdido</div><div class="fbar-track"><div class="fbar-fill" style="width:${Math.max(perdido/Math.max(...funnelCounts,1)*100,5)}%;background:linear-gradient(90deg,var(--red),#a83e32)">${perdido}</div></div><div class="fbar-val">${perdido}</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 010 20"/></svg>Origem dos leads</div></div>
+        <div class="panel-body">
+          <div class="donut-wrap">
+            ${donutSVG(fonteMap,fonteColors,totalLeads)}
+            <div class="legend">
+              ${Object.entries(fonteMap).map(([k,v])=>`<div class="leg-item"><span class="leg-dot" style="background:${fonteColors[k]}"></span>${k}<span class="leg-val">${v} (${Math.round(v/totalLeads*100)}%)</span></div>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Pipeline por produto (R$ total)</div></div>
+      <div class="panel-body">
+        <div class="bars">
+          ${prodEntries.map(([prod,val])=>`
+            <div class="bar-col">
+              <div class="bar" style="height:${val/maxProd*100}%"><span class="bar-v">${brl(val)}</span></div>
+              <div class="bar-l" style="text-align:center;max-width:70px">${prod}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+function donutSVG(map,colors,total){
+  const r=52,c=2*Math.PI*r; let off=0;
+  const segs=Object.entries(map).map(([k,v])=>{
+    const frac=v/total, len=frac*c;
+    const s=`<circle cx="70" cy="70" r="${r}" fill="none" stroke="${colors[k]}" stroke-width="18" stroke-dasharray="${len} ${c-len}" stroke-dashoffset="${-off}" transform="rotate(-90 70 70)"/>`;
+    off+=len; return s;
+  }).join('');
+  return `<svg width="140" height="140" viewBox="0 0 140 140">${segs}<text x="70" y="66" text-anchor="middle" font-family="var(--mono)" font-size="22" font-weight="700" fill="var(--paper)">${total}</text><text x="70" y="84" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="var(--paper-faint)">LEADS</text></svg>`;
+}
+
+/* =====================================================================
+   DRAG & DROP
+   ===================================================================== */
+let dragItem={type:null,id:null};
+function allowDrop(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
+function dragLeave(e){e.currentTarget.classList.remove('drag-over');}
+function dragEnd(e){e.target.classList.remove('dragging');document.querySelectorAll('.col').forEach(c=>c.classList.remove('drag-over'));}
+function dragLead(e,id){dragItem={type:'lead',id};e.target.classList.add('dragging');}
+function dragDeal(e,id){dragItem={type:'deal',id};e.target.classList.add('dragging');}
+function dragTask(e,id){dragItem={type:'task',id};e.target.classList.add('dragging');}
+function dropLead(e,stage){e.preventDefault();e.currentTarget.classList.remove('drag-over');
+  if(dragItem.type!=='lead')return;
+  const l=DB.leads.find(x=>x.id===dragItem.id); if(l){l.stage=stage; renderProspeccao(); toast('Lead movido para '+DB.leadStages.find(s=>s.id===stage).nome);}
+}
+function dropDeal(e,stage){e.preventDefault();e.currentTarget.classList.remove('drag-over');
+  if(dragItem.type!=='deal')return;
+  const d=DB.deals.find(x=>x.id===dragItem.id); if(d){d.stage=stage; d.prob=DB.probByStage[stage]; renderPropostas(); toast('Oportunidade → '+DB.dealStages.find(s=>s.id===stage).nome);}
+}
+function dropTask(e,stage){e.preventDefault();e.currentTarget.classList.remove('drag-over');
+  if(dragItem.type!=='task')return;
+  const t=DB.tasks.find(x=>x.id===dragItem.id); if(t){t.status=stage; renderTarefas(); updateBadges(); toast('Tarefa movida');}
+}
+
+/* =====================================================================
+   MODAL / CRUD
+   ===================================================================== */
+function openModal(title,body,foot){$('#modalTitle').textContent=title;$('#modalBody').innerHTML=body;$('#modalFoot').innerHTML=foot;$('#overlay').classList.add('open');}
+function closeModal(){$('#overlay').classList.remove('open');}
+$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});
+
+/* ---- LEAD ---- */
+function openLeadForm(stage='novo',id=null){
+  const l=id?DB.leads.find(x=>x.id===id):{};
+  openModal(id?'Editar lead':'Novo lead',`
+    <div class="field"><label>Razão social</label><input id="f_razao" value="${l.razao||''}" placeholder="Ex: Metalúrgica Silva Ltda"></div>
+    <div class="field-row">
+      <div class="field"><label>CNPJ</label><input id="f_cnpj" value="${l.cnpj||''}" placeholder="00.000.000/0001-00"></div>
+      <div class="field"><label>CNAE</label><input id="f_cnae" value="${l.cnae||''}" placeholder="25.11-0"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Município</label><input id="f_municipio" value="${l.municipio||''}" placeholder="Santa Maria"></div>
+      <div class="field"><label>UF</label><input id="f_uf" value="${l.uf||'RS'}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Contato</label><input id="f_contato" value="${l.contato||''}"></div>
+      <div class="field"><label>Telefone</label><input id="f_fone" value="${l.fone||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Fonte</label><select id="f_fonte">${['econodata','apify','comexstat'].map(o=>`<option ${l.fonte===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="field"><label>Porte</label><select id="f_porte">${['PEQUENO','MÉDIO','GRANDE'].map(o=>`<option ${l.porte===o?'selected':''}>${o}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Score de qualificação: <span id="scoreOut" style="color:var(--amber-text)">${l.score||50}</span> pts</label><input type="range" id="f_score" min="0" max="100" value="${l.score||50}" oninput="document.getElementById('scoreOut').textContent=this.value"></div>
+    <div class="field-hint">Score = CNAE aderente + porte + importador (Comex Stat) + região RS</div>
+  `,`
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveLead(${id},'${stage}')">${id?'Salvar':'Criar lead'}</button>
+  `);
+}
+function saveLead(id,stage){
+  const data={razao:$('#f_razao').value,cnpj:$('#f_cnpj').value,cnae:$('#f_cnae').value,municipio:$('#f_municipio').value,uf:$('#f_uf').value,contato:$('#f_contato').value,fone:$('#f_fone').value,fonte:$('#f_fonte').value,porte:$('#f_porte').value,score:+$('#f_score').value,importador:$('#f_fonte').value==='comexstat'};
+  if(!data.razao){toast('Informe a razão social');return;}
+  if(id){Object.assign(DB.leads.find(x=>x.id===id),data);toast('Lead atualizado');}
+  else{DB.leads.push({id:nextId(),stage,...data});toast('Lead criado');}
+  closeModal();renderProspeccao();updateBadges();
+}
+function openLeadDetail(id){
+  const l=DB.leads.find(x=>x.id===id);
+  const promoteBtn=l.stage==='qualificado'?`<button class="btn btn-primary" onclick="promoteLead(${id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Promover para propostas</button>`:'';
+  openModal(l.razao,`
+    <dl class="kv">
+      <dt>CNPJ</dt><dd>${l.cnpj}</dd>
+      <dt>CNAE</dt><dd>${l.cnae}</dd>
+      <dt>Local</dt><dd>${l.municipio}/${l.uf}</dd>
+      <dt>Porte</dt><dd>${l.porte}</dd>
+      <dt>Contato</dt><dd>${l.contato} · ${l.fone}</dd>
+      <dt>Fonte</dt><dd style="text-transform:uppercase">${l.fonte}</dd>
+      <dt>Importador</dt><dd>${l.importador?'<span style="color:var(--green)">Sim (Comex Stat)</span>':'Não'}</dd>
+      <dt>Score</dt><dd><span class="card-score" style="${scoreColor(l.score)}">${l.score} pts</span></dd>
+      <dt>Etapa</dt><dd>${DB.leadStages.find(s=>s.id===l.stage).nome}</dd>
+    </dl>
+    ${l.stage==='qualificado'?'<div class="field-hint" style="margin-top:16px;color:var(--green)">✓ Lead qualificado — pronto para o handoff ao funil de propostas.</div>':''}
+  `,`
+    <button class="btn btn-danger" onclick="deleteLead(${id})">Excluir</button>
+    <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+    <button class="btn" onclick="openLeadForm(null,${id})">Editar</button>
+    ${promoteBtn}
+  `);
+}
+function deleteLead(id){DB.leads=DB.leads.filter(x=>x.id!==id);closeModal();renderProspeccao();updateBadges();toast('Lead excluído');}
+function promoteLead(id){
+  const l=DB.leads.find(x=>x.id===id);
+  DB.deals.push({id:nextId(),cliente:l.razao,leadId:l.id,produto:'A definir',valor:100000,stage:'diagnostico',prob:20,fechamento:'2026-09-30',responsavel:'TF',finame:false,contato:l.contato});
+  closeModal();
+  toast('✓ Handoff feito — oportunidade criada no funil de propostas');
+  document.querySelector('[data-view=propostas]').click();
+}
+
+/* ---- DEAL ---- */
+let dealPickedCompany=null; // {id, nome, tipo:'empresa'|'lead'|'nova', cnpj}
+function openDealForm(stage='solicitacao',id=null){
+  const d=id?DB.deals.find(x=>x.id===id):{};
+  // ao editar, pré-seleciona a empresa já vinculada
+  dealPickedCompany = id&&d.cliente ? {nome:d.cliente, tipo:'empresa', id:d.companyId||null} : null;
+  openModal(id?'Editar oportunidade':'Nova oportunidade',`
+    <div class="field">
+      <label>Empresa <span style="color:var(--red)">*</span></label>
+      <div class="co-picker" id="coPicker">${renderCoPicker()}</div>
+    </div>
+    <div class="field"><label>Contato</label><input id="d_contato" value="${d.contato||''}"></div>
+    <div class="field-row">
+      <div class="field"><label>Produto</label><select id="d_produto">${DB.produtos.map(p=>`<option ${d.produto===p?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="field"><label>Valor (R$)</label><input id="d_valor" type="number" value="${d.valor||''}" placeholder="180000"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Etapa</label><select id="d_stage">${DB.dealStages.map(s=>`<option value="${s.id}" ${(d.stage||stage)===s.id?'selected':''}>${s.nome}</option>`).join('')}</select></div>
+      <div class="field"><label>Previsão de fechamento</label><input id="d_fechamento" type="date" value="${d.fechamento||'2026-09-01'}"></div>
+    </div>
+    <div class="field"><label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0"><input type="checkbox" id="d_finame" ${d.finame?'checked':''} style="width:auto"> Financiamento via FINAME/BNDES</label></div>
+  `,`
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveDeal(${id})">${id?'Salvar':'Criar oportunidade'}</button>
+  `);
+}
+function renderCoPicker(){
+  if(dealPickedCompany){
+    const t=dealPickedCompany.tipo;
+    const tagLabel={empresa:'empresa',lead:'lead → aprovado',nova:'nova empresa'}[t];
+    return `<div class="co-picker-selected">
+      <span class="co-tag ${t}">${tagLabel}</span>
+      <span class="co-nome">${dealPickedCompany.nome}</span>
+      <button class="co-picker-clear" onclick="clearCoPick()" title="Trocar empresa"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>`;
+  }
+  return `
+    <div class="search" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg><input id="coSearch" placeholder="Buscar empresa ou lead por nome/CNPJ..." oninput="searchCompanies(this.value)" autocomplete="off"></div>
+    <div id="coResults"></div>`;
+}
+function clearCoPick(){ dealPickedCompany=null; $('#coPicker').innerHTML=renderCoPicker(); }
+function searchCompanies(q){
+  const box=$('#coResults'); if(!box)return;
+  q=(q||'').trim();
+  if(q.length<2){ box.innerHTML=''; return; }
+  const ql=q.toLowerCase();
+  // 1) empresas já cadastradas
+  const empresas=DB.clientes.filter(c=>c.razao.toLowerCase().includes(ql)||(c.cnpj||'').includes(q))
+    .map(c=>({id:c.id,nome:c.razao,cnpj:c.cnpj,tipo:'empresa'}));
+  // 2) leads na triagem (status novo)
+  const leads=DB.rawLeads.filter(r=>r.status==='novo'&&(r.razao.toLowerCase().includes(ql)||(r.cnpj||'').includes(q)))
+    .map(r=>({id:r.id,nome:r.razao,cnpj:r.cnpj,tipo:'lead'}));
+  const results=[...empresas,...leads];
+
+  let html='';
+  if(results.length){
+    html=results.map(r=>`
+      <div class="co-result" onclick="pickCompany('${r.tipo}',${r.id})">
+        <span class="co-tag ${r.tipo}">${r.tipo}</span>
+        <div class="co-result-info">
+          <div class="co-result-nome">${r.nome}</div>
+          <div class="co-result-sub">${r.cnpj||'sem CNPJ'}${r.tipo==='lead'?' · na triagem':''}</div>
+        </div>
+        ${r.tipo==='lead'?'<span style="font-size:10px;color:var(--amber-text)">aprovar e vincular →</span>':'<span style="font-size:10px;color:var(--green)">vincular →</span>'}
+      </div>`).join('');
+  }
+  // 3) nenhum resultado → oferecer cadastro por CNPJ
+  html+=`
+    <div class="co-result-none">
+      ${results.length?'':`<p>Nenhuma empresa ou lead encontrado para "<b>${q}</b>".</p>`}
+      <div class="co-cnpj-box">
+        <div class="field" style="margin:0 0 8px"><label>Cadastrar nova empresa pelo CNPJ</label>
+        <input id="coCnpj" placeholder="00.000.000/0001-00" value="${/^[\d.\/-]+$/.test(q)?q:''}"></div>
+        <button class="btn btn-primary btn-sm" style="width:100%" onclick="createCompanyByCnpj()">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+          Buscar CNPJ e cadastrar
+        </button>
+      </div>
+    </div>`;
+  box.innerHTML=html;
+}
+function pickCompany(tipo,id){
+  if(tipo==='empresa'){
+    const c=DB.clientes.find(x=>x.id===id);
+    dealPickedCompany={id:c.id,nome:c.razao,cnpj:c.cnpj,tipo:'empresa'};
+  } else if(tipo==='lead'){
+    // REGRA: casou com lead → aprova na hora (vira empresa, com histórico) e vincula
+    const r=DB.rawLeads.find(x=>x.id===id);
+    r.status='aprovado';
+    const newId=promoteRawToCompany(r);
+    dealPickedCompany={id:newId,nome:r.razao,cnpj:r.cnpj,tipo:'lead'};
+    updateBadges();
+    toast('✓ Lead aprovado automaticamente e vinculado');
+  }
+  $('#coPicker').innerHTML=renderCoPicker();
+}
+function createCompanyByCnpj(){
+  const cnpj=($('#coCnpj').value||'').trim();
+  if(!cnpj){toast('Informe o CNPJ');return;}
+  // SIMULAÇÃO da API pública (BrasilAPI). No backend real, chama o proxy /api/cnpj.
+  const found=DB.receitaMock[cnpj];
+  const razao = found ? (found.fantasia||'Empresa '+cnpj.slice(0,6)) : 'Nova Empresa '+cnpj.slice(-4);
+  const newId=nextId();
+  DB.clientes.push({
+    id:newId, razao: found?(found.fantasia+' Ltda'):razao, cnpj, contato:'—', fone:'—',
+    cidade: found?found.municipioUF:'—', status:'negociando', ltv:0, ultimaCompra:'—',
+    cad: found?Object.assign({},found,{buscadoEm:'2026-07-29',ie:null,contribuinteIcms:false,ieSituacao:null}):null
+  });
+  dealPickedCompany={id:newId,nome:DB.clientes.find(x=>x.id===newId).razao,cnpj,tipo:'nova'};
+  updateBadges();
+  toast('✓ Empresa cadastrada pela Receita (simulado)');
+  $('#coPicker').innerHTML=renderCoPicker();
+}
+function saveDeal(id){
+  if(!dealPickedCompany){toast('Selecione uma empresa para a oportunidade');return;}
+  const stage=$('#d_stage').value;
+  const data={cliente:dealPickedCompany.nome,companyId:dealPickedCompany.id,contato:$('#d_contato').value,produto:$('#d_produto').value,valor:+$('#d_valor').value||0,stage,prob:DB.probByStage[stage],fechamento:$('#d_fechamento').value,finame:$('#d_finame').checked,responsavel:'TF'};
+  if(id){Object.assign(DB.deals.find(x=>x.id===id),data);toast('Oportunidade atualizada');}
+  else{DB.deals.push({id:nextId(),leadId:null,...data});toast('Oportunidade criada');}
+  dealPickedCompany=null;
+  closeModal();renderPropostas();updateBadges();
+}
+function openDealDetail(id){
+  const d=DB.deals.find(x=>x.id===id);
+  const closed=d.stage.startsWith('fechado');
+  const stageName=(DB.dealStages.find(s=>s.id===d.stage)||DB.dealClosedStages.find(s=>s.id===d.stage)||{}).nome||d.stage;
+  // botões de encerramento aparecem quando a oportunidade está em Fechamento (ou já encerrada, para reabrir)
+  let closeActions='';
+  if(d.stage==='negociacao'){
+    closeActions=`
+      <button class="btn" style="border-color:var(--blue);color:var(--blue)" onclick="winDeal(${id})">✓ Marcar Fechada</button>
+      <button class="btn btn-danger" onclick="askLoseDeal(${id})">✕ Marcar Perdida</button>`;
+  } else if(closed){
+    closeActions=`<button class="btn" onclick="reopenDeal(${id})">↩ Reabrir</button>`;
+  }
+  openModal(d.cliente,`
+    <dl class="kv">
+      <dt>Produto</dt><dd>🔧 ${d.produto}</dd>
+      <dt>Valor</dt><dd style="font-family:var(--mono);color:var(--amber-text);font-weight:600">${brlFull(d.valor)}</dd>
+      <dt>Etapa</dt><dd>${stageName}${closed?'':` (${d.prob}% prob.)`}</dd>
+      ${closed?'':`<dt>Ponderado</dt><dd style="font-family:var(--mono)">${brlFull(Math.round(d.valor*d.prob/100))}</dd>`}
+      <dt>Fechamento</dt><dd>${fmtDate(d.fechamento)}</dd>
+      <dt>Contato</dt><dd>${d.contato||'—'}</dd>
+      <dt>FINAME</dt><dd>${d.finame?'<span style="color:var(--green)">Sim</span>':'Não'}</dd>
+      ${d.motivo?`<dt>Motivo perda</dt><dd style="color:var(--red)">${d.motivo}</dd>`:''}
+    </dl>
+  `,`
+    <button class="btn btn-danger" onclick="deleteDeal(${id})">Excluir</button>
+    <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+    ${closed?'':`<button class="btn" onclick="openDealForm(null,${id})">Editar</button>`}
+    ${closeActions}
+  `);
+}
+function winDeal(id){
+  const d=DB.deals.find(x=>x.id===id); if(!d)return;
+  d.stage='fechado_ganho'; d.prob=100; d.encerradoEm=TODAY;
+  toast('🎉 Oportunidade fechada!');
+  closeModal(); renderPropostas(); updateBadges();
+}
+function askLoseDeal(id){
+  const d=DB.deals.find(x=>x.id===id); if(!d)return;
+  openModal('Marcar como perdida',`
+    <div class="field"><label>Motivo da perda</label><select id="lose_motivo">
+      <option>Preço / concorrente</option><option>Sem orçamento no momento</option>
+      <option>Prazo de entrega</option><option>Optou por terceirizar</option>
+      <option>Sem retorno / esfriou</option><option>Outro</option>
+    </select></div>
+    <div class="field-hint">Registrar o motivo ajuda a entender por que perdemos e melhora a abordagem.</div>
+  `,`
+    <button class="btn btn-ghost" onclick="openDealDetail(${id})">Voltar</button>
+    <button class="btn btn-danger" onclick="loseDeal(${id})">Confirmar perda</button>
+  `);
+}
+function loseDeal(id){
+  const d=DB.deals.find(x=>x.id===id); if(!d)return;
+  d.stage='fechado_perdido'; d.prob=0; d.motivo=$('#lose_motivo').value; d.encerradoEm=TODAY;
+  toast('Oportunidade marcada como perdida');
+  closeModal(); renderPropostas(); updateBadges();
+}
+function reopenDeal(id){
+  const d=DB.deals.find(x=>x.id===id); if(!d)return;
+  d.stage='negociacao'; d.prob=DB.probByStage['negociacao']; delete d.motivo;
+  toast('Oportunidade reaberta em Negociação');
+  closeModal(); renderPropostas(); updateBadges();
+}
+function deleteDeal(id){DB.deals=DB.deals.filter(x=>x.id!==id);closeModal();renderPropostas();updateBadges();toast('Oportunidade excluída');}
+
+/* ---- TASK ---- */
+function openTaskForm(status='afazer',id=null){
+  const t=id?DB.tasks.find(x=>x.id===id):{};
+  openModal(id?'Editar tarefa':'Nova tarefa',`
+    <div class="field"><label>Descrição</label><input id="t_titulo" value="${t.titulo||''}" placeholder="Ex: Ligar para retorno da proposta"></div>
+    <div class="field-row">
+      <div class="field"><label>Tipo</label><select id="t_tipo">${['ligacao','email','visita','proposta','followup'].map(o=>`<option ${t.tipo===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="field"><label>Prazo</label><input id="t_prazo" type="date" value="${t.prazo||TODAY}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Vínculo</label><select id="t_vtipo">${['oportunidade','lead'].map(o=>`<option value="${o}" ${t.vinculoTipo===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="field"><label>Referente a</label><input id="t_vnome" value="${t.vinculoNome||''}" placeholder="Nome do cliente/lead"></div>
+    </div>
+    <div class="field"><label>Situação</label><select id="t_status">${DB.taskStages.map(s=>`<option value="${s.id}" ${(t.status||status)===s.id?'selected':''}>${s.nome}</option>`).join('')}</select></div>
+  `,`
+    ${id?`<button class="btn btn-danger" onclick="deleteTask(${id})">Excluir</button>`:''}
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveTask(${id},'${status}')">${id?'Salvar':'Criar tarefa'}</button>
+  `);
+}
+function saveTask(id,status){
+  const data={titulo:$('#t_titulo').value,tipo:$('#t_tipo').value,prazo:$('#t_prazo').value,vinculoTipo:$('#t_vtipo').value,vinculoNome:$('#t_vnome').value||'—',status:$('#t_status').value,vinculoId:0};
+  if(!data.titulo){toast('Descreva a tarefa');return;}
+  if(id){Object.assign(DB.tasks.find(x=>x.id===id),data);toast('Tarefa atualizada');}
+  else{DB.tasks.push({id:nextId(),...data});toast('Tarefa criada');}
+  closeModal();renderTarefas();updateBadges();
+}
+function deleteTask(id){DB.tasks=DB.tasks.filter(x=>x.id!==id);closeModal();renderTarefas();updateBadges();toast('Tarefa excluída');}
+function completeTask(id){const t=DB.tasks.find(x=>x.id===id);t.status='concluida';renderDashboard();updateBadges();toast('Tarefa concluída ✓');}
+
+/* ---- DETALHE DA TAREFA: anexos + chat de comentários ---- */
+let taskDetailId=null;
+function openTaskDetail(id){
+  taskDetailId=id;
+  renderTaskDetailModal();
+}
+function renderTaskDetailModal(){
+  const t=DB.tasks.find(x=>x.id===taskDetailId); if(!t)return;
+  const it=DB.interactionTypes[t.tipo]||{cor:'#6b7480',label:t.tipo};
+  const anexos=t.anexos||[], coms=t.comentarios||[];
+  const attachIcon={pdf:'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z',imagem:'M21 15l-5-5L5 21M3 5h18v14H3zM8.5 8.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z',planilha:'M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18',outro:'M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z'};
+
+  openModal(t.titulo,`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <span class="pill" style="background:${it.cor}22;color:${it.cor}">${it.label}</span>
+      <span class="pill ${TASK_STATUS_PILL[t.status]}">${TASK_STATUS_LABEL[t.status]}</span>
+      <span class="task-due ${dueClass(t.prazo)}" style="font-family:var(--mono);font-size:12px;margin-left:auto">${fmtDate(t.prazo)}</span>
+    </div>
+    <div style="font-size:12px;color:var(--paper-dim);margin-bottom:4px">${t.vinculoTipo==='lead'?'🔍 Lead':'📈 Oportunidade'} · ${t.vinculoNome}</div>
+
+    <div class="task-detail-section">
+      <div class="drawer-section-title" style="margin-top:0">Anexos${anexos.length?` · ${anexos.length}`:''}</div>
+      <div class="attach-drop" onclick="simulateAttach()">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+        <div class="attach-drop-text">Clique para anexar mídia (foto, PDF, planilha)</div>
+      </div>
+      ${anexos.map((a,idx)=>`
+        <div class="attach-item">
+          <div class="attach-icon ${a.tipo}"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${attachIcon[a.tipo]||attachIcon.outro}"/></svg></div>
+          <div class="attach-info"><div class="attach-name">${a.nome}</div><div class="attach-meta">${a.tipo.toUpperCase()} · ${a.tam}</div></div>
+          <button class="icon-btn danger" onclick="removeAttach(${idx})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        </div>`).join('')}
+    </div>
+
+    <div class="task-detail-section">
+      <div class="drawer-section-title">Comentários${coms.length?` · ${coms.length}`:''}</div>
+      <div class="chat-thread">
+        ${coms.length?coms.map(c=>`
+          <div class="chat-msg">
+            <div class="chat-avatar">${c.autor.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+            <div class="chat-bubble">
+              <div class="chat-msg-head"><span class="chat-author">${c.autor}</span><span class="chat-time">${fmtDateTime(c.data)}</span></div>
+              <div class="chat-text">${c.texto}</div>
+            </div>
+          </div>`).join(''):'<div class="chat-empty">Nenhum comentário ainda. Registre o andamento da tarefa.</div>'}
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chatInput" placeholder="Escrever comentário..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addComment();}"></textarea>
+        <button class="btn btn-primary btn-sm" onclick="addComment()">Enviar</button>
+      </div>
+    </div>
+  `,`
+    <button class="btn btn-danger" onclick="deleteTaskFromDetail(${t.id})">Excluir</button>
+    <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+    <button class="btn" onclick="closeModal();openTaskForm(null,${t.id})">Editar dados</button>
+    <button class="btn ${t.status==='concluida'?'':'btn-primary'}" onclick="toggleTaskDone(${t.id});renderTaskDetailModal();">${t.status==='concluida'?'Reabrir':'Concluir'}</button>
+  `);
+}
+function simulateAttach(){
+  const t=DB.tasks.find(x=>x.id===taskDetailId); if(!t)return;
+  t.anexos=t.anexos||[];
+  // simula seleção de arquivo (sem upload real)
+  const exemplos=[{nome:'documento_anexado.pdf',tipo:'pdf',tam:'256 KB'},{nome:'foto_visita.jpg',tipo:'imagem',tam:'1.2 MB'},{nome:'planilha_orcamento.xlsx',tipo:'planilha',tam:'48 KB'}];
+  const pick=exemplos[t.anexos.length%exemplos.length];
+  t.anexos.push({...pick});
+  toast('Anexo adicionado (simulado)');
+  renderTaskDetailModal();
+}
+function removeAttach(idx){
+  const t=DB.tasks.find(x=>x.id===taskDetailId); if(!t)return;
+  t.anexos.splice(idx,1); renderTaskDetailModal(); toast('Anexo removido');
+}
+function addComment(){
+  const t=DB.tasks.find(x=>x.id===taskDetailId); if(!t)return;
+  const txt=($('#chatInput').value||'').trim();
+  if(!txt){return;}
+  t.comentarios=t.comentarios||[];
+  const now=new Date();
+  const iso=`2026-07-29T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  t.comentarios.push({autor:'Tiago F.',data:iso,texto:txt});
+  renderTaskDetailModal();
+}
+function deleteTaskFromDetail(id){DB.tasks=DB.tasks.filter(x=>x.id!==id);closeModal();renderTarefas();updateBadges();toast('Tarefa excluída');}
+
+/* =====================================================================
+   FICHA DA EMPRESA — central de rastreabilidade (timeline + tarefas +
+   oportunidades + pós-venda). Espelha o modelo Company + Activity do backend.
+   ===================================================================== */
+let fichaId=null, fichaTab='overview', noteType='nota', fichaKind='empresa';
+
+// Resolve deals/tasks da empresa por nome (no protótipo o vínculo é por nome;
+// no backend real seria por companyId — FK). Robusto a variações do nome.
+function dealsOfCompany(razao){
+  const key=razao.toLowerCase().split(' ')[0];
+  return DB.deals.filter(d=>d.cliente.toLowerCase().includes(key));
+}
+function tasksOfCompany(razao){
+  const key=razao.toLowerCase().split(' ')[0];
+  return DB.tasks.filter(t=>(t.vinculoNome||'').toLowerCase().includes(key));
+}
+function interactionsOfCompany(id){
+  return DB.interactions.filter(i=>i.companyId===id).sort((a,b)=>b.data.localeCompare(a.data));
+}
+function fmtDateTime(iso){
+  if(!iso)return '—';
+  const [d,t]=iso.split('T'); const [y,mo,day]=d.split('-');
+  return `${day}/${mo}/${y.slice(2)} ${t||''}`.trim();
+}
+
+// Abre a ficha de um LEAD bruto da triagem (rawLeads). O lead ganha timeline
+// e tarefas próprias, ligadas pelo companyId = 'L'+id para não colidir com empresas.
+function openLeadFicha(rawId){
+  fichaKind='lead'; fichaId=rawId; fichaTab='timeline'; noteType='nota';
+  $('#drawerOverlay').classList.add('open');
+  $('#drawer').classList.add('open');
+  renderLeadFicha();
+}
+
+function openFicha(id){
+  fichaKind='empresa'; fichaId=id; fichaTab='overview'; noteType='nota';
+  $('#drawerOverlay').classList.add('open');
+  $('#drawer').classList.add('open');
+  renderFicha();
+}
+function closeFicha(){
+  $('#drawer').classList.remove('open');
+  $('#drawerOverlay').classList.remove('open');
+  fichaId=null;
+}
+function setFichaTab(t){ fichaTab=t; fichaKind==='lead'?renderLeadFicha():renderFicha(); }
+function setNoteType(t){ noteType=t; document.querySelectorAll('.note-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===t)); }
+
+// companyId virtual para o lead na timeline/tarefas
+function leadCid(rawId){ return 90000+rawId; }
+function renderLeadFicha(){
+  const r=DB.rawLeads.find(x=>x.id===fichaId); if(!r)return;
+  const cid=leadCid(r.id);
+  const sc=scoreRaw(r); const tier=scoreTier(sc.score);
+  const inter=DB.interactions.filter(i=>i.companyId===cid).sort((a,b)=>b.data.localeCompare(a.data));
+  const tasks=DB.tasks.filter(t=>t.vinculoTipo==='lead' && t.vinculoId===r.id);
+  const tierColor={quente:'var(--green)',morno:'var(--amber-text)',frio:'var(--red)'};
+
+  $('#drawerHead').innerHTML=`
+    <div class="drawer-head-top">
+      <div>
+        <div class="drawer-co-name">${r.razao}</div>
+        <div class="drawer-co-meta">${r.cnpj} · ${r.municipio}/${r.uf}</div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="pill pill-blue">lead · triagem</span>
+          <span class="tier-tag tier-${tier}" style="font-size:11px">score ${sc.score}</span>
+          <span style="font-size:12px;color:var(--paper-dim)">${r.cnaeDesc}</span>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeFicha()">✕</button>
+    </div>`;
+
+  const tabs=[
+    {id:'timeline',label:'Histórico',count:inter.length},
+    {id:'tarefas',label:'Tarefas',count:tasks.length},
+    {id:'dados',label:'Dados do lead'},
+  ];
+  $('#drawerTabs').innerHTML=tabs.map(t=>`
+    <button class="drawer-tab ${fichaTab===t.id?'active':''}" onclick="setFichaTab('${t.id}')">
+      ${t.label}${t.count!==undefined?`<span class="tab-count">${t.count}</span>`:''}
+    </button>`).join('');
+
+  let body='';
+  if(fichaTab==='timeline'){
+    body=`
+      <div class="add-note">
+        <div class="add-note-types">
+          ${['nota','ligacao','reuniao','visita','email'].map(t=>{
+            const it=DB.interactionTypes[t];
+            return `<button class="note-type-btn ${t===noteType?'active':''}" data-type="${t}" onclick="setNoteType('${t}')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${it.icon}"/></svg>${it.label}</button>`;
+          }).join('')}
+        </div>
+        <textarea id="noteText" placeholder="Registrar contato com este lead... (mesmo antes de aprovar, o histórico fica guardado)"></textarea>
+        <div class="add-note-foot"><button class="btn btn-primary btn-sm" onclick="addLeadInteraction()">Registrar</button></div>
+      </div>
+      <div class="timeline">
+        ${inter.length?inter.map(i=>tlItem(i)).join(''):'<p class="empty">Nenhum contato registrado ainda. Use o campo acima para anotar a primeira conversa.</p>'}
+      </div>`;
+  } else if(fichaTab==='tarefas'){
+    const statusLabel={afazer:'A fazer',hoje:'Hoje',aguardando:'Aguardando',concluida:'Concluída'};
+    const statusPill={afazer:'pill-gray',hoje:'pill-amber',aguardando:'pill-blue',concluida:'pill-green'};
+    body=`
+      <div style="margin-bottom:14px"><button class="btn btn-primary btn-sm" onclick="openLeadTaskForm(${r.id})"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nova tarefa para este lead</button></div>
+      ${tasks.length?tasks.map(t=>`
+        <div class="drawer-list-item">
+          <div>
+            <div class="dli-title">${t.titulo}</div>
+            <div class="dli-sub"><span class="task-type">${t.tipo}</span> · vence ${fmtDate(t.prazo)}</div>
+          </div>
+          <span class="pill ${statusPill[t.status]}">${statusLabel[t.status]}</span>
+        </div>`).join(''):'<p class="empty">Nenhuma tarefa. Crie uma para não esquecer de dar sequência neste lead.</p>'}`;
+  } else if(fichaTab==='dados'){
+    body=`
+      <dl class="kv">
+        <dt>CNPJ</dt><dd>${r.cnpj}</dd>
+        <dt>CNAE</dt><dd>${r.cnae} — ${r.cnaeDesc}</dd>
+        <dt>Local</dt><dd>${r.municipio}/${r.uf}</dd>
+        <dt>Porte</dt><dd>${r.porte}</dd>
+        <dt>Situação</dt><dd>${r.situacao}</dd>
+        <dt>Importador</dt><dd>${r.importador?'<span style="color:var(--green)">Sim (Comex Stat)</span>':'Não'}</dd>
+        <dt>Origem</dt><dd style="text-transform:uppercase">${r.fonte}</dd>
+        <dt>Score</dt><dd><span class="tier-tag tier-${tier}">${sc.score} — ${tier}</span></dd>
+        <dt>Cálculo</dt><dd style="font-size:12px;color:var(--paper-dim)">${sc.reasons.join(' · ')}</dd>
+      </dl>
+      <div style="margin-top:20px;display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="approveRaw(${r.id});closeFicha();"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Aprovar (vira empresa)</button>
+        <button class="btn btn-danger" onclick="discardRaw(${r.id});closeFicha();">Descartar</button>
+      </div>`;
+  }
+  $('#drawerBody').innerHTML=body;
+}
+function addLeadInteraction(){
+  const r=DB.rawLeads.find(x=>x.id===fichaId); if(!r)return;
+  const txt=($('#noteText').value||'').trim();
+  if(!txt){toast('Escreva algo para registrar');return;}
+  const now=new Date();
+  const iso=`2026-07-29T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  DB.interactions.push({id:nextId(), companyId:leadCid(r.id), tipo:noteType, autor:'Tiago F.', data:iso, texto:txt});
+  toast('Registrado no histórico do lead');
+  renderLeadFicha();
+}
+function openLeadTaskForm(rawId){
+  const r=DB.rawLeads.find(x=>x.id===rawId); if(!r)return;
+  openModal('Nova tarefa para o lead',`
+    <div class="field"><label>Descrição</label><input id="lt_titulo" placeholder="Ex: Ligar para apresentar a Gama"></div>
+    <div class="field-row">
+      <div class="field"><label>Tipo</label><select id="lt_tipo">${['ligacao','email','visita','followup'].map(o=>`<option>${o}</option>`).join('')}</select></div>
+      <div class="field"><label>Prazo</label><input id="lt_prazo" type="date" value="${TODAY}"></div>
+    </div>
+  `,`
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveLeadTask(${rawId})">Criar tarefa</button>
+  `);
+}
+function saveLeadTask(rawId){
+  const r=DB.rawLeads.find(x=>x.id===rawId); if(!r)return;
+  const titulo=$('#lt_titulo').value.trim();
+  if(!titulo){toast('Descreva a tarefa');return;}
+  DB.tasks.push({id:nextId(), titulo, tipo:$('#lt_tipo').value, vinculoTipo:'lead', vinculoId:rawId, vinculoNome:r.razao, prazo:$('#lt_prazo').value, status:'afazer', anexos:[], comentarios:[]});
+  closeModal(); toast('Tarefa criada para o lead'); updateBadges();
+  if(fichaKind==='lead') renderLeadFicha();
+}
+
+function renderFicha(){
+  const c=DB.clientes.find(x=>x.id===fichaId); if(!c)return;
+  const inter=interactionsOfCompany(c.id);
+  const deals=dealsOfCompany(c.razao);
+  const tasks=tasksOfCompany(c.razao);
+  const dealsAbertas=deals.filter(d=>!d.stage.startsWith('fechado'));
+  const dealsGanhas=deals.filter(d=>d.stage==='fechado_ganho');
+  const statusMap={ativo:'pill-green',negociando:'pill-amber',inativo:'pill-gray'};
+
+  // cabeçalho
+  $('#drawerHead').innerHTML=`
+    <div class="drawer-head-top">
+      <div>
+        <div class="drawer-co-name">${c.razao}</div>
+        <div class="drawer-co-meta">${c.cnpj} · ${c.cidade}</div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          ${companyType(c)==='cliente'?'<span class="pill pill-green">cliente</span>':'<span class="pill pill-blue">lead</span>'}
+          <span class="pill ${statusMap[c.status]}">${c.status}</span>
+          <span style="font-size:12px;color:var(--paper-dim)">${c.contato} · ${c.fone}</span>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeFicha()">✕</button>
+    </div>`;
+
+  // abas
+  const tabs=[
+    {id:'overview',label:'Visão geral'},
+    {id:'cadastro',label:'Dados cadastrais'},
+    {id:'timeline',label:'Timeline',count:inter.length},
+    {id:'tarefas',label:'Tarefas',count:tasks.length},
+    {id:'negocios',label:'Oportunidades',count:deals.length},
+    {id:'posvenda',label:'Pós-venda'},
+  ];
+  $('#drawerTabs').innerHTML=tabs.map(t=>`
+    <button class="drawer-tab ${fichaTab===t.id?'active':''}" onclick="setFichaTab('${t.id}')">
+      ${t.label}${t.count!==undefined?`<span class="tab-count">${t.count}</span>`:''}
+    </button>`).join('');
+
+  // corpo por aba
+  let body='';
+  if(fichaTab==='overview'){
+    const totalGanho=dealsGanhas.reduce((s,d)=>s+d.valor,0);
+    const totalAberto=dealsAbertas.reduce((s,d)=>s+d.valor,0);
+    const ultima=inter[0];
+    body=`
+      <div class="overview-grid">
+        <div class="ov-stat green"><div class="ov-stat-l">LTV (ganho)</div><div class="ov-stat-v" style="color:var(--green)">${c.ltv>0?brlFull(c.ltv):'R$ 0'}</div></div>
+        <div class="ov-stat blue"><div class="ov-stat-l">Em negociação</div><div class="ov-stat-v">${totalAberto>0?brl(totalAberto):'—'}</div></div>
+        <div class="ov-stat purple"><div class="ov-stat-l">Interações</div><div class="ov-stat-v">${inter.length}</div></div>
+        <div class="ov-stat"><div class="ov-stat-l">Tarefas abertas</div><div class="ov-stat-v">${tasks.filter(t=>t.status!=='concluida').length}</div></div>
+      </div>
+      <div class="drawer-section-title">Última atividade</div>
+      ${ultima?tlItem(ultima):'<p class="empty">Sem interações ainda.</p>'}
+      <div class="drawer-section-title">Oportunidades ativas</div>
+      ${dealsAbertas.length?dealsAbertas.map(d=>dealRow(d)).join(''):'<p style="font-size:13px;color:var(--paper-faint)">Nenhuma oportunidade aberta.</p>'}`;
+  }
+  else if(fichaTab==='cadastro'){
+    body=renderCadastro(c);
+  }
+  else if(fichaTab==='timeline'){
+    body=`
+      <div class="add-note">
+        <div class="add-note-types">
+          ${['nota','ligacao','reuniao','visita','email'].map(t=>{
+            const it=DB.interactionTypes[t];
+            return `<button class="note-type-btn ${t===noteType?'active':''}" data-type="${t}" onclick="setNoteType('${t}')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${it.icon}"/></svg>${it.label}</button>`;
+          }).join('')}
+        </div>
+        <textarea id="noteText" placeholder="Registrar interação com ${c.contato}... (o que foi conversado, próximos passos)"></textarea>
+        <div class="add-note-foot"><button class="btn btn-primary btn-sm" onclick="addInteraction()">Registrar</button></div>
+      </div>
+      <div class="timeline">
+        ${inter.length?inter.map(i=>tlItem(i)).join(''):'<p class="empty">Nenhuma interação registrada ainda.</p>'}
+      </div>`;
+  }
+  else if(fichaTab==='tarefas'){
+    const statusLabel={afazer:'A fazer',hoje:'Hoje',aguardando:'Aguardando',concluida:'Concluída'};
+    const statusPill={afazer:'pill-gray',hoje:'pill-amber',aguardando:'pill-blue',concluida:'pill-green'};
+    body=`
+      <div class="drawer-section-title">Tarefas vinculadas a esta empresa</div>
+      ${tasks.length?tasks.map(t=>`
+        <div class="drawer-list-item">
+          <div>
+            <div class="dli-title">${t.titulo}</div>
+            <div class="dli-sub"><span class="task-type">${t.tipo}</span> · vence ${fmtDate(t.prazo)}</div>
+          </div>
+          <span class="pill ${statusPill[t.status]}">${statusLabel[t.status]}</span>
+        </div>`).join(''):'<p class="empty">Nenhuma tarefa vinculada.</p>'}`;
+  }
+  else if(fichaTab==='negocios'){
+    body=`
+      <div class="drawer-section-title">Todas as oportunidades</div>
+      ${deals.length?deals.map(d=>dealRow(d,true)).join(''):'<p class="empty">Nenhuma oportunidade registrada.</p>'}`;
+  }
+  else if(fichaTab==='posvenda'){
+    const posNotes=inter.filter(i=>i.texto.toUpperCase().includes('PÓS-VENDA')||i.texto.toUpperCase().includes('POS-VENDA'));
+    body=`
+      <div class="drawer-section-title">Pós-venda e relacionamento</div>
+      ${dealsGanhas.length?`
+        <div class="ov-stat green" style="margin-bottom:16px">
+          <div class="ov-stat-l">Equipamentos adquiridos</div>
+          <div style="margin-top:8px">${dealsGanhas.map(d=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--line)">🔧 ${d.produto} — <span style="font-family:var(--mono);color:var(--green)">${brlFull(d.valor)}</span></div>`).join('')}</div>
+        </div>`:''}
+      ${posNotes.length?`
+        <div class="drawer-section-title">Notas de pós-venda</div>
+        <div class="timeline">${posNotes.map(i=>tlItem(i)).join('')}</div>`:`
+        <div class="posvenda-empty">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          ${dealsGanhas.length?'Registre a primeira nota de pós-venda na aba Timeline.':'Espaço reservado para acompanhamento pós-venda.<br>Ativado quando houver uma venda fechada.'}
+        </div>`}`;
+  }
+  $('#drawerBody').innerHTML=body;
+}
+
+/* ---- Dados cadastrais (Receita + estadual) ---- */
+function renderCadastro(c){
+  const cad=c.cad;
+  // Bloco de busca por CNPJ (sempre visível no topo)
+  const searchBox=`
+    <div class="cnpj-search">
+      <div class="cnpj-search-row">
+        <div class="field"><label>Consultar CNPJ na Receita</label><input id="cnpjSearchInput" value="${c.cnpj||''}" placeholder="00.000.000/0001-00"></div>
+        <button class="btn btn-primary" id="cnpjSearchBtn" onclick="buscarCnpj(${c.id})">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+          Buscar dados
+        </button>
+      </div>
+      <div class="field-hint" style="margin-top:8px">Puxa razão social, CNAE, endereço e situação da base da Receita Federal (via BrasilAPI). A Inscrição Estadual é dado da SEFAZ e entra à parte.</div>
+    </div>`;
+
+  if(!cad){
+    return searchBox + `
+      <div class="cad-empty">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 15h6M9 11h2"/></svg>
+        <p>Nenhum dado cadastral ainda. Clique em <b>Buscar dados</b> acima para puxar a ficha da Receita Federal automaticamente.</p>
+      </div>`;
+  }
+
+  // Bloco federal (Receita)
+  const federal=`
+    <div class="cad-source"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>${cad.fonteFederal} · consultado em ${fmtDate(cad.buscadoEm)}</div>
+    <div class="cad-grid">
+      <div class="cad-cell"><div class="cad-k">Razão social</div><div class="cad-v">${c.razao}</div></div>
+      <div class="cad-cell"><div class="cad-k">Nome fantasia</div><div class="cad-v">${cad.fantasia||'—'}</div></div>
+      <div class="cad-cell"><div class="cad-k">CNPJ</div><div class="cad-v mono">${c.cnpj}</div></div>
+      <div class="cad-cell"><div class="cad-k">Situação cadastral</div><div class="cad-v"><span class="badge-contrib ${cad.situacao==='ATIVA'?'sim':'nao'}">${cad.situacao}</span></div></div>
+      <div class="cad-cell"><div class="cad-k">Abertura</div><div class="cad-v">${fmtDate(cad.aberturaEm)}</div></div>
+      <div class="cad-cell"><div class="cad-k">Porte</div><div class="cad-v">${cad.porte}</div></div>
+      <div class="cad-cell full"><div class="cad-k">Natureza jurídica</div><div class="cad-v">${cad.naturezaJuridica}</div></div>
+      <div class="cad-cell full"><div class="cad-k">CNAE principal</div><div class="cad-v mono">${cad.cnaePrincipal}</div></div>
+      <div class="cad-cell full"><div class="cad-k">CNAE secundários</div><div class="cnae-list">${(cad.cnaeSecundarios||[]).map(x=>`<span class="cnae-chip">${x}</span>`).join('')||'<span class="cad-v">—</span>'}</div></div>
+      <div class="cad-cell full"><div class="cad-k">Endereço</div><div class="cad-v">${cad.logradouro} · ${cad.cep} · ${cad.municipioUF}</div></div>
+      <div class="cad-cell"><div class="cad-k">Telefone (Receita)</div><div class="cad-v">${cad.telefoneReceita||'—'}</div></div>
+      <div class="cad-cell"><div class="cad-k">E-mail (Receita)</div><div class="cad-v">${cad.emailReceita||'—'}</div></div>
+    </div>`;
+
+  // Bloco estadual (SEFAZ) — fonte diferente
+  const temIE=cad.ie;
+  const estadual=`
+    <div class="drawer-section-title" style="margin-top:24px">Dados estaduais (SEFAZ / ICMS)</div>
+    <div class="cad-source estadual"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>Fonte estadual (SINTEGRA-RS) · ${temIE?'preenchido manualmente':'preenchimento manual ou integração paga'}</div>
+    ${temIE?`
+    <div class="cad-grid">
+      <div class="cad-cell"><div class="cad-k">Inscrição Estadual</div><div class="cad-v mono">${cad.ie}</div></div>
+      <div class="cad-cell"><div class="cad-k">Situação da IE</div><div class="cad-v"><span class="badge-contrib ${cad.ieSituacao==='HABILITADA'?'sim':'nao'}">${cad.ieSituacao||'—'}</span></div></div>
+      <div class="cad-cell full"><div class="cad-k">Contribuinte de ICMS</div><div class="cad-v"><span class="badge-contrib ${cad.contribuinteIcms?'sim':'nao'}">${cad.contribuinteIcms?'SIM — contribuinte':'NÃO contribuinte'}</span></div></div>
+    </div>`:`
+    <div class="cad-empty" style="padding:22px">
+      <p style="margin-bottom:0">Inscrição Estadual não preenchida. Consulte no <b>SINTEGRA-RS</b> e registre manualmente — a Receita não fornece este dado.</p>
+    </div>`}`;
+
+  return searchBox + federal + estadual;
+}
+
+function buscarCnpj(id){
+  const c=DB.clientes.find(x=>x.id===id); if(!c)return;
+  const btn=$('#cnpjSearchBtn');
+  const cnpj=($('#cnpjSearchInput').value||'').trim();
+  if(!cnpj){toast('Informe um CNPJ');return;}
+  // estado de carregando (simula o round-trip ao proxy /api/cnpj → BrasilAPI)
+  btn.innerHTML=`<svg class="ic spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>Consultando...`;
+  btn.disabled=true;
+  setTimeout(()=>{
+    const found=DB.receitaMock[cnpj];
+    if(found){
+      // mescla o retorno da Receita, preservando IE se já existir
+      c.cad=Object.assign({}, c.cad||{}, found, {buscadoEm:'2026-07-29', ie:(c.cad&&c.cad.ie)||null, contribuinteIcms:(c.cad&&c.cad.contribuinteIcms)||false, ieSituacao:(c.cad&&c.cad.ieSituacao)||null});
+      c.cnpj=cnpj;
+      toast('✓ Dados da Receita carregados');
+    } else {
+      // simula um retorno genérico quando o CNPJ não está no mock
+      c.cad=Object.assign({}, c.cad||{}, {fantasia:c.razao.split(' ')[0], naturezaJuridica:'206-2 - Sociedade Empresária Limitada', situacao:'ATIVA', aberturaEm:'2015-01-10', porte:'MÉDIO', regime:'—', cnaePrincipal:'25.11-0 / Fabricação de estruturas metálicas', cnaeSecundarios:[], logradouro:'Endereço conforme Receita', cep:'—', municipioUF:c.cidade||'RS', telefoneReceita:'—', emailReceita:'—', fonteFederal:'Receita Federal · BrasilAPI', buscadoEm:'2026-07-29', ie:(c.cad&&c.cad.ie)||null, contribuinteIcms:(c.cad&&c.cad.contribuinteIcms)||false, ieSituacao:(c.cad&&c.cad.ieSituacao)||null});
+      c.cnpj=cnpj;
+      toast('✓ Retorno simulado da Receita carregado');
+    }
+    renderFicha();
+  }, 900);
+}
+
+function tlItem(i){
+  const it=DB.interactionTypes[i.tipo]||DB.interactionTypes.nota;
+  return `<div class="tl-item ${i.tipo}">
+    <div class="tl-dot" style="border-color:${it.cor}"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="${it.cor}" stroke-width="2"><path d="${it.icon}"/></svg></div>
+    <div class="tl-head">
+      <span class="tl-type" style="background:${it.cor}22;color:${it.cor}">${it.label}</span>
+      <span class="tl-author">${i.autor}</span>
+      <span class="tl-date">${fmtDateTime(i.data)}</span>
+    </div>
+    <div class="tl-text">${i.texto}</div>
+  </div>`;
+}
+function dealRow(d,showStatus){
+  const stageName=DB.dealStages.find(s=>s.id===d.stage)?.nome||d.stage;
+  const won=d.stage==='fechado_ganho', lost=d.stage==='fechado_perdido';
+  return `<div class="drawer-list-item">
+    <div>
+      <div class="dli-title">🔧 ${d.produto}</div>
+      <div class="dli-sub">${stageName}${d.finame?' · FINAME':''}</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--amber-text)">${brlFull(d.valor)}</div>
+      ${showStatus?`<span class="pill ${won?'pill-green':lost?'pill-red':'pill-blue'}" style="margin-top:4px">${won?'Ganho':lost?'Perdido':'Aberto'}</span>`:''}
+    </div>
+  </div>`;
+}
+function addInteraction(){
+  const txt=$('#noteText').value.trim();
+  if(!txt){toast('Escreva algo para registrar');return;}
+  const now=new Date();
+  const iso=`2026-07-29T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  DB.interactions.push({id:nextId(),companyId:fichaId,tipo:noteType,autor:'Tiago F.',data:iso,texto:txt});
+  toast('Interação registrada na timeline');
+  renderFicha();
+}
+
+/* ---- CLIENTE ---- */
+function openClienteForm(id=null){
+  const c=id?DB.clientes.find(x=>x.id===id):{};
+  openModal(id?'Editar empresa':'Nova empresa',`
+    <div class="field"><label>Razão social</label><input id="c_razao" value="${c.razao||''}"></div>
+    <div class="field-row">
+      <div class="field"><label>CNPJ</label><input id="c_cnpj" value="${c.cnpj||''}"></div>
+      <div class="field"><label>Cidade/UF</label><input id="c_cidade" value="${c.cidade||''}" placeholder="Santa Maria/RS"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Contato</label><input id="c_contato" value="${c.contato||''}"></div>
+      <div class="field"><label>Telefone</label><input id="c_fone" value="${c.fone||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Status</label><select id="c_status">${['ativo','negociando','inativo'].map(o=>`<option ${c.status===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="field"><label>LTV (R$)</label><input id="c_ltv" type="number" value="${c.ltv||0}"></div>
+    </div>
+    <div class="field-hint">O tipo (Lead / Cliente) é definido automaticamente: vira <b style="color:var(--green)">Cliente</b> quando há venda ganha (LTV &gt; 0).</div>
+  `,`
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveCliente(${id})">${id?'Salvar':'Criar empresa'}</button>
+  `);
+}
+function saveCliente(id){
+  const data={razao:$('#c_razao').value,cnpj:$('#c_cnpj').value,cidade:$('#c_cidade').value,contato:$('#c_contato').value,fone:$('#c_fone').value,status:$('#c_status').value,ltv:+$('#c_ltv').value||0,ultimaCompra:id?DB.clientes.find(x=>x.id===id).ultimaCompra:'—'};
+  if(!data.razao){toast('Informe a razão social');return;}
+  if(id){Object.assign(DB.clientes.find(x=>x.id===id),data);toast('Empresa atualizada');}
+  else{DB.clientes.push({id:nextId(),...data});toast('Empresa criada');}
+  closeModal();renderClientes();updateBadges();
+}
+function deleteCliente(id){DB.clientes=DB.clientes.filter(x=>x.id!==id);renderClientes();updateBadges();toast('Empresa excluída');}
+
+/* ---- filtros de board ---- */
+function filterLeads(v){document.querySelectorAll('#leadBoard .card').forEach(c=>{c.style.display=c.querySelector('.card-co').textContent.toLowerCase().includes(v.toLowerCase())?'':'none';});}
+function filterDeals(v){document.querySelectorAll('#dealBoard .card').forEach(c=>{c.style.display=c.querySelector('.card-co').textContent.toLowerCase().includes(v.toLowerCase())?'':'none';});}
+
+/* INIT */
+renderDashboard();updateBadges();
+</script>
+</body>
+</html>

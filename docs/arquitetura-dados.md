@@ -62,21 +62,22 @@ pessoa pode pertencer a múltiplos workspaces.
   (global), `Membership` é por pessoa+workspace.
 
 ### Company (Account)
-Organização cliente.
+Organização cliente. Cobre pessoa física e jurídica — desde 2026-07-28
+absorveu os campos que antes viviam numa tabela `Contact` separada
+(decisão do usuário: contato é atributo de Company, não entidade própria;
+`Task`/`Opportunity`/`Activity` perderam o vínculo com uma pessoa
+específica do cliente, só ligam a Company/Opportunity agora).
 
-- Campos: `id`, `workspace_id`, `name`, `domain`, `industry`, `size`,
+- Campos base: `id`, `workspace_id`, `name`, `domain`, `industry`, `size`,
   `owner_user_id`, `parent_company_id` (hierarquia matriz/filial),
   `custom_fields` (jsonb).
+- Cadastro completo (ex-Contact): `razao_social`, `fantasia`,
+  `nome_para_contato`, `cpf_cnpj`, `tipo` (`PF`/`PJ`), `dt_nasc`, `dt_cad`,
+  `emails`/`fones`/`tags` (arrays), endereço completo (`logradouro`,
+  `numero`, `complemento`, `bairro`, `cep`, `cidade`, `uf`). Todos
+  opcionais — só `name` é obrigatório na criação.
 - Regra: `owner_user_id` deve ser um Membership ativo do mesmo workspace
   (checagem de aplicação/trigger).
-
-### Contact
-Pessoa dentro de uma empresa.
-
-- Campos: `id`, `workspace_id`, `company_id` (nullable), `name`, `email`,
-  `phone`, `title`, `owner_user_id`.
-- Regra: e-mail único por `workspace_id`, não globalmente. Merge de
-  duplicados é operação de negócio explícita, não constraint de banco.
 
 ### Pipeline / Stage
 Configuração, não dado transacional.
@@ -91,8 +92,8 @@ Configuração, não dado transacional.
 ### Opportunity (Deal)
 Núcleo transacional do CRM.
 
-- Campos: `id`, `workspace_id`, `company_id`, `primary_contact_id`,
-  `pipeline_id`, `stage_id`, `owner_user_id`, `amount`, `currency`,
+- Campos: `id`, `workspace_id`, `company_id`, `pipeline_id`, `stage_id`,
+  `owner_user_id`, `amount`, `currency`,
   `expected_close_date`, `status` (`open`, `won`, `lost`), `lost_reason`,
   `created_at`, `closed_at`.
 - Regras:
@@ -107,8 +108,8 @@ Núcleo transacional do CRM.
 Ação futura, acionável.
 
 - Campos: `id`, `workspace_id`, `assignee_user_id`, `company_id` /
-  `contact_id` / `opportunity_id` (nullable, exatamente um preenchido via
-  CHECK constraint), `title`, `due_at`, `status` (`pending`, `done`),
+  `opportunity_id` (nullable, exatamente um preenchido via CHECK
+  constraint), `title`, `due_at`, `status` (`pending`, `done`),
   `created_by`.
 - Regra: "overdue" é calculado (`due_at < now() AND status = pending`), não
   persistido.
@@ -118,17 +119,16 @@ Log de interação e trilha de auditoria — o que já aconteceu, diferente de
 Task (o que precisa acontecer).
 
 - Campos: `id`, `workspace_id`, `actor_user_id` (nullable para eventos de
-  sistema/integração), `company_id` / `contact_id` / `opportunity_id`
-  (mesmo padrão de Task), `type` (`note`, `call`, `email`, `stage_change`,
+  sistema/integração), `company_id` / `opportunity_id` (mesmo padrão de
+  Task), `type` (`note`, `call`, `email`, `stage_change`,
   `field_update`...), `payload` (jsonb), `occurred_at`.
 - Regra: **append-only**. Nunca UPDATE/DELETE em fluxo normal — é a fonte de
   verdade de "quem fez o quê e quando".
 
 > Nota de design: para as relações polimórficas de Task/Activity, preferir
-> `company_id`/`contact_id`/`opportunity_id` nullable lado a lado (com CHECK
-> garantindo exatamente um preenchido) em vez de `related_to_type` +
-> `related_to_id` genérico. Mantém FK real do Postgres e permite índice
-> parcial por tipo.
+> `company_id`/`opportunity_id` nullable lado a lado (com CHECK garantindo
+> exatamente um preenchido) em vez de `related_to_type` + `related_to_id`
+> genérico. Mantém FK real do Postgres e permite índice parcial por tipo.
 
 ## 3. Relacionamentos
 
@@ -136,14 +136,12 @@ Task (o que precisa acontecer).
 Workspace 1──N Membership N──1 User
 Workspace 1──N Company
 Workspace 1──N Pipeline 1──N Stage
-Company  1──N Contact
 Company  1──N Opportunity
-Contact  1──N Opportunity (primary_contact, opcional)
 Pipeline 1──N Opportunity
 Stage    1──N Opportunity
-Opportunity/Company/Contact 1──N Task
-Opportunity/Company/Contact 1──N Activity
-Membership(user) 1──N Company/Contact/Opportunity (owner)
+Opportunity/Company 1──N Task
+Opportunity/Company 1──N Activity
+Membership(user) 1──N Company/Opportunity (owner)
 ```
 
 ## 4. Modelo de permissões
@@ -186,8 +184,8 @@ endpoint) — aplicada idealmente tanto na API quanto via RLS no banco.
 
 1. Toda escrita relevante gera Activity — sem isso, histórico de
    forecast/funil fica impossível de reconstruir depois.
-2. Soft delete generalizado (`deleted_at`) em Company/Contact/Opportunity —
-   nunca DELETE físico.
+2. Soft delete generalizado (`deleted_at`) em Company/Opportunity — nunca
+   DELETE físico.
 3. Campos customizados via `jsonb` (`custom_fields`) em vez de EAV
    relacional — indexável via GIN, validado por schema na aplicação.
 4. Unicidade sempre escopada a `workspace_id`, exceto `auth.users.email`
