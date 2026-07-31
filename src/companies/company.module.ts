@@ -9,5 +9,6 @@ import { CompanyService } from './company.service';
   imports: [TenancyModule, PolicyModule, ActivityModule],
   controllers: [CompanyController],
   providers: [CompanyService],
+  exports: [CompanyService],
 })
 export class CompanyModule {}

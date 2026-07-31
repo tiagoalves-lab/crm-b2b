@@ -28,10 +28,16 @@ export default async function EmpresasPage({
   }
 
   const showDeleted = includeDeleted === "1";
-  const [{ items: companies }, { items: opportunities }] = await Promise.all([
+  const [{ items: allCompanies }, { items: opportunities }] = await Promise.all([
     listCompanies(token, showDeleted),
     listOpportunities(token),
   ]);
+
+  // Company-lead ainda em triagem (SPEC-CRM-GAMA.md §4.4) não é uma
+  // empresa de verdade até ser aprovada — fica de fora daqui, mesmo
+  // critério de exclusão da view v_busca_empresa_lead. Ela aparece na
+  // tela Leads em vez desta.
+  const companies = allCompanies.filter((c) => !c.tags.includes("lead-triagem"));
 
   // Selo lead/cliente: cliente se existe ao menos uma opportunity "won"
   // vinculada; senão lead (SPEC-CRM-GAMA.md §4.1).

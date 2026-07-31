@@ -7,10 +7,14 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 
 ## Retomando a sessão (última atualização: 2026-07-31)
 
-**HANDOFF — sessão anterior foi interrompida por falta de crédito da
-IA no meio da execução do `SPEC-CRM-GAMA.md`.** Se você é um colega
+**HANDOFF — sessão anterior foi interrompida (computador desligou sozinho)
+no meio da execução do `SPEC-CRM-GAMA.md`.** Se você é um colega
 retomando isso pra outra pessoa: leia `SPEC-CRM-GAMA.md` inteiro primeiro
-(é a ordem de serviço), depois esta seção.
+(é a ordem de serviço), depois esta seção. **A Fatia 6 (abaixo) ainda não
+foi testada no navegador nem commitada** — só build + testes automatizados
+passando localmente. Rode o checklist da seção 8 do spec de novo antes de
+seguir pra Fatia 7, e confirme visualmente a tela `/dashboard/leads` com
+credencial real antes de considerar a fatia fechada de verdade.
 
 ### Estado da execução do SPEC-CRM-GAMA.md (seção 6 — 9 fatias)
 
@@ -34,15 +38,36 @@ retomando isso pra outra pessoa: leia `SPEC-CRM-GAMA.md` inteiro primeiro
       pede "sem Kanban", mas o Kanban já existia e funcionava (sessão
       anterior) — mantido, não apaguei feature funcionando sem confirmação
       explícita. Comentários/checklist já estavam prontos (não eram gap).
-- [ ] **Fatia 6** — Leads/Triagem (§4.4) — **próxima a fazer**. Cria o módulo `raw_leads`
-      completo (hoje só tem `approve()`, da Fatia 4) + `LeadScoringService`
-      (fórmula exata em `gama-crm-mvp.html`, função `scoreRaw()` ~linha
-      694). **Importante**: até esta fatia rodar, `raw_leads` fica vazio
-      (0 linhas) — o seletor de empresa/lead da Fatia 4 só casa empresas,
-      nunca leads, e o `POST /raw-leads/:id/approve` não tem dado real
-      pra aprovar ainda (só testado com fixture manual em
-      `test/raw-leads.e2e-spec.ts`).
-- [ ] **Fatia 7** — Dashboard + Relatórios (§4.5).
+- [x] **Fatia 6** — Leads/Triagem (§4.4). Módulo `raw_leads` completo:
+      `LeadScoringService` (fórmula 1:1 com `scoreRaw()`/`scoreTier()` do
+      protótipo), `POST/GET /raw-leads`, `GET /raw-leads/:id`,
+      `POST /raw-leads/:id/discard`, `POST /raw-leads/bulk-approve`,
+      `POST /raw-leads/bulk-discard`, `POST /raw-leads/rescore`. **Decisão
+      de modelagem**: a company-lead nasce junto com o raw_lead (tag
+      `lead-triagem`), não só na aprovação — reusa `CompanyService.create`
+      (agora exportado por `CompanyModule`). **Decisão do usuário
+      (2026-07-31)**: descartar um lead NÃO apaga nem soft-deleta a
+      company-lead, só marca `raw_leads.status='descartado'` — a company
+      fica intacta e invisível (segue com a tag). Tela `/dashboard/leads`
+      nova (lista com filtro quente/morno/frio, seleção em lote,
+      "selecionar quentes", recalcular scores, importar lead manual,
+      ficha com abas Histórico/Tarefas/Dados reusando `createNoteAction`/
+      `createTaskAction` de Empresas/Tarefas). Empresas (`/dashboard/
+      empresas`) agora filtra fora as companies com tag `lead-triagem`
+      (senão a triagem poluiria a lista de empresas de verdade). Menu
+      "Leads" religado no sidebar (grupo "Aquisição"). `prisma/seed.ts`
+      ganhou 6 leads fictícios (2 quente/2 morno/2 frio, fontes
+      variadas) pra popular a triagem em dev — **não rodei o seed contra
+      o Supabase real** porque não tenho `DEV_USER_ID` disponível nesta
+      sessão (mesma limitação de sempre, ver seção "não testado no
+      navegador" abaixo). 64 unit + 107 e2e passando (12 novos: 8 no CRUD
+      de raw-leads + reaproveitei os 4 de approve já existentes). Bug de
+      teste achado e corrigido no processo (não é bug de produto): cleanup
+      de e2e que faz hard-delete de company criada via `CompanyService`
+      precisa apagar a `Activity` associada antes, senão bate no mesmo
+      CHECK constraint latente já documentado na memória de Tarefas/Kanban.
+      Detalhe completo em memória (`project_spec_crm_gama_execucao`).
+- [ ] **Fatia 7** — Dashboard + Relatórios (§4.5) — **próxima a fazer**.
 - [ ] **Fatia 8** — Anexos: bucket Storage privado `task-attachments`
       (a tabela já existe, da Fatia 1) + upload via signed URL.
 - [ ] **Fatia 9** — Papéis Admin/Operador (§7.5) — **fazer por último**,
@@ -64,6 +89,13 @@ teste manual quando alguém logar:**
 3. Ficha da empresa (`/dashboard/empresas`, clicar numa linha) — 6 abas,
    registrar uma nota na Timeline.
 4. Tela Empresas — form expandido + botão "Buscar CNPJ".
+5. **Tela Leads (Fatia 6, nova)** — precisa rodar `DEV_USER_ID=<uuid>
+   npm run prisma:seed` primeiro (não rodei nesta sessão, sem o uuid do
+   usuário de dev) pra popular os 6 leads fictícios. Depois: seleção em
+   lote + "Selecionar quentes" + "Recalcular scores" (única parte
+   client-side da tela, `leads-table.tsx`) e aprovar um lead pelo botão
+   da ficha (`?lead=<id>&aba=dados`) — confirmar que ele some da lista e
+   aparece em Empresas.
 
 Cada fatia tem os detalhes de decisão/gotcha registrados na memória do
 Claude Code (`project_spec_crm_gama_execucao` — mas isso é local da

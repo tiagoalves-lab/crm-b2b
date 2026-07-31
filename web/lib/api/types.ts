@@ -169,3 +169,25 @@ export interface PaginatedResult<T> {
   page: number;
   pageSize: number;
 }
+
+export type RawLeadStatus = "novo" | "aprovado" | "descartado";
+export type LeadFonte = "econodata" | "apify" | "comexstat" | "manual";
+
+export interface RawLead {
+  id: string;
+  razaoSocial: string;
+  cnpj: string | null;
+  cnaePrincipal: string | null;
+  cnaeDescricao: string | null;
+  porte: string | null;
+  uf: string | null;
+  municipio: string | null;
+  situacao: string | null;
+  importador: boolean;
+  fonte: LeadFonte;
+  score: number;
+  status: RawLeadStatus;
+  promotedCompanyId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
