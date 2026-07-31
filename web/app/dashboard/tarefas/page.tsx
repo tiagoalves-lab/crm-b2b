@@ -255,6 +255,16 @@ export default async function TarefasPage({
               <tr key={task.id}>
                 <td>
                   <Link href={`${baseHref}&card=${task.id}`}>{task.title}</Link>
+                  {task._count && (task._count.comments > 0 || task._count.checklistItems > 0) && (
+                    <span className="row-form" style={{ display: "inline-flex", marginLeft: 8 }}>
+                      {task._count.comments > 0 && (
+                        <span className="badge" title="Comentários">💬 {task._count.comments}</span>
+                      )}
+                      {task._count.checklistItems > 0 && (
+                        <span className="badge" title="Itens de checklist">☑ {task._count.checklistItems}</span>
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td>{targetLabel(task)}</td>
                 <td>

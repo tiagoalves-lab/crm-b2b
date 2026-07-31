@@ -126,6 +126,9 @@ export interface Task {
   status: TaskStatus;
   createdBy: string;
   createdAt: string;
+  // Só em GET /tasks (lista) — SPEC-CRM-GAMA.md §4.3, ícones de contagem.
+  // Ausente em GET /tasks/:id (TaskWithDetails traz os arrays inteiros).
+  _count?: { checklistItems: number; comments: number; attachments: number };
 }
 
 export interface TaskChecklistItem {

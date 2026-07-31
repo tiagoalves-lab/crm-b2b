@@ -11,6 +11,7 @@ interface TaskBody {
   status: string;
   dueAt: string | null;
   companyId: string | null;
+  _count?: { checklistItems: number; comments: number; attachments: number };
 }
 
 interface TaskListBody {
@@ -302,6 +303,14 @@ describe('TaskController (e2e)', () => {
       const body = res.body as { id: string; body: string };
       expect(body.body).toBe('Cliente confirmou');
       commentId = body.id;
+    });
+
+    it('GET /tasks (lista) traz _count.comments refletindo o comentário criado (SPEC-CRM-GAMA.md §4.3)', async () => {
+      const res = await request(app.getHttpServer()).get('/tasks').expect(200);
+      const body = res.body as TaskListBody;
+      const task = body.items.find((t) => t.id === taskId);
+      expect(task?._count?.comments).toBe(1);
+      expect(task?._count?.checklistItems).toBe(0);
     });
 
     it('CRÍTICO: outro membro (não autor) não pode remover o comentário', async () => {

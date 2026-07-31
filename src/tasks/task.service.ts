@@ -29,6 +29,13 @@ export type TaskWithDetails = Task & {
   comments: TaskComment[];
 };
 
+// Contagens pra tela de lista (SPEC-CRM-GAMA.md §4.3: "ícones de
+// contagem de anexos/comentários") — sem trazer os itens inteiros, só o
+// total, bem mais barato que TaskWithDetails pra uma listagem paginada.
+export type TaskWithCounts = Task & {
+  _count: { checklistItems: number; comments: number; attachments: number };
+};
+
 @Injectable()
 export class TaskService {
   constructor(
@@ -83,7 +90,7 @@ export class TaskService {
     tx: TenantTx,
     membership: MembershipContext,
     query: ListTasksQueryDto,
-  ): Promise<PaginatedResult<Task>> {
+  ): Promise<PaginatedResult<TaskWithCounts>> {
     const scope = await this.policy.scopeFilter(tx, membership);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
@@ -115,6 +122,9 @@ export class TaskService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
+        include: {
+          _count: { select: { checklistItems: true, comments: true, attachments: true } },
+        },
       }),
       tx.task.count({ where }),
     ]);

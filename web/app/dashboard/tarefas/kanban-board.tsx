@@ -72,6 +72,12 @@ function Card({
             </span>
           )}
           {task.status === "done" && <span className="badge badge-accent">Concluída</span>}
+          {task._count && task._count.comments > 0 && (
+            <span className="badge" title="Comentários">💬 {task._count.comments}</span>
+          )}
+          {task._count && task._count.checklistItems > 0 && (
+            <span className="badge" title="Itens de checklist">☑ {task._count.checklistItems}</span>
+          )}
         </div>
       </Link>
     </div>

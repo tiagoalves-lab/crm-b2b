@@ -29,8 +29,12 @@ retomando isso pra outra pessoa: leia `SPEC-CRM-GAMA.md` inteiro primeiro
       `<select>+botão` antigo), previsão ponderada + taxa de fechamento,
       subform de encerradas com filtro de mês. Endpoints novos:
       `GET /busca-empresa-lead`, `POST /raw-leads/:id/approve`.
-- [ ] **Fatia 5** — Tarefas: comentários (§4.3) — **próxima a fazer**.
-- [ ] **Fatia 6** — Leads/Triagem (§4.4) — cria o módulo `raw_leads`
+- [x] **Fatia 5** — Tarefas: ícones de contagem (comentários/checklist) na
+      Lista e no Kanban (`_count` novo em `GET /tasks`). **Decisão**: spec
+      pede "sem Kanban", mas o Kanban já existia e funcionava (sessão
+      anterior) — mantido, não apaguei feature funcionando sem confirmação
+      explícita. Comentários/checklist já estavam prontos (não eram gap).
+- [ ] **Fatia 6** — Leads/Triagem (§4.4) — **próxima a fazer**. Cria o módulo `raw_leads`
       completo (hoje só tem `approve()`, da Fatia 4) + `LeadScoringService`
       (fórmula exata em `gama-crm-mvp.html`, função `scoreRaw()` ~linha
       694). **Importante**: até esta fatia rodar, `raw_leads` fica vazio
