@@ -1,8 +1,13 @@
 import { apiFetch } from "./client";
 import type { Opportunity, OpportunityStatus, PaginatedResult } from "./types";
 
-export function listOpportunities(token: string): Promise<PaginatedResult<Opportunity>> {
-  return apiFetch<PaginatedResult<Opportunity>>("/opportunities?pageSize=100", {
+export function listOpportunities(
+  token: string,
+  options: { companyId?: string } = {},
+): Promise<PaginatedResult<Opportunity>> {
+  const query = new URLSearchParams({ pageSize: "100" });
+  if (options.companyId) query.set("companyId", options.companyId);
+  return apiFetch<PaginatedResult<Opportunity>>(`/opportunities?${query.toString()}`, {
     token,
   });
 }

@@ -43,6 +43,26 @@ export function createCompany(
   return apiFetch<Company>("/companies", { method: "POST", token, body: input });
 }
 
+export function getCompany(token: string, id: string): Promise<Company> {
+  return apiFetch<Company>(`/companies/${id}`, { token });
+}
+
+export type UpdateCompanyInput = Partial<CreateCompanyInput> & {
+  customFields?: Record<string, unknown>;
+};
+
+export function updateCompany(
+  token: string,
+  id: string,
+  input: UpdateCompanyInput,
+): Promise<Company> {
+  return apiFetch<Company>(`/companies/${id}`, {
+    method: "PATCH",
+    token,
+    body: input,
+  });
+}
+
 export interface CnpjLookupResult {
   razaoSocial?: string;
   fantasia?: string;

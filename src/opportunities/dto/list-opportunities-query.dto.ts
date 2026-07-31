@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 import { ListQueryDto } from '../../common/dto/list-query.dto';
 
 export class ListOpportunitiesQueryDto extends ListQueryDto {
@@ -11,4 +11,9 @@ export class ListOpportunitiesQueryDto extends ListQueryDto {
   @IsInt()
   @Min(1)
   staleDays?: number;
+
+  // Ficha da empresa (SPEC-CRM-GAMA.md §4.1, aba "Oportunidades").
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
 }

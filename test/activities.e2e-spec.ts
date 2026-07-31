@@ -93,4 +93,62 @@ describe('ActivityController (e2e)', () => {
       .get(`/activities?companyId=${randomUUID()}`)
       .expect(404);
   });
+
+  describe('POST /activities — registro manual (SPEC-CRM-GAMA.md §4.1, Timeline)', () => {
+    it('cria uma nota manual vinculada à empresa, com subtipo no payload', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/activities')
+        .send({
+          companyId,
+          type: 'note',
+          texto: 'Visita técnica realizada, cliente satisfeito.',
+          subtipo: 'visita',
+        })
+        .expect(201);
+      const body = res.body as {
+        id: string;
+        type: string;
+        companyId: string;
+        payload: { texto: string; subtipo: string };
+      };
+      expect(body.type).toBe('note');
+      expect(body.companyId).toBe(companyId);
+      expect(body.payload.texto).toBe('Visita técnica realizada, cliente satisfeito.');
+      expect(body.payload.subtipo).toBe('visita');
+
+      const list = await request(app.getHttpServer())
+        .get(`/activities?companyId=${companyId}`)
+        .expect(200);
+      const items = (list.body as ActivityListBody).items;
+      expect(items.some((a) => a.id === body.id)).toBe(true);
+    });
+
+    it('rejeita type fora do vocabulário manual (stage_change é só automático)', async () => {
+      await request(app.getHttpServer())
+        .post('/activities')
+        .send({ companyId, type: 'stage_change', texto: 'Tentativa inválida' })
+        .expect(400);
+    });
+
+    it('rejeita quando nenhum alvo é informado', async () => {
+      await request(app.getHttpServer())
+        .post('/activities')
+        .send({ type: 'note', texto: 'Sem empresa nem oportunidade' })
+        .expect(400);
+    });
+
+    it('rejeita quando dois alvos são informados', async () => {
+      await request(app.getHttpServer())
+        .post('/activities')
+        .send({ companyId, opportunityId: randomUUID(), type: 'note', texto: 'Ambíguo' })
+        .expect(400);
+    });
+
+    it('retorna 404 pra empresa de outro workspace/inexistente', async () => {
+      await request(app.getHttpServer())
+        .post('/activities')
+        .send({ companyId: randomUUID(), type: 'note', texto: 'Empresa que não existe' })
+        .expect(404);
+    });
+  });
 });

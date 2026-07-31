@@ -117,6 +117,24 @@ describe('OpportunityController (e2e)', () => {
     opportunityId = body.id;
   });
 
+  it('GET /opportunities?companyId= filtra pela empresa (ficha, SPEC-CRM-GAMA.md §4.1)', async () => {
+    const outraCompany = await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.company.create({
+        data: { workspaceId: workspace.id, name: 'Empresa sem oportunidade' },
+      }),
+    );
+    const res = await request(app.getHttpServer())
+      .get(`/opportunities?companyId=${companyId}`)
+      .expect(200);
+    const body = res.body as { items: OpportunityBody[] };
+    expect(body.items.some((o) => o.id === opportunityId)).toBe(true);
+
+    const empty = await request(app.getHttpServer())
+      .get(`/opportunities?companyId=${outraCompany.id}`)
+      .expect(200);
+    expect((empty.body as { items: OpportunityBody[] }).items).toHaveLength(0);
+  });
+
   it('POST /opportunities rejeita status/lostReason no corpo (não whitelisted)', async () => {
     await request(app.getHttpServer())
       .post('/opportunities')

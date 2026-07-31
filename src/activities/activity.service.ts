@@ -1,6 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Activity, ActivityType, Prisma } from '@prisma/client';
+import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
+import type { MembershipContext } from '../tenancy/tenant-membership.guard';
+import type { CreateActivityDto } from './dto/create-activity.dto';
 
 export interface EmitActivityInput {
   workspaceId: string;
@@ -12,10 +19,73 @@ export interface EmitActivityInput {
 }
 
 // Ponto único de escrita em Activity — todo resource service chama isso em
-// vez de duplicar o insert. Sem endpoint HTTP próprio nesta fase: leitura
-// de feed é Fase 4 (ver docs/roadmap.md).
+// vez de duplicar o insert (registro automático, ex.: stage_change).
+// `createManual` (abaixo) é o caminho pro usuário registrar uma nota/
+// ligação/e-mail de próprio punho (SPEC-CRM-GAMA.md §4.1/§4.2, aba
+// Timeline) — endpoint HTTP em ActivityController.
 @Injectable()
 export class ActivityService {
+  constructor(private readonly policy: PolicyService) {}
+
+  // Registrar uma interação exige só visibilidade de leitura da entidade
+  // referenciada — mesmo critério já usado pra comentário de Task
+  // (colaborativo: um gerente que vê a company/opportunity de um
+  // subordinado pode registrar nota nela sem ser o owner).
+  async createManual(
+    tx: TenantTx,
+    membership: MembershipContext,
+    dto: CreateActivityDto,
+  ): Promise<Activity> {
+    // Defesa em profundidade independente do @ExactlyOneOf do DTO — mesma
+    // lacuna já documentada em TaskService.mustTargetExist/
+    // ActivityQueryService.assertEntityVisible: como os dois campos são
+    // @IsOptional(), o class-validator pula o decorator inteiro quando
+    // ambos estão undefined, deixando "0 de 2" passar pra cá. Sem esta
+    // checagem, cair direto em emit() rejeita com um Error genérico (500),
+    // não um 400 limpo.
+    const targets = [dto.companyId, dto.opportunityId].filter(
+      (value) => value !== undefined,
+    );
+    if (targets.length !== 1) {
+      throw new BadRequestException(
+        'Exatamente um de companyId/opportunityId deve ser informado.',
+      );
+    }
+
+    if (dto.companyId) {
+      const company = await tx.company.findFirst({
+        where: { id: dto.companyId, workspaceId: membership.workspaceId },
+      });
+      if (
+        !company ||
+        company.deletedAt ||
+        !(await this.policy.can(tx, membership, 'read', company))
+      ) {
+        throw new NotFoundException('Empresa não encontrada.');
+      }
+    } else if (dto.opportunityId) {
+      const opportunity = await tx.opportunity.findFirst({
+        where: { id: dto.opportunityId, workspaceId: membership.workspaceId },
+      });
+      if (
+        !opportunity ||
+        opportunity.deletedAt ||
+        !(await this.policy.can(tx, membership, 'read', opportunity))
+      ) {
+        throw new NotFoundException('Oportunidade não encontrada.');
+      }
+    }
+
+    return this.emit(tx, {
+      workspaceId: membership.workspaceId,
+      actorUserId: membership.userId,
+      type: dto.type,
+      payload: dto.subtipo ? { texto: dto.texto, subtipo: dto.subtipo } : { texto: dto.texto },
+      companyId: dto.companyId,
+      opportunityId: dto.opportunityId,
+    });
+  }
+
   emit(tx: TenantTx, input: EmitActivityInput): Promise<Activity> {
     const targets = [input.companyId, input.opportunityId].filter(
       (id): id is string => id !== undefined && id !== null,

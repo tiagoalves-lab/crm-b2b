@@ -3,11 +3,12 @@ import type { PaginatedResult, Task, TaskStatus, TaskWithDetails } from "./types
 
 export function listTasks(
   token: string,
-  options: { overdue?: boolean; status?: TaskStatus } = {},
+  options: { overdue?: boolean; status?: TaskStatus; companyId?: string } = {},
 ): Promise<PaginatedResult<Task>> {
   const query = new URLSearchParams({ pageSize: "100" });
   if (options.overdue) query.set("overdue", "true");
   if (options.status) query.set("status", options.status);
+  if (options.companyId) query.set("companyId", options.companyId);
   return apiFetch<PaginatedResult<Task>>(`/tasks?${query.toString()}`, {
     token,
   });

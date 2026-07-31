@@ -54,6 +54,11 @@ export interface Company {
   cidade: string | null;
   uf: string | null;
   tags: string[];
+  // Campos fiscais estaduais (IE, contribuinte de ICMS, situação
+  // cadastral) — dado que a Receita não fornece, preenchimento manual
+  // (SPEC-CRM-GAMA.md §3.4/§4.1). Chaves usadas:
+  // inscricao_estadual/contribuinte_icms/situacao_cadastral.
+  customFields: Record<string, unknown>;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;

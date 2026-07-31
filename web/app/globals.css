@@ -544,7 +544,8 @@ a {
 }
 
 .form-grid input,
-.form-grid select {
+.form-grid select,
+.form-grid textarea {
   font-family: inherit;
   font-size: 13px;
   padding: 8px 10px;
@@ -552,6 +553,7 @@ a {
   border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text-primary);
+  resize: vertical;
 }
 
 /* ---------- Pipeline (kanban simples) ---------- */
@@ -630,6 +632,58 @@ a {
   background: var(--surface);
   color: var(--text-primary);
   box-shadow: var(--shadow-sm);
+}
+
+/* ---------- Ficha da empresa / dashboard: cartões de estatística ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 4px;
+  color: var(--text-primary);
+}
+
+/* ---------- Timeline (activities) ---------- */
+.timeline-item {
+  border-left: 2px solid var(--border);
+  padding: 2px 0 14px 14px;
+  margin-left: 4px;
+}
+
+.timeline-item-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.timeline-item-body {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 2px;
+  white-space: pre-wrap;
 }
 
 .kanban-card {

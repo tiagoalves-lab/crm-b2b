@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { CnpjLookupResult } from "@/lib/api/companies";
-import { createCompanyAction } from "./actions";
+import type { Company } from "@/lib/api/types";
+import { createCompanyAction, updateCompanyAction } from "./actions";
 
 type Fields = {
   razaoSocial: string;
@@ -36,9 +37,37 @@ const EMPTY_FIELDS: Fields = {
   uf: "",
 };
 
-export default function CompanyForm() {
-  const [fields, setFields] = useState<Fields>(EMPTY_FIELDS);
-  const [cnpjQuery, setCnpjQuery] = useState("");
+function fieldsFrom(company?: Company): Fields {
+  if (!company) return EMPTY_FIELDS;
+  return {
+    razaoSocial: company.razaoSocial ?? "",
+    fantasia: company.fantasia ?? "",
+    cpfCnpj: company.cpfCnpj ?? "",
+    tipo: company.tipo ?? "",
+    emails: company.emails.join(", "),
+    fones: company.fones.join(", "),
+    logradouro: company.logradouro ?? "",
+    numero: company.numero ?? "",
+    complemento: company.complemento ?? "",
+    bairro: company.bairro ?? "",
+    cep: company.cep ?? "",
+    cidade: company.cidade ?? "",
+    uf: company.uf ?? "",
+  };
+}
+
+// Usado tanto pra cadastrar (sem `company`) quanto pra editar (aba "Dados
+// cadastrais" da ficha, com `company` preenchido) — mesmos campos, só
+// muda o valor inicial e a Server Action de destino.
+export default function CompanyForm({
+  company,
+  backHref,
+}: {
+  company?: Company;
+  backHref?: string;
+}) {
+  const [fields, setFields] = useState<Fields>(() => fieldsFrom(company));
+  const [cnpjQuery, setCnpjQuery] = useState(company?.cpfCnpj ?? "");
   const [loading, setLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
@@ -85,6 +114,8 @@ export default function CompanyForm() {
     }
   }
 
+  const action = company ? updateCompanyAction : createCompanyAction;
+
   return (
     <div className="form-panel">
       <div className="row-form" style={{ marginBottom: 12 }}>
@@ -99,19 +130,25 @@ export default function CompanyForm() {
           onClick={handleLookup}
           disabled={loading}
         >
-          {loading ? "Buscando…" : "Buscar CNPJ"}
+          {loading ? "Buscando…" : "Buscar dados"}
         </button>
       </div>
       {lookupError && <div className="error-banner">{lookupError}</div>}
+      <p className="field-hint" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: -4, marginBottom: 12 }}>
+        Puxa razão social, endereço e situação da Receita Federal (BrasilAPI). A Inscrição
+        Estadual é dado da SEFAZ e entra à parte, na seção &ldquo;Dados fiscais estaduais&rdquo; abaixo.
+      </p>
 
-      <form action={createCompanyAction} className="form-grid">
+      <form action={action} className="form-grid">
+        {company && <input type="hidden" name="id" value={company.id} />}
+        {backHref && <input type="hidden" name="back" value={backHref} />}
         <label>
           Nome*
-          <input name="name" required />
+          <input name="name" required defaultValue={company?.name} />
         </label>
         <label>
           Nome pra contato
-          <input name="nomeParaContato" />
+          <input name="nomeParaContato" defaultValue={company?.nomeParaContato ?? ""} />
         </label>
         <label>
           Razão social
@@ -135,23 +172,23 @@ export default function CompanyForm() {
         </label>
         <label>
           Domínio
-          <input name="domain" placeholder="empresa.com.br" />
+          <input name="domain" placeholder="empresa.com.br" defaultValue={company?.domain ?? ""} />
         </label>
         <label>
           Setor
-          <input name="industry" />
+          <input name="industry" defaultValue={company?.industry ?? ""} />
         </label>
         <label>
           Porte
-          <input name="size" />
+          <input name="size" defaultValue={company?.size ?? ""} />
         </label>
         <label>
           Data de nascimento
-          <input name="dtNasc" type="date" />
+          <input name="dtNasc" type="date" defaultValue={company?.dtNasc?.slice(0, 10) ?? ""} />
         </label>
         <label>
           Data de cadastro
-          <input name="dtCad" type="date" />
+          <input name="dtCad" type="date" defaultValue={company?.dtCad?.slice(0, 10) ?? ""} />
         </label>
         <label>
           E-mails (separados por vírgula)
@@ -191,10 +228,10 @@ export default function CompanyForm() {
         </label>
         <label>
           Tags (separadas por vírgula)
-          <input name="tags" />
+          <input name="tags" defaultValue={company?.tags.join(", ") ?? ""} />
         </label>
         <button type="submit" className="btn btn-primary">
-          Nova empresa
+          {company ? "Salvar cadastro" : "Nova empresa"}
         </button>
       </form>
     </div>

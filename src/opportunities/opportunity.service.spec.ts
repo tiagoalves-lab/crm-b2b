@@ -132,7 +132,7 @@ describe('OpportunityService', () => {
 
   beforeEach(() => {
     policy = new PolicyService();
-    activities = new ActivityService();
+    activities = new ActivityService(policy);
     service = new OpportunityService(policy, activities);
   });
 

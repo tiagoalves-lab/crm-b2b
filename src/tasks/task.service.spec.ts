@@ -104,7 +104,7 @@ describe('TaskService', () => {
   beforeEach(() => {
     service = new TaskService(
       new PolicyService(),
-      new ActivityService(),
+      new ActivityService(new PolicyService()),
       new TaskListService(),
     );
   });

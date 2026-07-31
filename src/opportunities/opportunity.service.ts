@@ -93,6 +93,7 @@ export class OpportunityService {
       workspaceId: membership.workspaceId,
       ...ownerFilter,
       deletedAt: query.includeDeleted ? undefined : null,
+      ...(query.companyId ? { companyId: query.companyId } : {}),
     };
 
     if (query.staleDays) {
