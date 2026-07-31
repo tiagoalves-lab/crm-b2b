@@ -70,19 +70,21 @@ async function main() {
       where: { workspaceId: workspace.id, isDefault: true },
     });
 
+    // As 4 etapas do protótipo (SPEC-CRM-GAMA.md §4.2) — Ganho/Perdido não
+    // são stages, são opportunities.status.
     const pipeline =
       existingPipeline ??
       (await tx.pipeline.create({
         data: {
           workspaceId: workspace.id,
-          name: 'Pipeline Padrão',
+          name: 'Funil Padrão',
           isDefault: true,
           stages: {
             create: [
-              { name: 'Qualificação', order: 1, probability: 20 },
-              { name: 'Proposta Enviada', order: 2, probability: 40 },
-              { name: 'Negociação', order: 3, probability: 65 },
-              { name: 'Fechamento', order: 4, probability: 85 },
+              { name: 'Solicitação de Propostas', order: 1, probability: 15 },
+              { name: 'Elaboração de Propostas', order: 2, probability: 35 },
+              { name: 'Aprovação de Propostas', order: 3, probability: 60 },
+              { name: 'Negociação e Fechamento', order: 4, probability: 80 },
             ],
           },
         },
