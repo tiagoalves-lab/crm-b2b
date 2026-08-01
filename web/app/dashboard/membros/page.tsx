@@ -69,7 +69,7 @@ export default async function MembrosPage({
           <form action={createMemberAction} className="form-grid">
             <label>
               Login*
-              <input type="email" name="email" required maxLength={255} autoComplete="off" placeholder="login@empresa.com.br" />
+              <input type="text" name="email" required maxLength={255} autoComplete="off" />
             </label>
             <label>
               Senha*
@@ -107,11 +107,7 @@ export default async function MembrosPage({
               Criar membro
             </button>
           </form>
-          <p className="field-hint">
-            Senha com mínimo de 8 caracteres. O login precisa ter formato de e-mail (é assim que o
-            Supabase Auth identifica o usuário), mesmo que não seja usado pra receber mensagem —
-            comunique login e senha direto pro membro, não existe e-mail de convite ainda.
-          </p>
+          <p className="field-hint">Senha com mínimo de 8 caracteres. Comunique login e senha direto pro membro — não existe convite automático ainda.</p>
         </div>
       )}
 

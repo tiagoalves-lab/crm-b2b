@@ -23,8 +23,8 @@ export default async function LoginPage({
 
         <form action={signIn} className="auth-form">
           <label>
-            E-mail
-            <input type="email" name="email" required autoComplete="email" />
+            Login
+            <input type="text" name="email" required autoComplete="username" />
           </label>
           <label>
             Senha
