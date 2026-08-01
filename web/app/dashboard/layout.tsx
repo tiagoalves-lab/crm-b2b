@@ -26,7 +26,7 @@ export default async function DashboardLayout({
       <aside className="sidebar">
         <div className="workspace-switch">
           <img
-            src="/logo-gama.svg"
+            src="/logo-gama-dark.svg"
             alt="Gama Brasil"
             className="sidebar-logo"
             width={97}
