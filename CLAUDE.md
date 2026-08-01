@@ -133,6 +133,40 @@ do app funciona normal).
       único ponto de decisão pra `manager`, como já documentado que
       deveria ficar).
 
+## Trabalho pós-spec (fora das 9 fatias, pedido direto do usuário)
+
+- **2026-08-01 — Tema escuro + fidelidade visual ao protótipo.** O
+  frontend estava no tema claro por padrão (só ativava dark via
+  `prefers-color-scheme`) e vários componentes reais do protótipo nunca
+  tinham sido portados (cards de KPI sem borda colorida, sidebar sem
+  ícones/badges, layout com `max-width` limitando a largura). Corrigido:
+  `web/app/globals.css` reescrito mapeando a paleta e os componentes do
+  `gama-crm-mvp.html` 1:1 (dark é o único tema agora, sem variante
+  clara — igual ao protótipo). Sidebar ganhou ícones SVG (copiados do
+  protótipo) + badges de contagem ao vivo (leads novos, oportunidades
+  abertas, tarefas pendentes, empresas) + papel do membro no rodapé.
+  Fora de escopo deliberado: topbar fixo com blur do protótipo — exigiria
+  lift de estado de título pro layout compartilhado, arquitetura
+  diferente da atual (cada página já tem seu próprio cabeçalho).
+- **2026-08-01 — CRUD de membros com login/senha.** `/dashboard/membros`
+  só permitia editar papel/gerente/status de quem já tinha logado uma
+  vez (membership criado automaticamente no primeiro login). Não existia
+  jeito de criar um membro novo direto no cadastro. Adicionado
+  `POST /memberships`: cria o usuário no Supabase Auth via Admin API
+  (`SupabaseUserService`, `src/memberships/`, mesmo padrão de isolamento
+  da service role key do `SupabaseStorageService` da Fatia 8) e o
+  Membership do workspace numa chamada só. `email_confirm: true` — sem
+  fluxo de convite por e-mail (continua fora de escopo), o admin que
+  cria já define a senha. Só owner/admin criam.
+
+**Pendência de infra compartilhada por duas features** (Fatia 8 e CRUD de
+membros): `SUPABASE_SERVICE_ROLE_KEY` não está configurada no Railway —
+eu não tenho esse segredo e não posso gerá-lo (regra de segurança do
+projeto). Sem ela: upload de anexo e criação de membro devolvem erro
+claro (500), resto do app funciona normal. Pegar em Supabase → Project
+Settings → API → `service_role` e colocar como env var do serviço
+`backend` no Railway.
+
 **NÃO testado no navegador em nenhuma fatia** (sem credencial real
 disponível nas sessões que construíram isso) — só build + testes
 automatizados (unit/e2e) a cada fatia, todos passando. **Prioridade de
