@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError } from "@/lib/api/action-helpers";
+import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { createActivity } from "@/lib/api/activities";
 import type { PessoaTipo } from "@/lib/api/types";
 import {
   createCompany,
   deleteCompany,
+  getCompany,
+  lookupCnpj,
   restoreCompany,
   updateCompany,
 } from "@/lib/api/companies";
@@ -57,14 +59,16 @@ function parseCompanyFields(formData: FormData) {
 export async function createCompanyAction(formData: FormData) {
   const token = await getServerAccessToken();
   const name = String(formData.get("name") ?? "").trim();
+  const back = String(formData.get("back") ?? "/dashboard/empresas");
 
   try {
     await createCompany(token, { name, ...parseCompanyFields(formData) });
   } catch (error) {
-    redirectWithError("/dashboard/empresas", error);
+    redirectWithError(back, error);
   }
 
   revalidatePath("/dashboard/empresas");
+  redirectWithMessage("/dashboard/empresas", "Empresa criada");
 }
 
 export async function deleteCompanyAction(formData: FormData) {
@@ -78,6 +82,7 @@ export async function deleteCompanyAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/empresas");
+  redirectWithMessage("/dashboard/empresas", "Empresa excluída");
 }
 
 export async function restoreCompanyAction(formData: FormData) {
@@ -91,10 +96,11 @@ export async function restoreCompanyAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/empresas");
+  redirectWithMessage("/dashboard/empresas", "Empresa restaurada");
 }
 
-// Aba "Dados cadastrais" da ficha — nome vem junto (campo obrigatório em
-// Company), o resto reusa o mesmo parser do create.
+// Modal "Editar empresa" (aberto a partir da ficha) — nome vem junto
+// (campo obrigatório em Company), o resto reusa o mesmo parser do create.
 export async function updateCompanyAction(formData: FormData) {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
@@ -108,18 +114,26 @@ export async function updateCompanyAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/empresas");
+  redirectWithMessage(back, "Empresa atualizada");
 }
 
 // Campos fiscais estaduais (IE/contribuinte ICMS/situação) — vivem em
 // customFields (jsonb), preenchimento manual (Receita não fornece IE).
+// `customFields` é substituído por inteiro pelo Prisma (não faz merge —
+// ver src/companies/company.service.ts `update()`), então é preciso ler o
+// que já existe (ex.: o snapshot da busca de CNPJ salvo por
+// refreshCnpjDataAction) e mesclar aqui antes de salvar, senão cada save
+// desta aba apaga silenciosamente os outros campos de customFields.
 export async function updateCustomFieldsAction(formData: FormData) {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
   const back = String(formData.get("back") ?? "/dashboard/empresas");
 
   try {
+    const current = await getCompany(token, id);
     await updateCompany(token, id, {
       customFields: {
+        ...current.customFields,
         inscricao_estadual: emptyToUndefined(formData.get("inscricao_estadual")),
         contribuinte_icms: formData.get("contribuinte_icms") === "on",
         situacao_cadastral: emptyToUndefined(formData.get("situacao_cadastral")),
@@ -130,6 +144,63 @@ export async function updateCustomFieldsAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/empresas");
+  redirectWithMessage(back, "Dados fiscais salvos");
+}
+
+// Aba "Dados cadastrais" — busca a Receita Federal (BrasilAPI, via proxy
+// já existente) e persiste tanto os campos "de verdade" de Company
+// (razão social/endereço/contato) quanto um snapshot em
+// customFields.cnpj_lookup com os campos só-leitura que a ficha exibe
+// (situação/CNAE/porte/natureza jurídica — SPEC-CRM-GAMA.md §4.1, cad-grid
+// do protótipo). Mesmo cuidado de merge do updateCustomFieldsAction acima.
+export async function refreshCnpjDataAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const id = String(formData.get("id"));
+  const back = String(formData.get("back") ?? "/dashboard/empresas");
+  const cnpj = String(formData.get("cnpj") ?? "").trim();
+
+  if (cnpj.replace(/\D/g, "").length !== 14) {
+    redirectWithError(back, new Error("Informe um CNPJ com 14 dígitos."));
+  }
+
+  try {
+    const [current, lookup] = await Promise.all([getCompany(token, id), lookupCnpj(token, cnpj)]);
+    await updateCompany(token, id, {
+      razaoSocial: lookup.razaoSocial,
+      fantasia: lookup.fantasia,
+      cpfCnpj: lookup.cpfCnpj,
+      tipo: "PJ",
+      emails: lookup.emails,
+      fones: lookup.fones,
+      logradouro: lookup.logradouro,
+      numero: lookup.numero,
+      complemento: lookup.complemento,
+      bairro: lookup.bairro,
+      cep: lookup.cep,
+      cidade: lookup.cidade,
+      uf: lookup.uf,
+      customFields: {
+        ...current.customFields,
+        cnpj_lookup: {
+          situacaoCadastral: lookup.situacaoCadastral ?? null,
+          dataAbertura: lookup.dataAbertura ?? null,
+          porte: lookup.porte ?? null,
+          naturezaJuridica: lookup.naturezaJuridica ?? null,
+          cnaePrincipal: lookup.cnaePrincipal ?? null,
+          cnaeSecundarios: lookup.cnaeSecundarios ?? [],
+          telefoneReceita: lookup.fones[0] ?? null,
+          emailReceita: lookup.emails[0] ?? null,
+          fonteFederal: "Receita Federal · BrasilAPI",
+          buscadoEm: new Date().toISOString(),
+        },
+      },
+    });
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath("/dashboard/empresas");
+  redirectWithMessage(back, "Dados da Receita carregados");
 }
 
 // Aba "Timeline" da ficha — registra uma interação manual (nota, ligação,
@@ -168,4 +239,5 @@ export async function createNoteAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/empresas");
+  redirectWithMessage(back, "Interação registrada");
 }

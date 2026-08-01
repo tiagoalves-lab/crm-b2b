@@ -79,62 +79,71 @@ export default function CompanyPicker() {
 
   if (picked) {
     return (
-      <div className="row-form">
+      <div className="co-picker">
         <input type="hidden" name="companyId" value={picked.id} />
-        <span className="badge badge-accent">{picked.name}</span>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => setPicked(null)}
-        >
-          Trocar
-        </button>
+        <div className="co-picker-selected">
+          <span className="co-tag empresa">selecionada</span>
+          <span className="co-nome">{picked.name}</span>
+          <button type="button" className="co-picker-clear" title="Trocar empresa" onClick={() => setPicked(null)}>
+            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <input
-        placeholder="Buscar empresa ou lead por nome/CNPJ..."
-        value={query}
-        onChange={(e) => void handleSearch(e.target.value)}
-      />
+    <div className="co-picker">
+      <div className="search" style={{ margin: 0 }}>
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.3-4.3" />
+        </svg>
+        <input
+          placeholder="Buscar empresa ou lead por nome/CNPJ..."
+          value={query}
+          onChange={(e) => void handleSearch(e.target.value)}
+          autoComplete="off"
+        />
+      </div>
       {loading && <p className="sub" style={{ marginTop: 6 }}>Processando…</p>}
       {error && <div className="error-banner" style={{ marginTop: 6 }}>{error}</div>}
 
-      {results.length > 0 && (
-        <div className="picker-results">
+      {!loading && query.trim().length >= 2 && (
+        <div className="co-results">
           {results.map((r) => (
-            <div
-              key={`${r.origem}-${r.id}`}
-              className="picker-result"
-              onClick={() => void handlePickResult(r)}
-            >
-              <span className={r.origem === "lead" ? "badge" : "badge badge-accent"}>
-                {r.origem}
+            <div key={`${r.origem}-${r.id}`} className="co-result" onClick={() => void handlePickResult(r)}>
+              <span className={`co-tag ${r.origem}`}>{r.origem}</span>
+              <div className="co-result-info">
+                <div className="co-result-nome">{r.nome}</div>
+                <div className="co-result-sub">
+                  {r.cnpj ?? "sem CNPJ"}
+                  {r.origem === "lead" ? " · na triagem" : ""}
+                </div>
+              </div>
+              <span style={{ fontSize: 10, color: r.origem === "lead" ? "var(--accent-secondary)" : "var(--green)" }}>
+                {r.origem === "lead" ? "aprovar e vincular →" : "vincular →"}
               </span>
-              <span className="picker-result-nome">{r.nome}</span>
-              <span className="sub">{r.cnpj ?? "sem CNPJ"}</span>
-              {r.origem === "lead" && (
-                <span className="sub" style={{ color: "var(--accent)" }}>
-                  aprovar e vincular →
-                </span>
-              )}
             </div>
           ))}
+          <div className="co-result-none">
+            {results.length === 0 && <p>Nenhuma empresa ou lead encontrado para &quot;{query}&quot;.</p>}
+            <div className="co-cnpj-box">
+              <div className="field" style={{ margin: "0 0 8px" }}>
+                <label>Cadastrar nova empresa pelo CNPJ</label>
+              </div>
+              <button type="button" className="btn btn-primary btn-sm" style={{ width: "100%" }} onClick={() => void handleCreateByCnpj()}>
+                <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="M21 21l-4.3-4.3" />
+                </svg>
+                Buscar CNPJ &quot;{query}&quot; e cadastrar
+              </button>
+            </div>
+          </div>
         </div>
-      )}
-
-      {!loading && query.trim().length >= 2 && results.length === 0 && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ marginTop: 8 }}
-          onClick={() => void handleCreateByCnpj()}
-        >
-          Nenhum resultado — cadastrar empresa pelo CNPJ &quot;{query}&quot;
-        </button>
       )}
     </div>
   );

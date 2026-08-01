@@ -77,6 +77,12 @@ export interface CnpjLookupResult {
   cep?: string;
   cidade?: string;
   uf?: string;
+  situacaoCadastral?: string;
+  dataAbertura?: string;
+  porte?: string;
+  naturezaJuridica?: string;
+  cnaePrincipal?: string;
+  cnaeSecundarios?: string[];
 }
 
 export function lookupCnpj(

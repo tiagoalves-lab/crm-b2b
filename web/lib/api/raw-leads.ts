@@ -11,6 +11,33 @@ export function scoreTier(score: number): ScoreTier {
   return "frio";
 }
 
+// Espelha LeadScoringService#score no backend — só o texto explicativo
+// (score.reasons), pra exibir o tooltip "ⓘ" e a aba "Dados do lead"
+// (SPEC-CRM-GAMA.md §4.4, protótipo: score-why/kv "Cálculo"). O `score`
+// em si é sempre o valor persistido no backend, nunca recalculado aqui —
+// isto só reconstitui o *porquê* a partir dos mesmos campos que o
+// backend usou, sem chamada extra à API.
+export function scoreReasons(lead: Pick<RawLead, "cnaePrincipal" | "importador" | "porte" | "situacao" | "uf">): string[] {
+  const reasons: string[] = [];
+
+  const div = parseInt((lead.cnaePrincipal ?? "").slice(0, 2), 10);
+  if (div >= 25 && div <= 30) reasons.push("CNAE alvo (25–30) +40");
+  else if (div === 24) reasons.push("CNAE metalurgia próxima +20");
+  else reasons.push("CNAE fora do alvo +0");
+
+  reasons.push(lead.importador ? "Importa via Comex Stat +25" : "Não importa +0");
+
+  if (lead.porte === "GRANDE") reasons.push("Porte grande +20");
+  else if (lead.porte === "MÉDIO") reasons.push("Porte médio +13");
+  else reasons.push("Porte pequeno +5");
+
+  reasons.push(lead.situacao === "ATIVA" ? "Situação ativa +10" : "Situação irregular −20");
+
+  if (lead.uf === "RS") reasons.push("Região RS +5");
+
+  return reasons;
+}
+
 export function listRawLeads(
   token: string,
   options: { status?: RawLeadStatus; tier?: ScoreTier; q?: string; pageSize?: number } = {},

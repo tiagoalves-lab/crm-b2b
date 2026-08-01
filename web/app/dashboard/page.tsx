@@ -66,10 +66,10 @@ export default async function DashboardPage() {
 
   const companyName = (id: string | null) => companies.find((c) => c.id === id)?.name ?? "—";
   const targetLabel = (task: Task) => {
-    if (task.companyId) return `Empresa: ${companyName(task.companyId)}`;
+    if (task.companyId) return `📈 ${companyName(task.companyId)}`;
     if (task.opportunityId) {
       const opp = opportunities.find((o) => o.id === task.opportunityId);
-      return `Oportunidade: ${opp ? companyName(opp.companyId) : "—"}`;
+      return `📈 ${opp ? companyName(opp.companyId) : "—"}`;
     }
     return "—";
   };
@@ -83,124 +83,118 @@ export default async function DashboardPage() {
   const maxFunilValor = Math.max(...funil.map((f) => f.valor), 1);
 
   return (
-    <div className="content-wide">
-      <div className="toolbar">
-        <div className="panel-head">
-          <h2>Painel comercial</h2>
-          <p className="sub">Visão geral da carteira</p>
+    <>
+      <div className="topbar">
+        <div>
+          <div className="page-title">Painel comercial</div>
+          <div className="page-sub">Visão geral da carteira</div>
         </div>
       </div>
 
-      <div className="stat-grid">
-        <div className="stat-tile">
-          <div className="stat-label">Pipeline em aberto</div>
-          <div className="stat-value">{brl(totalAberto)}</div>
-          <div className="sub">{abertas.length} oportunidade(s) ativa(s)</div>
-        </div>
-        <div className="stat-tile blue">
-          <div className="stat-label">Previsão ponderada</div>
-          <div className="stat-value">{brl(ponderado)}</div>
-          <div className="sub">valor × probabilidade</div>
-        </div>
-        <div className="stat-tile green">
-          <div className="stat-label">Ganho no mês</div>
-          <div className="stat-value">{brl(ganhoNoMes)}</div>
-          <div className="sub">{ganhasNoMes.length} fechada(s)</div>
-        </div>
-        <div className="stat-tile purple">
-          <div className="stat-label">Fila de triagem</div>
-          <div className="stat-value">{leadsNovos.length}</div>
-          <div className="sub">
-            {leadsNovos.length > 0 ? (
-              <Link href="/dashboard/leads">leads a qualificar →</Link>
-            ) : (
-              "fila zerada"
-            )}
+      <div className="content">
+        <div className="stat-grid">
+          <div className="stat-tile">
+            <div className="stat-label">Pipeline em aberto</div>
+            <div className="stat-value">{brl(totalAberto)}</div>
+            <div className="kpi-delta up">▲ {abertas.length} oportunidades ativas</div>
           </div>
-        </div>
-      </div>
-
-      {pipeline && (
-        <div className="toolbar" style={{ marginTop: 20 }}>
-          <div className="panel-head">
-            <h3 style={{ fontSize: 15 }}>Funil de propostas — resumo</h3>
+          <div className="stat-tile blue">
+            <div className="stat-label">Previsão ponderada</div>
+            <div className="stat-value">{brl(ponderado)}</div>
+            <div className="kpi-delta">valor × probabilidade</div>
           </div>
-          <Link href="/dashboard/pipeline" className="btn btn-ghost btn-sm">
-            Abrir pipeline →
+          <div className="stat-tile green">
+            <div className="stat-label">Ganho no mês</div>
+            <div className="stat-value">{brl(ganhoNoMes)}</div>
+            <div className="kpi-delta up">▲ {ganhasNoMes.length} fechada(s)</div>
+          </div>
+          <Link href="/dashboard/leads" className="stat-tile purple" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
+            <div className="stat-label">Fila de triagem</div>
+            <div className="stat-value">{leadsNovos.length}</div>
+            <div className={leadsNovos.length > 0 ? "kpi-delta down" : "kpi-delta"}>
+              {leadsNovos.length > 0 ? "⚠ leads a qualificar" : "fila zerada"}
+            </div>
           </Link>
         </div>
-      )}
-      {pipeline && (
-        <div className="form-panel">
-          <div className="funnel-bar">
-            {funil.map((f) => (
-              <div className="fbar" key={f.stage.id}>
-                <div className="fbar-label">{f.stage.name}</div>
-                <div className="fbar-track">
-                  <div
-                    className="fbar-fill"
-                    style={{ width: `${Math.max((f.valor / maxFunilValor) * 100, 3)}%` }}
-                  >
-                    {f.count} deal(s)
-                  </div>
-                </div>
-                <div className="fbar-val">{brl(f.valor)}</div>
+
+        {pipeline && (
+          <div className="panel">
+            <div className="panel-head">
+              <div className="panel-title">
+                <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 3v18h18" />
+                  <path d="M18 9l-5 5-3-3-4 4" />
+                </svg>
+                Funil de propostas — resumo
               </div>
-            ))}
+              <Link href="/dashboard/pipeline" className="btn btn-sm btn-ghost">
+                Abrir pipeline →
+              </Link>
+            </div>
+            <div className="panel-body">
+              <div className="funnel-bar">
+                {funil.map((f) => (
+                  <div className="fbar" key={f.stage.id}>
+                    <div className="fbar-label">{f.stage.name}</div>
+                    <div className="fbar-track">
+                      <div className="fbar-fill" style={{ width: `${Math.max((f.valor / maxFunilValor) * 100, 3)}%` }}>
+                        {f.count} deal(s)
+                      </div>
+                    </div>
+                    <div className="fbar-val">{brl(f.valor)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="panel">
+          <div className="panel-head">
+            <div className="panel-title">
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+              </svg>
+              Ações de hoje
+            </div>
+            <Link href="/dashboard/tarefas" className="btn btn-sm btn-ghost">
+              Ver todas →
+            </Link>
+          </div>
+          <div className="panel-body" style={{ padding: 0 }}>
+            <table>
+              <tbody>
+                {tarefasHoje.map((task) => (
+                  <tr key={task.id}>
+                    <td className="t-co">{task.title}</td>
+                    <td className="t-sub">{targetLabel(task)}</td>
+                    <td style={{ textAlign: "right" }}>
+                      <span className={`task-due ${isOverdue(task) ? "due-late" : "due-today"}`}>
+                        {isOverdue(task) ? "atrasada" : "hoje"}
+                      </span>
+                    </td>
+                    <td style={{ width: 60, textAlign: "right" }}>
+                      <form action={completeTaskAction}>
+                        <input type="hidden" name="id" value={task.id} />
+                        <input type="hidden" name="back" value="/dashboard" />
+                        <button type="submit" className="btn btn-sm">
+                          Feita
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+                {tarefasHoje.length === 0 && (
+                  <tr>
+                    <td className="empty">Nenhuma ação pendente para hoje 🎉</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
-
-      <div className="toolbar" style={{ marginTop: 20 }}>
-        <div className="panel-head">
-          <h3 style={{ fontSize: 15 }}>Ações de hoje</h3>
-        </div>
-        <Link href="/dashboard/tarefas" className="btn btn-ghost btn-sm">
-          Ver todas →
-        </Link>
       </div>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Tarefa</th>
-            <th>Vínculo</th>
-            <th>Prazo</th>
-            <th>Ação</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tarefasHoje.map((task) => (
-            <tr key={task.id}>
-              <td>{task.title}</td>
-              <td>{targetLabel(task)}</td>
-              <td>
-                {task.dueAt ? new Date(task.dueAt).toLocaleDateString("pt-BR") : "—"}
-                {isOverdue(task) && (
-                  <span className="badge badge-danger" style={{ marginLeft: 6 }}>
-                    atrasada
-                  </span>
-                )}
-              </td>
-              <td>
-                <form action={completeTaskAction}>
-                  <input type="hidden" name="id" value={task.id} />
-                  <input type="hidden" name="back" value="/dashboard" />
-                  <button type="submit" className="btn btn-sm btn-primary">
-                    Feita
-                  </button>
-                </form>
-              </td>
-            </tr>
-          ))}
-          {tarefasHoje.length === 0 && (
-            <tr>
-              <td colSpan={4} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>
-                Nenhuma ação pendente para hoje 🎉
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+    </>
   );
 }

@@ -19,15 +19,7 @@ function monthKey(year: number, monthIndex0: number): string {
   return `${year}-${String(monthIndex0 + 1).padStart(2, "0")}`;
 }
 
-export default function CalendarView({
-  tasks,
-  month,
-  baseHref,
-}: {
-  tasks: Task[];
-  month?: string;
-  baseHref: string;
-}) {
+export default function CalendarView({ tasks, month }: { tasks: Task[]; month?: string }) {
   const now = new Date();
   const [yearStr, monthStr] = (month ?? monthKey(now.getUTCFullYear(), now.getUTCMonth())).split("-");
   const year = Number(yearStr);
@@ -49,6 +41,7 @@ export default function CalendarView({
 
   const prevMonth = new Date(Date.UTC(year, monthIndex0 - 1, 1));
   const nextMonth = new Date(Date.UTC(year, monthIndex0 + 1, 1));
+  const monthHref = (m: string) => `/dashboard/tarefas?view=calendario&month=${m}`;
 
   const cells: Array<{ day: number; key: string } | null> = [];
   for (let i = 0; i < leadingBlanks; i++) cells.push(null);
@@ -57,66 +50,56 @@ export default function CalendarView({
   }
 
   return (
-    <div>
-      <div className="toolbar" style={{ marginBottom: 12 }}>
-        <h3>
-          {MONTH_NAMES[monthIndex0]} {year}
-        </h3>
-        <div className="row-form">
-          <Link
-            href={`${baseHref}&month=${monthKey(prevMonth.getUTCFullYear(), prevMonth.getUTCMonth())}`}
-            className="btn btn-ghost btn-sm"
-          >
-            ← Anterior
-          </Link>
-          <Link
-            href={`${baseHref}&month=${monthKey(now.getUTCFullYear(), now.getUTCMonth())}`}
-            className="btn btn-ghost btn-sm"
-          >
-            Hoje
-          </Link>
-          <Link
-            href={`${baseHref}&month=${monthKey(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth())}`}
-            className="btn btn-ghost btn-sm"
-          >
-            Próximo →
-          </Link>
-        </div>
-      </div>
-
-      <div className="calendar-grid">
-        {WEEKDAYS.map((w) => (
-          <div key={w} className="calendar-weekday">
-            {w}
+    <div className="panel">
+      <div className="panel-body">
+        <div className="cal-head">
+          <div className="cal-title">
+            {MONTH_NAMES[monthIndex0]} {year}
           </div>
-        ))}
-        {cells.map((cell, idx) =>
-          cell === null ? (
-            <div key={`blank-${idx}`} className="calendar-day empty" />
-          ) : (
-            <div
-              key={cell.key}
-              className={cell.key === todayKey ? "calendar-day today" : "calendar-day"}
-            >
-              <div className="calendar-day-number">{cell.day}</div>
-              {(tasksByDay.get(cell.key) ?? []).map((task) => (
-                <Link
-                  key={task.id}
-                  href={`${baseHref}&card=${task.id}`}
-                  className={
-                    task.status === "done"
-                      ? "calendar-task done"
-                      : task.status === "pending" && new Date(task.dueAt!) < new Date()
-                        ? "calendar-task overdue"
-                        : "calendar-task"
-                  }
-                >
-                  {task.title}
-                </Link>
-              ))}
+          <div className="cal-nav">
+            <Link href={monthHref(monthKey(prevMonth.getUTCFullYear(), prevMonth.getUTCMonth()))} className="btn btn-sm">
+              ‹ anterior
+            </Link>
+            <Link href={monthHref(monthKey(now.getUTCFullYear(), now.getUTCMonth()))} className="btn btn-sm">
+              hoje
+            </Link>
+            <Link href={monthHref(monthKey(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth()))} className="btn btn-sm">
+              próximo ›
+            </Link>
+          </div>
+        </div>
+
+        <div className="calendar-grid">
+          {WEEKDAYS.map((w) => (
+            <div key={w} className="calendar-weekday">
+              {w}
             </div>
-          ),
-        )}
+          ))}
+          {cells.map((cell, idx) =>
+            cell === null ? (
+              <div key={`blank-${idx}`} className="calendar-day empty" />
+            ) : (
+              <div key={cell.key} className={cell.key === todayKey ? "calendar-day today" : "calendar-day"}>
+                <div className="calendar-day-number">{cell.day}</div>
+                {(tasksByDay.get(cell.key) ?? []).map((task) => (
+                  <Link
+                    key={task.id}
+                    href={`/dashboard/tarefas/${task.id}`}
+                    className={
+                      task.status === "done"
+                        ? "calendar-task done"
+                        : task.status === "pending" && new Date(task.dueAt!) < new Date()
+                          ? "calendar-task overdue"
+                          : "calendar-task"
+                    }
+                  >
+                    {task.title}
+                  </Link>
+                ))}
+              </div>
+            ),
+          )}
+        </div>
       </div>
     </div>
   );

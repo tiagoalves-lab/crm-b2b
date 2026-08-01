@@ -11,5 +11,14 @@ export function errorMessage(error: unknown): string {
 }
 
 export function redirectWithError(path: string, error: unknown): never {
-  redirect(`${path}?error=${encodeURIComponent(errorMessage(error))}`);
+  const sep = path.includes("?") ? "&" : "?";
+  redirect(`${path}${sep}error=${encodeURIComponent(errorMessage(error))}`);
+}
+
+// Toast do protótipo (#toast em gama-crm-mvp.html) — Server Action sem
+// client JS, então "mostrar toast" é redirecionar com ?msg=, lido pelo
+// componente Toast (web/app/dashboard/_overlay/toast.tsx).
+export function redirectWithMessage(path: string, msg: string): never {
+  const sep = path.includes("?") ? "&" : "?";
+  redirect(`${path}${sep}msg=${encodeURIComponent(msg)}`);
 }

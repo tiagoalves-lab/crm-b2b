@@ -1,0 +1,51 @@
+import Link from "next/link";
+
+export type Aba = "overview" | "cadastro" | "timeline" | "tarefas" | "negocios" | "posvenda";
+
+export const ABAS: Array<{ id: Aba; label: string }> = [
+  { id: "overview", label: "Visão geral" },
+  { id: "cadastro", label: "Dados cadastrais" },
+  { id: "timeline", label: "Timeline" },
+  { id: "tarefas", label: "Tarefas" },
+  { id: "negocios", label: "Oportunidades" },
+  { id: "posvenda", label: "Pós-venda" },
+];
+
+export function currentAbaOf(aba?: string): Aba {
+  return ABAS.find((a) => a.id === aba)?.id ?? "overview";
+}
+
+// Reaproveita .drawer-tab/.tab-count tanto na versão drawer quanto na
+// versão full-page (fallback de acesso direto) — mesma aparência do
+// protótipo nos dois casos, só a moldura em volta (drawer vs topbar) muda.
+export default function FichaTabs({
+  companyId,
+  aba,
+  counts,
+}: {
+  companyId: string;
+  aba?: string;
+  counts: { timeline: number; tarefas: number; negocios: number };
+}) {
+  const current = currentAbaOf(aba);
+  const href = (a: Aba) => `/dashboard/empresas/${companyId}?aba=${a}`;
+
+  return (
+    <>
+      {ABAS.map((a) => {
+        const count =
+          a.id === "timeline" ? counts.timeline : a.id === "tarefas" ? counts.tarefas : a.id === "negocios" ? counts.negocios : undefined;
+        return (
+          <Link
+            key={a.id}
+            href={href(a.id)}
+            className={current === a.id ? "drawer-tab active" : "drawer-tab"}
+          >
+            {a.label}
+            {count !== undefined && <span className="tab-count">{count}</span>}
+          </Link>
+        );
+      })}
+    </>
+  );
+}

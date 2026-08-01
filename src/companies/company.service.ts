@@ -20,8 +20,12 @@ export interface PaginatedResult<T> {
   pageSize: number;
 }
 
-// Retorno da busca por CNPJ — mesmos nomes de campo de CreateCompanyDto,
-// pra o frontend poder jogar isto direto no form sem remapear nada.
+// Retorno da busca por CNPJ — mesmos nomes de campo de CreateCompanyDto
+// pros campos de cadastro (pra o frontend poder jogar isto direto no form
+// sem remapear nada), mais os campos "só leitura" que a ficha da empresa
+// exibe no card da Receita (situação/CNAE/porte/natureza jurídica —
+// SPEC-CRM-GAMA.md §4.1, cad-grid do protótipo). Esses últimos não têm
+// coluna própria em Company; o chamador decide se guarda em customFields.
 export interface CnpjLookupResult {
   razaoSocial?: string;
   fantasia?: string;
@@ -36,6 +40,12 @@ export interface CnpjLookupResult {
   cep?: string;
   cidade?: string;
   uf?: string;
+  situacaoCadastral?: string;
+  dataAbertura?: string;
+  porte?: string;
+  naturezaJuridica?: string;
+  cnaePrincipal?: string;
+  cnaeSecundarios?: string[];
 }
 
 // Formato de resposta da BrasilAPI (https://brasilapi.com.br/api/cnpj/v1) —
@@ -53,6 +63,14 @@ interface BrasilApiCnpjResponse {
   cep?: string;
   municipio?: string;
   uf?: string;
+  situacao_cadastral?: string;
+  data_inicio_atividade?: string;
+  porte?: string;
+  descricao_porte?: string;
+  natureza_juridica?: string;
+  cnae_fiscal?: number;
+  cnae_fiscal_descricao?: string;
+  cnaes_secundarios?: Array<{ codigo?: number; descricao?: string }>;
 }
 
 @Injectable()
@@ -308,6 +326,17 @@ export class CompanyService {
       cep: data.cep,
       cidade: data.municipio,
       uf: data.uf,
+      situacaoCadastral: data.situacao_cadastral,
+      dataAbertura: data.data_inicio_atividade,
+      porte: data.descricao_porte ?? data.porte,
+      naturezaJuridica: data.natureza_juridica,
+      cnaePrincipal:
+        data.cnae_fiscal != null
+          ? `${data.cnae_fiscal}${data.cnae_fiscal_descricao ? ` - ${data.cnae_fiscal_descricao}` : ''}`
+          : undefined,
+      cnaeSecundarios: (data.cnaes_secundarios ?? [])
+        .filter((c) => c.codigo != null || c.descricao)
+        .map((c) => `${c.codigo ?? ''}${c.descricao ? ` - ${c.descricao}` : ''}`.trim()),
     };
   }
 

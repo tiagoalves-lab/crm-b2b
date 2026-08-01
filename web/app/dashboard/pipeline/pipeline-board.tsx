@@ -12,20 +12,26 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import type { Company, Opportunity, Stage } from "@/lib/api/types";
-import {
-  markLostAction,
-  markWonAction,
-  moveOpportunityStageAction,
-} from "./actions";
+import { moveOpportunityStageAction } from "./actions";
+import { stageColor } from "./stage-colors";
+
+function brlFull(value: number, currency: string): string {
+  return `${currency} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+}
 
 function Card({
   opp,
   companyName,
+  ownerInitials,
+  color,
 }: {
   opp: Opportunity;
   companyName: string;
+  ownerInitials: string;
+  color: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: opp.id,
@@ -34,66 +40,67 @@ function Card({
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1 }}
-      className="kanban-card"
+      style={{
+        transform: CSS.Translate.toString(transform),
+        opacity: isDragging ? 0.4 : 1,
+        borderLeftColor: color,
+      }}
+      {...attributes}
+      {...listeners}
+      className="card"
     >
-      {/* Listeners só no "punho" (empresa+valor), não no cartão inteiro —
-          senão os botões/input abaixo (forms reais, não navegação como em
-          tarefas/kanban-board.tsx) ficam sob risco de interferência do
-          pointerdown do dnd-kit. */}
-      <div {...attributes} {...listeners} style={{ cursor: "grab" }}>
-        <div className="company">{companyName}</div>
-        <div className="amount">
-          {opp.currency} {Number(opp.amount).toLocaleString("pt-BR")}
+      <Link href={`/dashboard/pipeline/${opp.id}`} style={{ display: "block", color: "inherit", textDecoration: "none" }}>
+        <div className="card-co">{companyName}</div>
+        <div className="card-foot">
+          <span className="card-val">{brlFull(Number(opp.amount), opp.currency)}</span>
+          <span className="mini-avatar" title={ownerInitials}>
+            {ownerInitials}
+          </span>
         </div>
-      </div>
-
-      <form action={markWonAction}>
-        <input type="hidden" name="id" value={opp.id} />
-        <input type="hidden" name="version" value={opp.version} />
-        <button type="submit" className="btn btn-sm btn-primary">
-          Ganhar
-        </button>
-      </form>
-      <form action={markLostAction} className="row-form">
-        <input type="hidden" name="id" value={opp.id} />
-        <input type="hidden" name="version" value={opp.version} />
-        <input name="lostReason" placeholder="Motivo" />
-        <button type="submit" className="btn btn-sm btn-danger">
-          Perder
-        </button>
-      </form>
+      </Link>
     </div>
   );
 }
 
-function StageColumn({
+function Column({
   stage,
   opportunities,
   companyName,
+  ownerInitialsOf,
 }: {
   stage: Stage;
   opportunities: Opportunity[];
   companyName: (id: string) => string;
+  ownerInitialsOf: (id: string) => string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const color = stageColor(stage.order);
+  const sum = opportunities.reduce((s, o) => s + Number(o.amount), 0);
 
   return (
-    <div
-      key={stage.id}
-      className="kanban-column"
-      style={isOver ? { background: "var(--accent-soft)" } : undefined}
-    >
-      <div className="kanban-column-head">
-        <span>{stage.name}</span>
-        <span className="count">{opportunities.length}</span>
+    <div key={stage.id} className={isOver ? "col drag-over" : "col"}>
+      <div className="col-head">
+        <div className="col-head-top">
+          <div className="col-name">
+            <span className="col-dot" style={{ background: color }} />
+            {stage.name}
+          </div>
+          <span className="col-count">{opportunities.length}</span>
+        </div>
+        <div className="col-sum">{sum > 0 ? sum.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</div>
       </div>
-      <div ref={setNodeRef} style={{ minHeight: 40, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div ref={setNodeRef} className="col-body">
         {opportunities.map((opp) => (
-          <Card key={opp.id} opp={opp} companyName={companyName(opp.companyId)} />
+          <Card
+            key={opp.id}
+            opp={opp}
+            companyName={companyName(opp.companyId)}
+            ownerInitials={ownerInitialsOf(opp.ownerUserId)}
+            color={color}
+          />
         ))}
         {opportunities.length === 0 && (
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Vazio</p>
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", padding: "0 2px" }}>Vazio</p>
         )}
       </div>
     </div>
@@ -104,26 +111,41 @@ function StageColumn({
 // stages move a oportunidade (UPDATE stage_id). Sem posição/ordem dentro
 // da coluna (Opportunity não tem campo de ordenação, diferente de Task),
 // então cada coluna é só uma zona de drop (useDroppable), não uma
-// SortableContext — mesmo @dnd-kit já usado em tarefas/kanban-board.tsx,
-// simplificado porque não precisa reordenar.
+// SortableContext (sem reordenar dentro da coluna, só entre colunas).
+// Busca client-side (protótipo: filterDeals) embutida aqui porque todo
+// dado já chega via props — não precisa de ida-e-volta ao servidor.
 export default function PipelineBoard({
   stages,
   openOpportunities,
   companies,
+  currentUserId,
 }: {
   stages: Stage[];
   openOpportunities: Opportunity[];
   companies: Company[];
+  currentUserId: string;
 }) {
   const [items, setItems] = useState(openOpportunities);
   useEffect(() => setItems(openOpportunities), [openOpportunities]);
 
+  const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
   const companyName = (id: string) => companies.find((c) => c.id === id)?.name ?? "—";
+  // Membership não guarda e-mail/nome (só userId, ver dashboard/membros/
+  // page.tsx) — mesmo fallback usado lá: "Você" para o usuário atual,
+  // prefixo do id pros demais.
+  const ownerInitialsOf = (id: string) => (id === currentUserId ? "VC" : id.slice(0, 2).toUpperCase());
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((o) => companyName(o.companyId).toLowerCase().includes(q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, query, companies]);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
@@ -140,9 +162,7 @@ export default function PipelineBoard({
     if (!opp || opp.stageId === destStageId) return;
 
     const version = opp.version;
-    setItems((prev) =>
-      prev.map((o) => (o.id === oppId ? { ...o, stageId: destStageId } : o)),
-    );
+    setItems((prev) => prev.map((o) => (o.id === oppId ? { ...o, stageId: destStageId } : o)));
 
     const result = await moveOpportunityStageAction(oppId, destStageId, version);
     if (!result.ok) {
@@ -150,34 +170,47 @@ export default function PipelineBoard({
     }
   }
 
-  const activeOpp = activeId ? items.find((o) => o.id === activeId) : null;
+  const activeOpp = activeId ? filtered.find((o) => o.id === activeId) : null;
 
   return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="kanban">
-        {stages.map((stage) => (
-          <StageColumn
-            key={stage.id}
-            stage={stage}
-            opportunities={items.filter((o) => o.stageId === stage.id)}
-            companyName={companyName}
+    <>
+      <div className="toolbar">
+        <div className="search">
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <input
+            placeholder="Buscar oportunidade por empresa..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
           />
-        ))}
+        </div>
       </div>
-      <DragOverlay>
-        {activeOpp ? (
-          <div className="kanban-card dragging">
-            <div className="company">{companyName(activeOpp.companyId)}</div>
-            <div className="amount">
-              {activeOpp.currency} {Number(activeOpp.amount).toLocaleString("pt-BR")}
+
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className={`board b${Math.max(stages.length, 1)}`}>
+          {stages.map((stage) => (
+            <Column
+              key={stage.id}
+              stage={stage}
+              opportunities={filtered.filter((o) => o.stageId === stage.id)}
+              companyName={companyName}
+              ownerInitialsOf={ownerInitialsOf}
+            />
+          ))}
+        </div>
+        <DragOverlay>
+          {activeOpp ? (
+            <div className="card dragging" style={{ borderLeftColor: stageColor(stages.find((s) => s.id === activeOpp.stageId)?.order ?? 1) }}>
+              <div className="card-co">{companyName(activeOpp.companyId)}</div>
+              <div className="card-foot">
+                <span className="card-val">{brlFull(Number(activeOpp.amount), activeOpp.currency)}</span>
+              </div>
             </div>
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </>
   );
 }

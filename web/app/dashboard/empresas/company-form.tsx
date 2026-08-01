@@ -117,7 +117,7 @@ export default function CompanyForm({
   const action = company ? updateCompanyAction : createCompanyAction;
 
   return (
-    <div className="form-panel">
+    <div>
       <div className="row-form" style={{ marginBottom: 12 }}>
         <input
           placeholder="Buscar por CNPJ (14 dígitos)"

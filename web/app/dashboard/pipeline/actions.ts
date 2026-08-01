@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError } from "@/lib/api/action-helpers";
+import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { ApiError } from "@/lib/api/client";
 import { createCompany, lookupCnpj } from "@/lib/api/companies";
-import { createOpportunity, updateOpportunity } from "@/lib/api/opportunities";
+import { createOpportunity, deleteOpportunity, updateOpportunity } from "@/lib/api/opportunities";
 import { createPipeline, createStage } from "@/lib/api/pipelines";
 import { approveLead } from "@/lib/api/raw-leads";
 import { searchEmpresaLead, type BuscaEmpresaLeadResult } from "@/lib/api/search";
@@ -32,6 +32,7 @@ export async function createPipelineAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/pipeline");
+  redirectWithMessage("/dashboard/pipeline", "Pipeline criado");
 }
 
 export async function createStageAction(formData: FormData) {
@@ -48,14 +49,21 @@ export async function createStageAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/pipeline");
+  redirectWithMessage("/dashboard/pipeline", "Etapa adicionada");
 }
 
 export async function createOpportunityAction(formData: FormData) {
   const token = await getServerAccessToken();
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const back = String(formData.get("back") ?? "/dashboard/pipeline/nova");
+
+  if (!companyId) {
+    redirectWithError(back, new Error("Selecione uma empresa para a oportunidade."));
+  }
 
   try {
     await createOpportunity(token, {
-      companyId: String(formData.get("companyId")),
+      companyId,
       pipelineId: String(formData.get("pipelineId")),
       stageId: String(formData.get("stageId")),
       amount: Number(formData.get("amount")),
@@ -63,10 +71,48 @@ export async function createOpportunityAction(formData: FormData) {
       expectedCloseDate: emptyToUndefined(formData.get("expectedCloseDate")),
     });
   } catch (error) {
-    redirectWithError("/dashboard/pipeline", error);
+    redirectWithError(back, error);
   }
 
   revalidatePath("/dashboard/pipeline");
+  redirectWithMessage("/dashboard/pipeline", "Oportunidade criada");
+}
+
+// Modal "Editar oportunidade" — valor/moeda/etapa/previsão de fechamento.
+export async function updateOpportunityDetailsAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const id = String(formData.get("id"));
+  const version = Number(formData.get("version"));
+  const back = String(formData.get("back") ?? `/dashboard/pipeline/${id}`);
+
+  try {
+    await updateOpportunity(token, id, {
+      version,
+      stageId: String(formData.get("stageId")),
+      amount: Number(formData.get("amount")),
+      currency: String(formData.get("currency") ?? "BRL").toUpperCase(),
+      expectedCloseDate: emptyToUndefined(formData.get("expectedCloseDate")),
+    });
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath("/dashboard/pipeline");
+  redirectWithMessage(`/dashboard/pipeline/${id}`, "Oportunidade atualizada");
+}
+
+export async function deleteOpportunityAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const id = String(formData.get("id"));
+
+  try {
+    await deleteOpportunity(token, id);
+  } catch (error) {
+    redirectWithError(`/dashboard/pipeline/${id}`, error);
+  }
+
+  revalidatePath("/dashboard/pipeline");
+  redirectWithMessage("/dashboard/pipeline", "Oportunidade excluída");
 }
 
 // Drag-and-drop no board (SPEC-CRM-GAMA.md §4.2) chama isso direto — não é
@@ -151,12 +197,15 @@ export async function markWonAction(formData: FormData) {
   try {
     await updateOpportunity(token, id, { version, status: "won" });
   } catch (error) {
-    redirectWithError("/dashboard/pipeline", error);
+    redirectWithError(`/dashboard/pipeline/${id}`, error);
   }
 
   revalidatePath("/dashboard/pipeline");
+  redirectWithMessage("/dashboard/pipeline", "🎉 Oportunidade fechada!");
 }
 
+// Confirmação de motivo (protótipo: askLoseDeal → loseDeal, dois passos)
+// acontece na rota .../perder; esta action só aplica.
 export async function markLostAction(formData: FormData) {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
@@ -170,22 +219,25 @@ export async function markLostAction(formData: FormData) {
       lostReason: lostReason || "Não informado",
     });
   } catch (error) {
-    redirectWithError("/dashboard/pipeline", error);
+    redirectWithError(`/dashboard/pipeline/${id}/perder`, error);
   }
 
   revalidatePath("/dashboard/pipeline");
+  redirectWithMessage("/dashboard/pipeline", "Oportunidade marcada como perdida");
 }
 
 export async function reopenAction(formData: FormData) {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
   const version = Number(formData.get("version"));
+  const back = String(formData.get("back") ?? "/dashboard/pipeline");
 
   try {
     await updateOpportunity(token, id, { version, status: "open" });
   } catch (error) {
-    redirectWithError("/dashboard/pipeline", error);
+    redirectWithError(back, error);
   }
 
   revalidatePath("/dashboard/pipeline");
+  redirectWithMessage("/dashboard/pipeline", "Oportunidade reaberta");
 }

@@ -1,347 +1,197 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { getMe } from "@/lib/api/me";
 import { listCompanies } from "@/lib/api/companies";
-import { listMemberships } from "@/lib/api/memberships";
 import { listOpportunities } from "@/lib/api/opportunities";
-import { listTaskLists } from "@/lib/api/task-lists";
-import { listAttachments } from "@/lib/api/task-attachments";
-import { getTask, listTasks } from "@/lib/api/tasks";
+import { listTasks } from "@/lib/api/tasks";
 import type { Task } from "@/lib/api/types";
-import {
-  completeTaskAction,
-  createTaskAction,
-  createTaskListAction,
-  deleteTaskAction,
-  deleteTaskListAction,
-  reopenTaskAction,
-} from "./actions";
+import { completeTaskAction, reopenTaskAction } from "./actions";
 import CalendarView from "./calendar-view";
-import KanbanBoard from "./kanban-board";
-import TaskDetail from "./task-detail";
 
-type ViewName = "lista" | "kanban" | "calendario";
-const VIEWS: Array<{ key: ViewName; label: string }> = [
-  { key: "lista", label: "Lista" },
-  { key: "kanban", label: "Kanban" },
-  { key: "calendario", label: "Calendário" },
-];
+type ViewName = "tabela" | "calendario";
+
+function targetLabel(
+  task: Task,
+  companies: { id: string; name: string }[],
+  opportunities: { id: string; companyId: string; deletedAt: string | null }[],
+): string {
+  if (task.companyId) {
+    return `📈 ${companies.find((c) => c.id === task.companyId)?.name ?? "—"}`;
+  }
+  if (task.opportunityId) {
+    const opp = opportunities.find((o) => o.id === task.opportunityId);
+    const company = opp ? companies.find((c) => c.id === opp.companyId) : null;
+    return `📈 ${company?.name ?? "—"}`;
+  }
+  return "—";
+}
+
+function dueClass(task: Task): string {
+  if (task.status === "done" || !task.dueAt) return "due-ok";
+  const due = new Date(task.dueAt);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (due < today) return "due-late";
+  if (due.getTime() === today.getTime()) return "due-today";
+  return "due-ok";
+}
 
 export default async function TarefasPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    error?: string;
-    overdue?: string;
-    view?: string;
-    card?: string;
-    month?: string;
-  }>;
+  searchParams: Promise<{ error?: string; view?: string; month?: string }>;
 }) {
-  const { error, overdue, view, card, month } = await searchParams;
+  const { error, view, month } = await searchParams;
   const token = await getServerAccessToken();
-  const showOverdueOnly = overdue === "1";
-  const currentView: ViewName =
-    view === "kanban" || view === "calendario" ? view : "lista";
+  const currentView: ViewName = view === "calendario" ? "calendario" : "tabela";
 
-  const [me, { items: tasks }, taskLists, { items: companies }, { items: opportunities }, members] =
-    await Promise.all([
-      getMe(token),
-      listTasks(token, showOverdueOnly ? { overdue: true } : {}),
-      listTaskLists(token),
-      listCompanies(token),
-      listOpportunities(token),
-      listMemberships(token),
-    ]);
+  const [{ items: tasks }, { items: companies }, { items: opportunities }] = await Promise.all([
+    listTasks(token),
+    listCompanies(token),
+    listOpportunities(token),
+  ]);
 
-  const canManageLists = me.membership.role === "owner" || me.membership.role === "admin";
-  const viewHref = (v: ViewName) =>
-    `/dashboard/tarefas?view=${v}${month && v === "calendario" ? `&month=${month}` : ""}`;
   const baseHref = `/dashboard/tarefas?view=${currentView}${month ? `&month=${month}` : ""}`;
+  const viewHref = (v: ViewName) => `/dashboard/tarefas?view=${v}${month && v === "calendario" ? `&month=${month}` : ""}`;
 
-  if (card) {
-    const [detail, attachments] = await Promise.all([
-      getTask(token, card),
-      listAttachments(token, card),
-    ]);
-    return (
-      <TaskDetail
-        task={detail}
-        backHref={baseHref}
-        companies={companies}
-        opportunities={opportunities}
-        members={members}
-        currentUserId={me.user.id}
-        attachments={attachments}
-        error={error}
-      />
-    );
-  }
-
-  const targetLabel = (task: Task) => {
-    if (task.companyId) {
-      return `Empresa: ${companies.find((c) => c.id === task.companyId)?.name ?? "—"}`;
-    }
-    if (task.opportunityId) {
-      const opp = opportunities.find((o) => o.id === task.opportunityId);
-      const company = opp ? companies.find((c) => c.id === opp.companyId) : null;
-      return `Oportunidade: ${company?.name ?? "—"}`;
-    }
-    return "—";
-  };
-
-  const isOverdue = (task: Task) =>
-    task.status === "pending" && task.dueAt !== null && new Date(task.dueAt) < new Date();
+  // Ordena: pendentes com prazo mais próximo primeiro (atrasadas no topo),
+  // concluídas no fim — protótipo ordena por status+prazo; nosso schema só
+  // tem pending/done (sem os 4 status fictícios do protótipo).
+  const rows = [...tasks].sort((a, b) => {
+    if (a.status !== b.status) return a.status === "done" ? 1 : -1;
+    if (!a.dueAt) return 1;
+    if (!b.dueAt) return -1;
+    return a.dueAt.localeCompare(b.dueAt);
+  });
 
   return (
-    <div className="content-wide">
-      <div className="toolbar">
-        <div className="panel-head">
-          <h2>Tarefas</h2>
-          <p className="sub">
-            {tasks.length} tarefa(s){showOverdueOnly ? " vencidas" : ""}
-          </p>
+    <>
+      <div className="topbar">
+        <div>
+          <div className="page-title">Tarefas</div>
+          <div className="page-sub">Rotina consolidada</div>
         </div>
-        <div className="row-form">
-          <div className="view-tabs">
-            {VIEWS.map((v) => (
-              <Link
-                key={v.key}
-                href={viewHref(v.key)}
-                className={v.key === currentView ? "view-tab active" : "view-tab"}
-              >
-                {v.label}
-              </Link>
-            ))}
-          </div>
-          {currentView === "lista" && (
-            <Link
-              href={showOverdueOnly ? "/dashboard/tarefas" : "/dashboard/tarefas?overdue=1"}
-              className="btn btn-ghost btn-sm"
-            >
-              {showOverdueOnly ? "Ver todas" : "Ver só vencidas"}
-            </Link>
-          )}
-        </div>
+        <Link href="/dashboard/tarefas/nova" className="btn btn-primary">
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Nova tarefa
+        </Link>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
-
-      {currentView !== "calendario" && (
-        <div className="form-panel">
-          <form action={createTaskAction} className="form-grid">
-            <input type="hidden" name="back" value={baseHref} />
-            <label>
-              Título*
-              <input name="title" required />
-            </label>
-            <label>
-              Prazo
-              <input name="dueAt" type="date" />
-            </label>
-            <label>
-              Coluna
-              <select name="listId" defaultValue={taskLists.find((l) => l.order === 0)?.id ?? ""}>
-                {[...taskLists]
-                  .sort((a, b) => a.order - b.order)
-                  .map((list) => (
-                    <option key={list.id} value={list.id}>
-                      {list.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              Empresa
-              <select name="companyId" defaultValue="">
-                <option value="">—</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Oportunidade
-              <select name="opportunityId" defaultValue="">
-                <option value="">—</option>
-                {opportunities
-                  .filter((opp) => !opp.deletedAt)
-                  .map((opp) => (
-                    <option key={opp.id} value={opp.id}>
-                      {companies.find((c) => c.id === opp.companyId)?.name ?? opp.id} —{" "}
-                      {opp.currency} {Number(opp.amount).toLocaleString("pt-BR")}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <button type="submit" className="btn btn-primary">
-              Nova tarefa
-            </button>
-          </form>
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
-            Escolha exatamente um vínculo (empresa OU oportunidade).
-          </p>
+      <div className="content">
+        <div className="toolbar">
+          <div className="seg">
+            <Link href={viewHref("tabela")} className={currentView === "tabela" ? "active" : undefined}>
+              Tabela
+            </Link>
+            <Link href={viewHref("calendario")} className={currentView === "calendario" ? "active" : undefined}>
+              Calendário
+            </Link>
+          </div>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>
+            {tasks.filter((t) => t.status !== "done").length} abertas · clique para abrir
+          </span>
         </div>
-      )}
 
-      {currentView === "kanban" && canManageLists && (
-        <details style={{ marginBottom: 16 }}>
-          <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
-            + Gerenciar colunas do quadro
-          </summary>
-          <div className="form-panel" style={{ marginTop: 8 }}>
-            <form action={createTaskListAction} className="form-grid">
-              <input type="hidden" name="back" value={baseHref} />
-              <label>
-                Nome*
-                <input name="name" required />
-              </label>
-              <label>
-                Ordem*
-                <input name="order" type="number" required defaultValue={taskLists.length} />
-              </label>
-              <label className="row-form" style={{ alignItems: "center" }}>
-                <input type="checkbox" name="isDoneList" style={{ width: "auto" }} />
-                É coluna de &ldquo;concluída&rdquo;
-              </label>
-              <button type="submit" className="btn btn-primary">
-                Adicionar coluna
-              </button>
-            </form>
-            <table className="data-table" style={{ marginTop: 12 }}>
+        {error && <div className="error-banner">{error}</div>}
+
+        {currentView === "tabela" ? (
+          <div className="panel">
+            <table>
               <thead>
                 <tr>
-                  <th>Coluna</th>
-                  <th>Ordem</th>
-                  <th>Concluída?</th>
-                  <th>Ação</th>
+                  <th style={{ width: 40 }}></th>
+                  <th>Tarefa</th>
+                  <th>Vínculo</th>
+                  <th>Prazo</th>
+                  <th>Situação</th>
+                  <th style={{ width: 60 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {[...taskLists]
-                  .sort((a, b) => a.order - b.order)
-                  .map((list) => (
-                    <tr key={list.id}>
-                      <td>{list.name}</td>
-                      <td>{list.order}</td>
-                      <td>{list.isDoneList ? "Sim" : "Não"}</td>
+                {rows.map((task) => {
+                  const done = task.status === "done";
+                  const nAnexos = task._count?.attachments ?? 0;
+                  const nCom = task._count?.comments ?? 0;
+                  return (
+                    <tr key={task.id} className="row-clickable">
                       <td>
-                        <form action={deleteTaskListAction}>
-                          <input type="hidden" name="id" value={list.id} />
+                        <form action={done ? reopenTaskAction : completeTaskAction}>
+                          <input type="hidden" name="id" value={task.id} />
                           <input type="hidden" name="back" value={baseHref} />
-                          <button type="submit" className="btn btn-sm btn-danger">
-                            Remover
+                          <button
+                            type="submit"
+                            className={done ? "task-check done" : "task-check"}
+                            aria-label={done ? "Reabrir" : "Concluir"}
+                          >
+                            {done && (
+                              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                <path d="M20 6L9 17l-5-5" />
+                              </svg>
+                            )}
                           </button>
                         </form>
                       </td>
+                      <td>
+                        <Link href={`/dashboard/tarefas/${task.id}`} className={done ? "task-title-cell done" : "task-title-cell"}>
+                          {task.title}
+                        </Link>
+                        {nAnexos > 0 && (
+                          <span className="attach-count" title="Anexos">
+                            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                            </svg>
+                            {nAnexos}
+                          </span>
+                        )}
+                        {nCom > 0 && (
+                          <span className="attach-count" title="Comentários">
+                            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                            </svg>
+                            {nCom}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="t-sub">{targetLabel(task, companies, opportunities)}</span>
+                      </td>
+                      <td>
+                        <span className={`task-due ${dueClass(task)}`} style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                          {task.dueAt ? new Date(task.dueAt).toLocaleDateString("pt-BR") : "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={done ? "pill pill-green" : "pill pill-gray"}>{done ? "Concluída" : "Pendente"}</span>
+                      </td>
+                      <td>
+                        <div className="cell-actions">
+                          <Link href={`/dashboard/tarefas/${task.id}/editar`} className="icon-btn" title="Editar">
+                            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </Link>
+                        </div>
+                      </td>
                     </tr>
-                  ))}
+                  );
+                })}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="empty">
+                      Nenhuma tarefa.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
-        </details>
-      )}
-
-      {currentView === "lista" && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Título</th>
-              <th>Vínculo</th>
-              <th>Prazo</th>
-              <th>Status</th>
-              <th>Ação</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tasks.map((task) => (
-              <tr key={task.id}>
-                <td>
-                  <Link href={`${baseHref}&card=${task.id}`}>{task.title}</Link>
-                  {task._count &&
-                    (task._count.comments > 0 ||
-                      task._count.checklistItems > 0 ||
-                      task._count.attachments > 0) && (
-                      <span className="row-form" style={{ display: "inline-flex", marginLeft: 8 }}>
-                        {task._count.comments > 0 && (
-                          <span className="badge" title="Comentários">💬 {task._count.comments}</span>
-                        )}
-                        {task._count.checklistItems > 0 && (
-                          <span className="badge" title="Itens de checklist">☑ {task._count.checklistItems}</span>
-                        )}
-                        {task._count.attachments > 0 && (
-                          <span className="badge" title="Anexos">📎 {task._count.attachments}</span>
-                        )}
-                      </span>
-                    )}
-                </td>
-                <td>{targetLabel(task)}</td>
-                <td>
-                  {task.dueAt ? new Date(task.dueAt).toLocaleDateString("pt-BR") : "—"}
-                  {isOverdue(task) && (
-                    <span className="badge badge-danger" style={{ marginLeft: 6 }}>
-                      vencida
-                    </span>
-                  )}
-                </td>
-                <td>
-                  <span className={task.status === "done" ? "badge badge-accent" : "badge"}>
-                    {task.status === "done" ? "Concluída" : "Pendente"}
-                  </span>
-                </td>
-                <td className="row-form">
-                  {task.status === "pending" ? (
-                    <form action={completeTaskAction}>
-                      <input type="hidden" name="id" value={task.id} />
-                      <input type="hidden" name="back" value={baseHref} />
-                      <button type="submit" className="btn btn-sm btn-primary">
-                        Concluir
-                      </button>
-                    </form>
-                  ) : (
-                    <form action={reopenTaskAction}>
-                      <input type="hidden" name="id" value={task.id} />
-                      <input type="hidden" name="back" value={baseHref} />
-                      <button type="submit" className="btn btn-sm">
-                        Reabrir
-                      </button>
-                    </form>
-                  )}
-                  <form action={deleteTaskAction}>
-                    <input type="hidden" name="id" value={task.id} />
-                    <button type="submit" className="btn btn-sm btn-danger">
-                      Excluir
-                    </button>
-                  </form>
-                </td>
-              </tr>
-            ))}
-            {tasks.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>
-                  Nenhuma tarefa.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      )}
-
-      {currentView === "kanban" && (
-        <KanbanBoard
-          lists={taskLists}
-          tasks={tasks}
-          companies={companies}
-          opportunities={opportunities}
-          baseHref={baseHref}
-        />
-      )}
-
-      {currentView === "calendario" && (
-        <CalendarView tasks={tasks} month={month} baseHref={baseHref} />
-      )}
-    </div>
+        ) : (
+          <CalendarView tasks={tasks} month={month} />
+        )}
+      </div>
+    </>
   );
 }

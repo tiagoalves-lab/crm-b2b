@@ -84,14 +84,15 @@ export default async function RelatoriosPage() {
   const maxFunil = Math.max(...funil.map((f) => f.count), ganhas.length, perdidas.length, 1);
 
   return (
-    <div className="content-wide">
-      <div className="toolbar">
-        <div className="panel-head">
-          <h2>Relatórios</h2>
-          <p className="sub">Conversão, ciclo e previsão</p>
+    <>
+      <div className="topbar">
+        <div>
+          <div className="page-title">Relatórios</div>
+          <div className="page-sub">Conversão, ciclo e previsão</div>
         </div>
       </div>
 
+      <div className="content">
       <div className="stat-grid">
         <div className="stat-tile green">
           <div className="stat-label">Taxa de fechamento</div>
@@ -120,10 +121,16 @@ export default async function RelatoriosPage() {
       </div>
 
       <div className="report-grid" style={{ marginTop: 20 }}>
-        <div className="form-panel">
+        <div className="panel">
           <div className="panel-head">
-            <h3 style={{ fontSize: 14 }}>Funil de conversão — nº de negócios por etapa</h3>
+            <div className="panel-title">
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+              </svg>
+              Funil de conversão — nº de negócios por etapa
+            </div>
           </div>
+          <div className="panel-body">
           <div className="funnel-bar">
             {funil.map((f) => (
               <div className="fbar" key={f.stage.id}>
@@ -162,12 +169,20 @@ export default async function RelatoriosPage() {
               </div>
             </div>
           </div>
+          </div>
         </div>
 
-        <div className="form-panel">
+        <div className="panel">
           <div className="panel-head">
-            <h3 style={{ fontSize: 14 }}>Origem dos leads</h3>
+            <div className="panel-title">
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 2a10 10 0 010 20" />
+              </svg>
+              Origem dos leads
+            </div>
           </div>
+          <div className="panel-body">
           {totalLeads > 0 ? (
             <div className="donut-wrap">
               <div dangerouslySetInnerHTML={{ __html: donutSvg(fonteEntries, totalLeads) }} />
@@ -186,8 +201,10 @@ export default async function RelatoriosPage() {
           ) : (
             <p className="sub">Nenhum lead na triagem ainda.</p>
           )}
+          </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

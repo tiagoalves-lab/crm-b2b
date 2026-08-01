@@ -12,6 +12,14 @@ export function listOpportunities(
   });
 }
 
+export function getOpportunity(token: string, id: string): Promise<Opportunity> {
+  return apiFetch<Opportunity>(`/opportunities/${id}`, { token });
+}
+
+export function deleteOpportunity(token: string, id: string): Promise<Opportunity> {
+  return apiFetch<Opportunity>(`/opportunities/${id}`, { method: "DELETE", token });
+}
+
 export interface CreateOpportunityInput {
   companyId: string;
   pipelineId: string;
@@ -39,6 +47,8 @@ export interface UpdateOpportunityInput {
   status?: OpportunityStatus;
   lostReason?: string;
   amount?: number;
+  currency?: string;
+  expectedCloseDate?: string;
 }
 
 export function updateOpportunity(

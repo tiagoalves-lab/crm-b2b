@@ -1,0 +1,37 @@
+import { getServerAccessToken } from "@/lib/api/auth";
+import { loadOpportunityDetail } from "../_detail/load";
+import { DetailFooter, DetailKv } from "../_detail/detail-body";
+
+// Fallback full-page (acesso direto/refresh no detalhe de uma
+// oportunidade). Em navegação normal dentro do app, essa mesma rota é
+// interceptada e abre como modal — ver @modal/(.)pipeline/[id].
+export default async function OpportunityDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const token = await getServerAccessToken();
+  const data = await loadOpportunityDetail(token, id);
+
+  return (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="page-title">{data.company.name}</div>
+          <div className="page-sub">Oportunidade</div>
+        </div>
+      </div>
+      <div className="content">
+        <div className="panel">
+          <div className="panel-body">
+            <DetailKv data={data} />
+          </div>
+          <div className="modal-foot">
+            <DetailFooter data={data} />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

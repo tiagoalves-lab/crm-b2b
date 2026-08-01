@@ -66,14 +66,18 @@ interface NavCounts {
   empresas: number;
 }
 
+// Agrupamento espelha 1:1 o sidebar de gama-crm-mvp.html (Comercial /
+// Cadastros / Análise). Membros não existe no protótipo — vai num grupo
+// próprio ("Administração") em vez de forçar dentro de um dos três grupos
+// originais, mesmo padrão do protótipo de grupo com um item só (Análise).
 const items = [
-  { href: "/dashboard", label: "Painel", group: "Visão geral", icon: "painel", count: undefined },
-  { href: "/dashboard/leads", label: "Leads", group: "Aquisição", icon: "leads", count: "leads" as const },
-  { href: "/dashboard/pipeline", label: "Pipeline", group: "Vendas", icon: "pipeline", count: "pipeline" as const },
-  { href: "/dashboard/empresas", label: "Empresas", group: "Vendas", icon: "empresas", count: "empresas" as const },
-  { href: "/dashboard/tarefas", label: "Tarefas", group: "Trabalho", icon: "tarefas", count: "tarefas" as const },
-  { href: "/dashboard/relatorios", label: "Relatórios", group: "Trabalho", icon: "relatorios", count: undefined },
-  { href: "/dashboard/membros", label: "Membros", group: "Workspace", icon: "membros", count: undefined },
+  { href: "/dashboard", label: "Painel", group: "Comercial", icon: "painel", count: undefined },
+  { href: "/dashboard/leads", label: "Leads", group: "Comercial", icon: "leads", count: "leads" as const },
+  { href: "/dashboard/pipeline", label: "Pipeline", group: "Comercial", icon: "pipeline", count: "pipeline" as const },
+  { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" as const },
+  { href: "/dashboard/empresas", label: "Empresas", group: "Cadastros", icon: "empresas", count: "empresas" as const },
+  { href: "/dashboard/relatorios", label: "Relatórios", group: "Análise", icon: "relatorios", count: undefined },
+  { href: "/dashboard/membros", label: "Membros", group: "Administração", icon: "membros", count: undefined },
 ];
 
 export default function DashboardNav({ counts }: { counts: NavCounts }) {

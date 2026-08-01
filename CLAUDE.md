@@ -18,6 +18,15 @@ interrupção. **Ainda falta**: testar no navegador com credencial real
 produção — sem essa env var, upload de anexo devolve erro claro (o resto
 do app funciona normal).
 
+**ATUALIZAÇÃO (mesmo dia, sessão seguinte) — o resultado visual das 9
+fatias divergia do protótipo** (usuário reportou vendo o app publicado:
+sidebar sem os grupos certos, formulário de empresa cravado na lista em
+vez de modal). Auditoria confirmou: não era só CSS, faltavam subsistemas
+inteiros (modal/drawer/toast/topbar). Rodada de reconstrução fatia por
+fatia fechada — ver "Trabalho pós-spec" abaixo, entrada "Reconstrução do
+frontend pra fidelidade 1:1". **Publicada em produção incrementalmente,
+mas ainda não commitada no git** — ver pendência específica lá.
+
 ### Estado da execução do SPEC-CRM-GAMA.md (seção 6 — 9 fatias)
 
 - [x] **Fatia 1** — Migrations `raw_leads`, `task_attachments`, view
@@ -159,6 +168,102 @@ do app funciona normal).
   fluxo de convite por e-mail (continua fora de escopo), o admin que
   cria já define a senha. Só owner/admin criam.
 
+- **2026-08-01 — Reconstrução do frontend pra fidelidade 1:1 com
+  `gama-crm-mvp.html`.** As 9 fatias tinham conectado o backend, mas o
+  resultado visual era uma mistura da v1 com a migração — não batia com
+  o protótipo. Auditoria (agente Explore, comparação arquivo-a-arquivo)
+  achou a causa real: não era só CSS reskin, faltavam subsistemas
+  inteiros. Grep confirmou **zero ocorrência** de `modal`/`drawer`/
+  `toast`/`topbar` em `web/app` — ficha/formulário eram navegação de
+  página cheia, não overlay; cards do pipeline sem cor por stage;
+  Ganhar/Perder aparecia em todo cartão em vez de só na última etapa;
+  Leads sem barra de score; e existia um Kanban de Tarefas + checklist
+  que não estão no protótipo (sobra da v1). Plano completo salvo em
+  `C:\Users\Pichau\.claude\plans\humble-inventing-bunny.md` (máquina
+  local, não vai no git — só este resumo persiste).
+
+  **Decisões travadas com o usuário antes de começar:**
+  1. Modal/drawer como **overlay real**, via **Parallel + Intercepting
+     Routes do Next.js** (`@modal`/`@drawer` em `web/app/dashboard/`,
+     pastas `(.)segmento` interceptam navegação soft e mantêm a lista
+     visível atrás, fundo escurecido, ESC/click-fora fecha; acesso
+     direto/refresh cai na rota cheia normal como fallback) — recurso
+     nativo do Next, não é lib nova, respeita a regra de "sem libs de
+     estado novas" do projeto.
+  2. Kanban de Tarefas e checklist **saíram da UI** (não existem no
+     protótipo). Endpoint de checklist continua no backend, só não é
+     mais exposto na tela — `kanban-board.tsx`/`task-detail.tsx` antigos
+     foram apagados, não só desligados.
+  3. Execução fatia por fatia, reportando e parando pra confirmação
+     entre cada uma; a partir da Fatia 2, a pedido do usuário, deploy no
+     Vercel **automático** ao fechar cada fatia (antes disso, só quando
+     pedido explicitamente — regra que não mudou pro Railway nem pra
+     commit, ver memória `feedback_auto_deploy_vercel`).
+
+  **Fatias fechadas** (build limpo + checklist de segurança §8 do SPEC
+  revalidado a cada uma):
+  - **Fatia 0** (fundação) — `web/app/globals.css` ganhou ~50 famílias
+    de classe do protótipo que faltavam (aditivo, nada removido — cada
+    tela migra na própria fatia); infra de overlay
+    (`web/app/dashboard/_overlay/{overlay-modal,overlay-drawer,toast}.tsx`)
+    plugada no `layout.tsx` via slots `@modal`/`@drawer`; agrupamento do
+    menu corrigido (Comercial/Cadastros/Análise, igual ao protótipo).
+  - **Fatia 1** (Empresas) — ficha virou drawer, "Nova"/"Editar" viraram
+    modal (`.modal.wide` — cadastro real tem ~20 campos herdados do
+    antigo Contact, não cabe nos 520px do protótipo). Aba "Dados
+    cadastrais" ganhou o card rico da Receita (situação/CNAE/porte/
+    natureza jurídica) — exigiu **estender `src/companies/
+    company.service.ts`**: `lookupCnpj` já buscava esses campos na
+    BrasilAPI mas descartava a maioria antes de chegar no frontend.
+    Bug real corrigido de passagem: `updateCustomFieldsAction`
+    substituía `customFields` inteiro em vez de mesclar (Prisma não faz
+    merge de campo JSON no `update`), apagando silenciosamente dado de
+    outra aba a cada save — corrigido lendo o estado atual antes de
+    salvar.
+  - **Fatia 2** (Pipeline) — board com a cor exata de cada stage do
+    protótipo (roxo/azul/verde-água/âmbar por ordem, `stage-colors.ts`).
+    Ganhar/Perder saiu do cartão: só aparece no modal de detalhe, e só
+    na última etapa ("Negociação e Fechamento"), como o protótipo
+    define — antes aparecia em todo cartão de toda coluna. Subform de
+    encerradas virou grade de cards azul/vermelho com filtro de período
+    completo (navegação por mês + range customizado).
+  - **Fatia 3** (Tarefas) — Kanban e checklist fora da UI (ver decisão
+    2 acima). Detalhe da tarefa virou modal com anexos reais
+    (`.attach-*`, upload via signed URL do Supabase Storage) e chat de
+    comentários (`.chat-*`).
+  - **Fatia 4** (Leads) — ficha virou drawer, score com barra de
+    progresso real (`.score-mini`) + tooltip do cálculo completo.
+    `scoreReasons()` novo em `web/lib/api/raw-leads.ts` espelha
+    `LeadScoringService#score` do backend só pra exibição (o backend
+    calcula `reasons` mas só persiste o `score` final) — mesmo padrão
+    que `scoreTier()` já usava, zero mudança de backend.
+  - **Fatia 5** (Dashboard + Relatórios) — ícones SVG nos títulos de
+    painel, `kpi-delta`/`.up`/`.down` nos KPIs do painel comercial.
+
+  **Verificação desta rodada**: `npm run build` limpo a cada fatia,
+  74/74 unit tests do backend passando (rodados de novo no fim, depois
+  da extensão do `company.service.ts`), checklist de segurança (grep
+  `NEXT_PUBLIC_`) limpo em toda fatia, nenhuma migration/policy de
+  RLS/schema tocada (só a extensão aditiva do `lookupCnpj`). **e2e não
+  fechou limpo no fim da rodada**: o pool do Supabase (`pool_size: 15`,
+  modo *session*) estourou (`EMAXCONNSESSION`) mesmo depois de derrubar
+  os dev servers locais e rodar em série (`--runInBand`) — o backend de
+  produção no Railway mantém conexões abertas nesse mesmo pool
+  compartilhado o tempo todo, então isso não indica regressão desta
+  sessão, só que não deu pra reconfirmar os 111 e2e de novo sem
+  contenção de conexão. Reexecutar `npm run test:e2e` numa janela sem
+  tráfego de produção antes de considerar 100% revalidado.
+
+  **Pendência real, não resolvida nesta rodada**: tudo acima está
+  **publicado em produção** (Vercel a cada fatia; Railway também na
+  Fatia 1, por causa da extensão do `company.service.ts`) **mas ainda
+  NÃO commitado no git** — o usuário pediu deploy incremental
+  explicitamente, mas commit continua exigindo pedido à parte (regra do
+  projeto, não mudou). O working tree local tem o diff inteiro das 6
+  fatias. Se uma sessão nova retomar isso, rodar `git status`/`git
+  diff` antes de supor que o repo local ou o GitHub remoto refletem o
+  que está em produção — hoje eles **não** refletem.
+
 **Pendência de infra compartilhada por duas features** (Fatia 8 e CRUD de
 membros): `SUPABASE_SERVICE_ROLE_KEY` não está configurada no Railway —
 eu não tenho esse segredo e não posso gerá-lo (regra de segurança do
@@ -206,6 +311,17 @@ teste manual quando alguém logar:**
    admin vê tudo; um operador não consegue promover a si mesmo pra admin
    (só admin/owner mexe em papel de outro membro).
 
+**Adendo à lista acima, pós-reconstrução (2026-08-01, sessão seguinte)**:
+toda a navegação por overlay (modal/drawer via Intercepting Routes) é
+nova e nunca foi clicada de verdade — só validada por build + leitura de
+código. Testar especificamente: abrir "Nova empresa"/"Nova oportunidade"/
+"Nova tarefa" e confirmar que aparece como modal centralizado (não
+navega pra página cheia); clicar numa empresa/lead na lista e confirmar
+que abre como drawer lateral com a lista ainda visível atrás, escurecida;
+apertar ESC ou clicar fora fecha; dar refresh direto numa URL de
+ficha/modal (ex. colar `/dashboard/pipeline/<id>` na barra de endereço)
+e confirmar que cai na versão de página cheia (fallback), não quebra.
+
 Cada fatia tem os detalhes de decisão/gotcha registrados na memória do
 Claude Code (`project_spec_crm_gama_execucao` — mas isso é local da
 máquina/conta que rodou, **não vai junto no git**; se outra pessoa/conta
@@ -219,6 +335,14 @@ East**). **Ambos redeployados em 2026-08-01 com as 9 fatias completas**
 (commits `2a903aa`/`6aaa680`/`7173574`).
 Redeploy: `railway up` (raiz) / `vercel --prod` (dentro de `web/`) — não
 é automático por push.
+
+**Redeploys adicionais no mesmo dia (sessão da reconstrução do
+frontend, ver "Trabalho pós-spec")**: Vercel redeployado a cada fatia
+(0 a 5), Railway redeployado uma vez (Fatia 1, extensão do
+`company.service.ts`). **Nenhum desses redeploys corresponde a um commit
+novo** — o que está em produção agora é mais recente que o que está no
+git. Não assumir que `git log`/GitHub refletem o estado publicado até
+que alguém peça o commit explicitamente.
 
 Servidores locais de dev podem ou não continuar rodando dependendo de
 como a sessão anterior foi encerrada — backend em `:3001`, frontend

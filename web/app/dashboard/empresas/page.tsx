@@ -4,8 +4,6 @@ import { listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import type { Company } from "@/lib/api/types";
 import { deleteCompanyAction, restoreCompanyAction } from "./actions";
-import CompanyForm from "./company-form";
-import CompanyFicha from "./company-ficha";
 
 type Filtro = "todas" | "lead" | "cliente";
 
@@ -15,17 +13,11 @@ export default async function EmpresasPage({
   searchParams: Promise<{
     error?: string;
     includeDeleted?: string;
-    empresa?: string;
-    aba?: string;
     filtro?: string;
   }>;
 }) {
-  const { error, includeDeleted, empresa, aba, filtro } = await searchParams;
+  const { error, includeDeleted, filtro } = await searchParams;
   const token = await getServerAccessToken();
-
-  if (empresa) {
-    return <CompanyFicha token={token} companyId={empresa} aba={aba} error={error} />;
-  }
 
   const showDeleted = includeDeleted === "1";
   const [{ items: allCompanies }, { items: opportunities }] = await Promise.all([
@@ -61,91 +53,117 @@ export default async function EmpresasPage({
     : `/dashboard/empresas?filtro=${currentFiltro}&includeDeleted=1`;
 
   return (
-    <div className="content-wide">
-      <div className="toolbar">
-        <div className="panel-head">
-          <h2>Empresas</h2>
-          <p className="sub">
+    <>
+      <div className="topbar">
+        <div>
+          <div className="page-title">Empresas</div>
+          <div className="page-sub">
             {visible.length} de {companies.length} empresa(s)
             {showDeleted ? " (incluindo excluídas)" : ""}
-          </p>
+          </div>
         </div>
-        <Link href={deletedHref} className="btn btn-ghost btn-sm">
-          {showDeleted ? "Ocultar excluídas" : "Ver excluídas"}
+        <Link href="/dashboard/empresas/nova" className="btn btn-primary">
+          + Nova empresa
         </Link>
       </div>
 
-      <div className="view-tabs" style={{ marginBottom: 16 }}>
-        <Link href={filtroHref("todas")} className={currentFiltro === "todas" ? "view-tab active" : "view-tab"}>
-          Todas ({companies.length})
-        </Link>
-        <Link href={filtroHref("lead")} className={currentFiltro === "lead" ? "view-tab active" : "view-tab"}>
-          Leads ({leadsCount})
-        </Link>
-        <Link href={filtroHref("cliente")} className={currentFiltro === "cliente" ? "view-tab active" : "view-tab"}>
-          Clientes ({clientesCount})
-        </Link>
-      </div>
+      <div className="content">
+        <div className="toolbar">
+          <div className="seg">
+            <Link href={filtroHref("todas")} className={currentFiltro === "todas" ? "active" : undefined}>
+              Todas ({companies.length})
+            </Link>
+            <Link href={filtroHref("lead")} className={currentFiltro === "lead" ? "active" : undefined}>
+              Leads ({leadsCount})
+            </Link>
+            <Link href={filtroHref("cliente")} className={currentFiltro === "cliente" ? "active" : undefined}>
+              Clientes ({clientesCount})
+            </Link>
+          </div>
+          <Link href={deletedHref} className="btn btn-ghost btn-sm">
+            {showDeleted ? "Ocultar excluídas" : "Ver excluídas"}
+          </Link>
+        </div>
 
-      {error && <div className="error-banner">{error}</div>}
+        {error && <div className="error-banner">{error}</div>}
 
-      <CompanyForm />
-
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Nome</th>
-            <th>Tipo</th>
-            <th>CPF/CNPJ</th>
-            <th>Cidade/UF</th>
-            <th>Tags</th>
-            <th>Ação</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((company) => (
-            <tr key={company.id}>
-              <td>
-                <Link href={`/dashboard/empresas?empresa=${company.id}`}>{company.name}</Link>
-              </td>
-              <td>
-                <span className={tipoOf(company) === "cliente" ? "badge badge-accent" : "badge"}>
-                  {tipoOf(company)}
-                </span>
-              </td>
-              <td>{company.cpfCnpj ?? "—"}</td>
-              <td>
-                {company.cidade ? `${company.cidade}${company.uf ? `/${company.uf}` : ""}` : "—"}
-              </td>
-              <td>{company.tags.length > 0 ? company.tags.join(", ") : "—"}</td>
-              <td>
-                {company.deletedAt ? (
-                  <form action={restoreCompanyAction}>
-                    <input type="hidden" name="id" value={company.id} />
-                    <button type="submit" className="btn btn-sm">
-                      Restaurar
-                    </button>
-                  </form>
-                ) : (
-                  <form action={deleteCompanyAction}>
-                    <input type="hidden" name="id" value={company.id} />
-                    <button type="submit" className="btn btn-danger btn-sm">
-                      Excluir
-                    </button>
-                  </form>
-                )}
-              </td>
-            </tr>
-          ))}
-          {visible.length === 0 && (
+        <table>
+          <thead>
             <tr>
-              <td colSpan={6} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>
-                Nenhuma empresa encontrada.
-              </td>
+              <th>Nome</th>
+              <th>Tipo</th>
+              <th>CPF/CNPJ</th>
+              <th>Cidade/UF</th>
+              <th>Tags</th>
+              <th></th>
             </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {visible.map((company) => (
+              <tr key={company.id} className="row-clickable">
+                <td>
+                  <Link href={`/dashboard/empresas/${company.id}`} className="t-co">
+                    {company.name}
+                  </Link>
+                </td>
+                <td>
+                  <span className={tipoOf(company) === "cliente" ? "pill pill-green" : "pill pill-blue"}>
+                    {tipoOf(company) === "cliente" ? "Cliente" : "Lead"}
+                  </span>
+                </td>
+                <td className="t-sub">{company.cpfCnpj ?? "—"}</td>
+                <td>
+                  {company.cidade ? `${company.cidade}${company.uf ? `/${company.uf}` : ""}` : "—"}
+                </td>
+                <td className="t-sub">{company.tags.length > 0 ? company.tags.join(", ") : "—"}</td>
+                <td>
+                  <div className="cell-actions">
+                    <Link href={`/dashboard/empresas/${company.id}`} className="icon-btn" title="Abrir ficha">
+                      <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </Link>
+                    <Link href={`/dashboard/empresas/${company.id}/editar`} className="icon-btn" title="Editar">
+                      <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </Link>
+                    {company.deletedAt ? (
+                      <form action={restoreCompanyAction}>
+                        <input type="hidden" name="id" value={company.id} />
+                        <button type="submit" className="icon-btn" title="Restaurar">
+                          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
+                          </svg>
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={deleteCompanyAction}>
+                        <input type="hidden" name="id" value={company.id} />
+                        <button type="submit" className="icon-btn danger" title="Excluir">
+                          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" />
+                          </svg>
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {visible.length === 0 && (
+              <tr>
+                <td colSpan={6} className="empty">
+                  Nenhuma empresa encontrada.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

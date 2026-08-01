@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError } from "@/lib/api/action-helpers";
+import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import {
   createChecklistItem,
   createComment,
@@ -52,6 +52,7 @@ export async function createTaskAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/tarefas");
+  redirectWithMessage("/dashboard/tarefas", "Tarefa criada");
 }
 
 export async function completeTaskAction(formData: FormData) {
@@ -66,6 +67,7 @@ export async function completeTaskAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/tarefas");
+  redirectWithMessage(back, "Tarefa concluída ✓");
 }
 
 export async function reopenTaskAction(formData: FormData) {
@@ -80,6 +82,7 @@ export async function reopenTaskAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/tarefas");
+  redirectWithMessage(back, "Tarefa reaberta");
 }
 
 export async function deleteTaskAction(formData: FormData) {
@@ -89,14 +92,15 @@ export async function deleteTaskAction(formData: FormData) {
   try {
     await deleteTask(token, id);
   } catch (error) {
-    redirectWithError("/dashboard/tarefas", error);
+    redirectWithError(`/dashboard/tarefas/${id}`, error);
   }
 
   revalidatePath("/dashboard/tarefas");
+  redirectWithMessage("/dashboard/tarefas", "Tarefa excluída");
 }
 
-// Edição do cartão (título/descrição/prazo/responsável) — chamada pelo
-// painel de detalhe.
+// Edição da tarefa (título/descrição/prazo/responsável) — protótipo:
+// openTaskForm.
 export async function updateTaskDetailAction(formData: FormData) {
   const token = await getServerAccessToken();
   const back = backPath(formData);
@@ -114,6 +118,7 @@ export async function updateTaskDetailAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/tarefas");
+  redirectWithMessage(`/dashboard/tarefas/${id}`, "Tarefa atualizada");
 }
 
 // Drag-and-drop no Kanban chama isso direto (não é submit de form) — sem
@@ -308,6 +313,7 @@ export async function uploadAttachmentAction(formData: FormData) {
   }
 
   revalidatePath(back);
+  redirectWithMessage(back, "Anexo adicionado");
 }
 
 // Gera a signed URL só quando clicado (nunca antecipado na listagem) e
@@ -344,4 +350,5 @@ export async function deleteAttachmentAction(formData: FormData) {
   }
 
   revalidatePath(back);
+  redirectWithMessage(back, "Anexo removido");
 }

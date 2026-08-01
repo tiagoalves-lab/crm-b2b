@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { listCompanies } from "@/lib/api/companies";
@@ -7,6 +8,7 @@ import { listTasks } from "@/lib/api/tasks";
 import type { MembershipRole } from "@/lib/api/types";
 import { signOut } from "../login/actions";
 import DashboardNav from "./dashboard-nav";
+import Toast from "./_overlay/toast";
 
 const ROLE_LABELS: Record<MembershipRole, string> = {
   owner: "Owner",
@@ -18,8 +20,12 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
 
 export default async function DashboardLayout({
   children,
+  modal,
+  drawer,
 }: {
   children: React.ReactNode;
+  modal: React.ReactNode;
+  drawer: React.ReactNode;
 }) {
   const token = await getServerAccessToken();
 
@@ -77,6 +83,12 @@ export default async function DashboardLayout({
       </aside>
 
       <div className="main">{children}</div>
+
+      {modal}
+      {drawer}
+      <Suspense fallback={null}>
+        <Toast />
+      </Suspense>
     </div>
   );
 }

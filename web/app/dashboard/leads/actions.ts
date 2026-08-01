@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError } from "@/lib/api/action-helpers";
+import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { ApiError } from "@/lib/api/client";
 import {
   approveLead,
@@ -42,6 +42,7 @@ export async function createRawLeadAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/leads");
+  redirectWithMessage("/dashboard/leads", "Lead adicionado à triagem");
 }
 
 export async function approveOneLeadAction(formData: FormData) {
@@ -57,6 +58,7 @@ export async function approveOneLeadAction(formData: FormData) {
 
   revalidatePath("/dashboard/leads");
   revalidatePath("/dashboard/empresas");
+  redirectWithMessage("/dashboard/leads", "✓ Lead aprovado — virou empresa, com histórico e tarefas preservados");
 }
 
 export async function discardOneLeadAction(formData: FormData) {
@@ -71,6 +73,7 @@ export async function discardOneLeadAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/leads");
+  redirectWithMessage("/dashboard/leads", "Lead descartado (fica na staging)");
 }
 
 function actionError(error: unknown, fallback: string): string {
