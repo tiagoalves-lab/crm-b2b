@@ -85,17 +85,29 @@ export async function createFakeAuthApp(
 // Mesmo padrão de test/rls-isolation.e2e-spec.ts e test/authz.e2e-spec.ts —
 // usado aqui só pra criar fixtures (Workspace/Membership/etc.) direto via
 // Prisma, sem passar pelos guards.
+//
+// `role` default 'owner': depois de SPEC-CRM-GAMA.md §7.5 (RLS por
+// papel em companies/opportunities/tasks), toda escrita via Prisma usa
+// RETURNING, e o Postgres exige que a linha satisfaça também a policy de
+// SELECT pra devolver — não só o WITH CHECK do INSERT. Fixtures de teste
+// (a maioria criada aqui) não estão testando a restrição de papel em si
+// (isso é test/rls-role-isolation.e2e-spec.ts) — 'owner' bypassa a
+// checagem de papel e preserva o comportamento "cria e enxerga tudo"
+// que esses arquivos sempre assumiram. Passe um role explícito só
+// quando o teste precisar simular um sales_rep de verdade.
 export function withTenant<T>(
   prisma: PrismaClient,
   userId: string,
   workspaceId: string,
   fn: (tx: TenantTx) => Promise<T>,
+  role: string = 'owner',
 ): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SET LOCAL app.current_user_id = '${userId}'`);
     await tx.$executeRawUnsafe(
       `SET LOCAL app.current_workspace_id = '${workspaceId}'`,
     );
+    await tx.$executeRawUnsafe(`SET LOCAL "app.current_role" = '${role}'`);
     return fn(tx);
   });
 }

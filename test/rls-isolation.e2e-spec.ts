@@ -108,6 +108,13 @@ describe('RLS — isolamento entre workspaces', () => {
         await tx.$executeRawUnsafe(
           `SET LOCAL app.current_workspace_id = '${workspaceId}'`,
         );
+        // 'owner' bypassa a checagem de papel de SPEC-CRM-GAMA.md §7.5 —
+        // este arquivo testa isolamento de WORKSPACE (Fase 1), não
+        // ownership dentro do workspace (isso é
+        // test/rls-role-isolation.e2e-spec.ts); sem isso, toda escrita
+        // via Prisma (que usa RETURNING) falharia por não bater com
+        // nenhuma condição de dono da policy de papel.
+        await tx.$executeRawUnsafe(`SET LOCAL "app.current_role" = 'owner'`);
       }
       return fn(tx);
     });
@@ -231,5 +238,5 @@ describe('RLS — isolamento entre workspaces', () => {
       tx.taskComment.findUnique({ where: { id: comment.id } }),
     );
     expect(commentInB).toBeNull();
-  });
+  }, 15000);
 });

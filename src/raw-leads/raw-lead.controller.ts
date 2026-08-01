@@ -28,7 +28,7 @@ export class RawLeadController {
     @Body() dto: CreateRawLeadDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.create(tx, membership, dto),
     );
   }
@@ -39,7 +39,7 @@ export class RawLeadController {
     @Query() query: ListRawLeadsQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.findAll(tx, membership, query),
     );
   }
@@ -50,7 +50,7 @@ export class RawLeadController {
     @Body() dto: BulkRawLeadsDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.bulkApprove(tx, membership, dto.ids),
     );
   }
@@ -61,7 +61,7 @@ export class RawLeadController {
     @Body() dto: BulkRawLeadsDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.bulkDiscard(tx, membership, dto.ids),
     );
   }
@@ -69,7 +69,7 @@ export class RawLeadController {
   @Post('rescore')
   rescore(@CurrentMembership() membership: MembershipContext) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.rescoreAll(tx, membership),
     );
   }
@@ -80,7 +80,7 @@ export class RawLeadController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.findOne(tx, membership, id),
     );
   }
@@ -91,7 +91,7 @@ export class RawLeadController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.approve(tx, membership, id),
     );
   }
@@ -102,7 +102,7 @@ export class RawLeadController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.discard(tx, membership, id),
     );
   }

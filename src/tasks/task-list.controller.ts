@@ -26,7 +26,7 @@ export class TaskListController {
   @Get()
   findAll(@CurrentMembership() membership: MembershipContext) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.taskLists.findAll(tx, membership),
     );
   }
@@ -37,7 +37,7 @@ export class TaskListController {
     @Body() dto: CreateTaskListDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.taskLists.create(tx, membership, dto),
     );
   }
@@ -49,7 +49,7 @@ export class TaskListController {
     @Body() dto: UpdateTaskListDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.taskLists.update(tx, membership, id, dto),
     );
   }
@@ -61,7 +61,7 @@ export class TaskListController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.taskLists.remove(tx, membership, id),
     );
   }

@@ -26,16 +26,23 @@ describe('Autorização por papel — RBAC + ownership (Fase 2, núcleo)', () =>
   let companyOwnedBySalesRep: { id: string; ownerUserId: string | null };
   let companyOwnedByOther: { id: string; ownerUserId: string | null };
 
+  // `role` default 'owner': bypassa a policy de papel de SPEC-CRM-GAMA.md
+  // §7.5 (necessário pra qualquer INSERT com RETURNING funcionar — ver
+  // migration 20260731210000). Os testes que precisam simular o papel
+  // real (abaixo, "sales_rep só vê...", "manager vê...", "owner vê...")
+  // passam o role explícito de propósito.
   function withTenant<T>(
     userId: string,
     workspaceId: string,
     fn: (tx: TenantTx) => Promise<T>,
+    role: string = 'owner',
   ): Promise<T> {
     return prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL app.current_user_id = '${userId}'`);
       await tx.$executeRawUnsafe(
         `SET LOCAL app.current_workspace_id = '${workspaceId}'`,
       );
+      await tx.$executeRawUnsafe(`SET LOCAL "app.current_role" = '${role}'`);
       return fn(tx);
     });
   }
@@ -119,6 +126,7 @@ describe('Autorização por papel — RBAC + ownership (Fase 2, núcleo)', () =>
           where: { workspaceId: workspace.id, ...filter },
         });
       },
+      salesRep.role,
     );
     const ids = visible.map((c) => c.id);
     expect(ids).toContain(companyOwnedBySalesRep.id);
@@ -135,6 +143,7 @@ describe('Autorização por papel — RBAC + ownership (Fase 2, núcleo)', () =>
           where: { workspaceId: workspace.id, ...filter },
         });
       },
+      manager.role,
     );
     const ids = visible.map((c) => c.id);
     expect(ids).toContain(companyOwnedBySalesRep.id);
@@ -142,12 +151,17 @@ describe('Autorização por papel — RBAC + ownership (Fase 2, núcleo)', () =>
   });
 
   it('owner vê todas as empresas do workspace, sem filtro de ownership', async () => {
-    const visible = await withTenant(owner.userId, workspace.id, async (tx) => {
-      const filter = await policy.scopeFilter(tx, owner);
-      return tx.company.findMany({
-        where: { workspaceId: workspace.id, ...filter },
-      });
-    });
+    const visible = await withTenant(
+      owner.userId,
+      workspace.id,
+      async (tx) => {
+        const filter = await policy.scopeFilter(tx, owner);
+        return tx.company.findMany({
+          where: { workspaceId: workspace.id, ...filter },
+        });
+      },
+      owner.role,
+    );
     const ids = visible.map((c) => c.id);
     expect(ids).toEqual(
       expect.arrayContaining([

@@ -23,7 +23,7 @@ export class MembershipController {
   @Get()
   findAll(@CurrentMembership() membership: MembershipContext) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.memberships.findAll(tx, membership),
     );
   }
@@ -35,7 +35,7 @@ export class MembershipController {
     @Body() dto: UpdateMembershipDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.memberships.update(tx, membership, id, dto),
     );
   }
@@ -46,7 +46,7 @@ export class MembershipController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.memberships.remove(tx, membership, id),
     );
   }

@@ -21,7 +21,7 @@ export class ActivityController {
     @Query() query: ListActivitiesQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.activityQuery.findAll(tx, membership, query),
     );
   }
@@ -32,7 +32,7 @@ export class ActivityController {
     @Body() dto: CreateActivityDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.activities.createManual(tx, membership, dto),
     );
   }

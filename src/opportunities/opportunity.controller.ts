@@ -30,7 +30,7 @@ export class OpportunityController {
     @Body() dto: CreateOpportunityDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.opportunities.create(tx, membership, dto),
     );
   }
@@ -41,7 +41,7 @@ export class OpportunityController {
     @Query() query: ListOpportunitiesQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.opportunities.findAll(tx, membership, query),
     );
   }
@@ -52,7 +52,7 @@ export class OpportunityController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.opportunities.findOne(tx, membership, id),
     );
   }
@@ -64,7 +64,7 @@ export class OpportunityController {
     @Body() dto: UpdateOpportunityDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.opportunities.update(tx, membership, id, dto),
     );
   }
@@ -75,7 +75,7 @@ export class OpportunityController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.opportunities.remove(tx, membership, id),
     );
   }
@@ -86,7 +86,7 @@ export class OpportunityController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.opportunities.restore(tx, membership, id),
     );
   }

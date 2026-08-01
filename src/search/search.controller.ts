@@ -18,7 +18,7 @@ export class SearchController {
     @Query() query: SearchQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId },
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.search.buscaEmpresaLead(tx, query.q),
     );
   }
