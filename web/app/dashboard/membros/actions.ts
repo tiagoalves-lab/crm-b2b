@@ -3,8 +3,29 @@
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { redirectWithError } from "@/lib/api/action-helpers";
-import { deleteMembership, updateMembership } from "@/lib/api/memberships";
+import { createMembership, deleteMembership, updateMembership } from "@/lib/api/memberships";
 import type { MembershipRole, MembershipStatus } from "@/lib/api/types";
+
+export async function createMemberAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const role = formData.get("role");
+  const managerIdRaw = formData.get("managerId");
+
+  try {
+    await createMembership(token, {
+      email,
+      password,
+      role: role ? (String(role) as MembershipRole) : undefined,
+      managerId: managerIdRaw ? String(managerIdRaw) : undefined,
+    });
+  } catch (error) {
+    redirectWithError("/dashboard/membros", error);
+  }
+
+  revalidatePath("/dashboard/membros");
+}
 
 export async function updateMemberAction(formData: FormData) {
   const token = await getServerAccessToken();

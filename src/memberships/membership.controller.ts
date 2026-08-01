@@ -6,10 +6,12 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
 } from '@nestjs/common';
 import { CurrentMembership } from '../tenancy/current-membership.decorator';
 import { TenantContextService } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
+import { CreateMembershipDto } from './dto/create-membership.dto';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
 import { MembershipService } from './membership.service';
 
@@ -19,6 +21,17 @@ export class MembershipController {
     private readonly memberships: MembershipService,
     private readonly tenantContext: TenantContextService,
   ) {}
+
+  @Post()
+  create(
+    @CurrentMembership() membership: MembershipContext,
+    @Body() dto: CreateMembershipDto,
+  ) {
+    return this.tenantContext.run(
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      (tx) => this.memberships.create(tx, membership, dto),
+    );
+  }
 
   @Get()
   findAll(@CurrentMembership() membership: MembershipContext) {

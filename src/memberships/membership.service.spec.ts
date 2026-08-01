@@ -1,8 +1,9 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Membership } from '@prisma/client';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { MembershipService } from './membership.service';
+import type { SupabaseUserService } from './supabase-user.service';
 
 const WORKSPACE_ID = 'workspace-1';
 
@@ -47,6 +48,11 @@ function fakeTx(
           return Promise.resolve(null);
         }),
       count: jest.fn().mockResolvedValue(options.activeOwnerCount ?? 1),
+      create: jest
+        .fn()
+        .mockImplementation(({ data }: { data: object }) =>
+          Promise.resolve({ id: 'membership-new', ...data }),
+        ),
       update: jest
         .fn()
         .mockImplementation(({ data }: { data: object }) =>
@@ -57,11 +63,76 @@ function fakeTx(
   } as unknown as TenantTx;
 }
 
+function fakeSupabaseUser(): SupabaseUserService {
+  return {
+    createUser: jest.fn().mockResolvedValue({ id: 'auth-user-1' }),
+  } as unknown as SupabaseUserService;
+}
+
 describe('MembershipService', () => {
   let service: MembershipService;
+  let supabaseUser: SupabaseUserService;
 
   beforeEach(() => {
-    service = new MembershipService();
+    supabaseUser = fakeSupabaseUser();
+    service = new MembershipService(supabaseUser);
+  });
+
+  describe('create', () => {
+    it('rejeita quem não é owner/admin', async () => {
+      const tx = fakeTx();
+      await expect(
+        service.create(tx, callerMembership({ role: 'sales_rep' }), {
+          email: 'novo@gamabrasil.com.br',
+          password: 'senha1234',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(supabaseUser.createUser).not.toHaveBeenCalled();
+    });
+
+    it('rejeita managerId que não é membro ativo do workspace', async () => {
+      const tx = fakeTx();
+      await expect(
+        service.create(tx, callerMembership(), {
+          email: 'novo@gamabrasil.com.br',
+          password: 'senha1234',
+          managerId: 'membership-inexistente',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(supabaseUser.createUser).not.toHaveBeenCalled();
+    });
+
+    it('cria o login no Supabase Auth e o Membership com role default sales_rep', async () => {
+      const tx = fakeTx();
+      const created = await service.create(tx, callerMembership(), {
+        email: 'novo@gamabrasil.com.br',
+        password: 'senha1234',
+      });
+      expect(supabaseUser.createUser).toHaveBeenCalledWith(
+        'novo@gamabrasil.com.br',
+        'senha1234',
+      );
+      expect((tx.membership.create as jest.Mock).mock.calls[0][0].data).toMatchObject({
+        workspaceId: WORKSPACE_ID,
+        userId: 'auth-user-1',
+        role: 'sales_rep',
+        status: 'active',
+      });
+      expect(created.userId).toBe('auth-user-1');
+    });
+
+    it('propaga ConflictException quando o e-mail já existe', async () => {
+      (supabaseUser.createUser as jest.Mock).mockRejectedValue(
+        new ConflictException('Já existe um usuário com este e-mail.'),
+      );
+      const tx = fakeTx();
+      await expect(
+        service.create(tx, callerMembership(), {
+          email: 'ja-existe@gamabrasil.com.br',
+          password: 'senha1234',
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
   });
 
   it('rejeita quem não é owner/admin', async () => {
