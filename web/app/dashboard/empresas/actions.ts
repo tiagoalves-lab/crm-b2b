@@ -157,9 +157,13 @@ export async function refreshCnpjDataAction(formData: FormData) {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
   const back = String(formData.get("back") ?? "/dashboard/empresas");
-  const cnpj = String(formData.get("cnpj") ?? "").trim();
+  // Campo reusa company.cpfCnpj como defaultValue (ficha-body.tsx), que
+  // pode estar salvo com pontuação — limpa aqui antes de repassar adiante
+  // (lookupCnpj já limpa de novo por conta própria, mas mantém os dois
+  // pontos limpos como pedido, não só um).
+  const cnpj = String(formData.get("cnpj") ?? "").replace(/\D/g, "");
 
-  if (cnpj.replace(/\D/g, "").length !== 14) {
+  if (cnpj.length !== 14) {
     redirectWithError(back, new Error("Informe um CNPJ com 14 dígitos."));
   }
 

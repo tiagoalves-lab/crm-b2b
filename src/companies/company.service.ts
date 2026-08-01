@@ -303,9 +303,16 @@ export class CompanyService {
       throw new NotFoundException(`CNPJ "${digits}" não encontrado.`);
     }
     if (!response.ok) {
-      throw new BadRequestException(
-        'Não foi possível consultar o CNPJ agora — tente novamente em instantes.',
-      );
+      // BrasilAPI manda um `message` específico (ex.: "CNPJ 11.111.111/1111-11
+      // inválido." quando o dígito verificador não bate) — repassa em vez de
+      // esconder atrás de um texto genérico, senão "CNPJ digitado errado"
+      // parece erro de infra e ninguém sabe o que corrigir.
+      const body: unknown = await response.json().catch(() => null);
+      const message =
+        body && typeof body === 'object' && 'message' in body
+          ? String((body as { message: unknown }).message)
+          : 'Não foi possível consultar o CNPJ agora — tente novamente em instantes.';
+      throw new BadRequestException(message);
     }
 
     const data = (await response.json()) as BrasilApiCnpjResponse;

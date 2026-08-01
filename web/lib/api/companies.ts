@@ -85,11 +85,17 @@ export interface CnpjLookupResult {
   cnaeSecundarios?: string[];
 }
 
+// Extrai só dígitos antes de montar a URL — o valor pode vir com pontuação
+// (ex. "12.345.678/0001-99" digitado direto no campo CPF/CNPJ da empresa,
+// reusado como defaultValue em refreshCnpjDataAction). Sem isso, uma "/"
+// no meio do CNPJ quebra o roteamento do Nest (vira 2 segmentos de URL em
+// vez de 1 param) e o pedido nem chega no backend — 404 "Cannot GET...".
 export function lookupCnpj(
   token: string,
   cnpj: string,
 ): Promise<CnpjLookupResult> {
-  return apiFetch<CnpjLookupResult>(`/companies/cnpj/${cnpj}`, { token });
+  const digits = cnpj.replace(/\D/g, "");
+  return apiFetch<CnpjLookupResult>(`/companies/cnpj/${digits}`, { token });
 }
 
 export function deleteCompany(token: string, id: string): Promise<Company> {
