@@ -97,17 +97,17 @@ export default async function DashboardPage() {
           <div className="stat-value">{brl(totalAberto)}</div>
           <div className="sub">{abertas.length} oportunidade(s) ativa(s)</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile blue">
           <div className="stat-label">Previsão ponderada</div>
           <div className="stat-value">{brl(ponderado)}</div>
           <div className="sub">valor × probabilidade</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile green">
           <div className="stat-label">Ganho no mês</div>
           <div className="stat-value">{brl(ganhoNoMes)}</div>
           <div className="sub">{ganhasNoMes.length} fechada(s)</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile purple">
           <div className="stat-label">Fila de triagem</div>
           <div className="stat-value">{leadsNovos.length}</div>
           <div className="sub">
@@ -131,32 +131,24 @@ export default async function DashboardPage() {
         </div>
       )}
       {pipeline && (
-        <table className="data-table">
-          <tbody>
+        <div className="form-panel">
+          <div className="funnel-bar">
             {funil.map((f) => (
-              <tr key={f.stage.id}>
-                <td style={{ width: "30%" }}>{f.stage.name}</td>
-                <td>
-                  <div style={{ background: "var(--surface-sunken)", borderRadius: 4, overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${Math.max((f.valor / maxFunilValor) * 100, 3)}%`,
-                        background: "var(--accent)",
-                        color: "#fff",
-                        fontSize: 12,
-                        padding: "4px 8px",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {f.count} deal(s)
-                    </div>
+              <div className="fbar" key={f.stage.id}>
+                <div className="fbar-label">{f.stage.name}</div>
+                <div className="fbar-track">
+                  <div
+                    className="fbar-fill"
+                    style={{ width: `${Math.max((f.valor / maxFunilValor) * 100, 3)}%` }}
+                  >
+                    {f.count} deal(s)
                   </div>
-                </td>
-                <td style={{ width: 140, textAlign: "right" }}>{brl(f.valor)}</td>
-              </tr>
+                </div>
+                <div className="fbar-val">{brl(f.valor)}</div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
       )}
 
       <div className="toolbar" style={{ marginTop: 20 }}>

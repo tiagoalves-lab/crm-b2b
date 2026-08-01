@@ -93,7 +93,7 @@ export default async function RelatoriosPage() {
       </div>
 
       <div className="stat-grid">
-        <div className="stat-tile">
+        <div className="stat-tile green">
           <div className="stat-label">Taxa de fechamento</div>
           <div className="stat-value">{taxaFechamento}%</div>
           <div className="sub">
@@ -105,12 +105,12 @@ export default async function RelatoriosPage() {
           <div className="stat-value">{cicloMedio} dias</div>
           <div className="sub">criação → fechamento</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile blue">
           <div className="stat-label">Ticket médio</div>
           <div className="stat-value">{brl(ticketMedio)}</div>
           <div className="sub">por oportunidade</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile purple">
           <div className="stat-label">Taxa de aprovação (triagem)</div>
           <div className="stat-value">{taxaAprovacao}%</div>
           <div className="sub">
@@ -119,71 +119,49 @@ export default async function RelatoriosPage() {
         </div>
       </div>
 
-      <div className="report-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginTop: 20 }}>
+      <div className="report-grid" style={{ marginTop: 20 }}>
         <div className="form-panel">
           <div className="panel-head">
             <h3 style={{ fontSize: 14 }}>Funil de conversão — nº de negócios por etapa</h3>
           </div>
-          <table className="data-table">
-            <tbody>
-              {funil.map((f) => (
-                <tr key={f.stage.id}>
-                  <td style={{ width: "30%" }}>{f.stage.name}</td>
-                  <td>
-                    <div style={{ background: "var(--surface-sunken)", borderRadius: 4 }}>
-                      <div
-                        style={{
-                          width: `${Math.max((f.count / maxFunil) * 100, 5)}%`,
-                          background: "var(--accent)",
-                          color: "#fff",
-                          fontSize: 12,
-                          padding: "4px 8px",
-                        }}
-                      >
-                        {f.count}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              <tr>
-                <td style={{ color: "var(--accent)" }}>Ganho</td>
-                <td>
-                  <div style={{ background: "var(--surface-sunken)", borderRadius: 4 }}>
-                    <div
-                      style={{
-                        width: `${Math.max((ganhas.length / maxFunil) * 100, 5)}%`,
-                        background: "var(--accent)",
-                        color: "#fff",
-                        fontSize: 12,
-                        padding: "4px 8px",
-                      }}
-                    >
-                      {ganhas.length}
-                    </div>
+          <div className="funnel-bar">
+            {funil.map((f) => (
+              <div className="fbar" key={f.stage.id}>
+                <div className="fbar-label">{f.stage.name}</div>
+                <div className="fbar-track">
+                  <div className="fbar-fill" style={{ width: `${Math.max((f.count / maxFunil) * 100, 5)}%` }}>
+                    {f.count}
                   </div>
-                </td>
-              </tr>
-              <tr>
-                <td style={{ color: "var(--danger)" }}>Perdido</td>
-                <td>
-                  <div style={{ background: "var(--surface-sunken)", borderRadius: 4 }}>
-                    <div
-                      style={{
-                        width: `${Math.max((perdidas.length / maxFunil) * 100, 5)}%`,
-                        background: "var(--danger)",
-                        color: "#fff",
-                        fontSize: 12,
-                        padding: "4px 8px",
-                      }}
-                    >
-                      {perdidas.length}
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </div>
+              </div>
+            ))}
+            <div className="fbar">
+              <div className="fbar-label" style={{ color: "var(--accent-secondary)" }}>
+                Ganho
+              </div>
+              <div className="fbar-track">
+                <div className="fbar-fill" style={{ width: `${Math.max((ganhas.length / maxFunil) * 100, 5)}%` }}>
+                  {ganhas.length}
+                </div>
+              </div>
+            </div>
+            <div className="fbar">
+              <div className="fbar-label" style={{ color: "var(--danger)" }}>
+                Perdido
+              </div>
+              <div className="fbar-track">
+                <div
+                  className="fbar-fill"
+                  style={{
+                    width: `${Math.max((perdidas.length / maxFunil) * 100, 5)}%`,
+                    background: "linear-gradient(90deg, var(--danger), #ff8a75)",
+                  }}
+                >
+                  {perdidas.length}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="form-panel">
@@ -191,22 +169,14 @@ export default async function RelatoriosPage() {
             <h3 style={{ fontSize: 14 }}>Origem dos leads</h3>
           </div>
           {totalLeads > 0 ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <div className="donut-wrap">
               <div dangerouslySetInnerHTML={{ __html: donutSvg(fonteEntries, totalLeads) }} />
-              <div>
+              <div className="legend">
                 {fonteEntries.map(([fonte, value]) => (
-                  <div key={fonte} className="row-form" style={{ marginBottom: 4 }}>
-                    <span
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: "50%",
-                        background: FONTE_COLOR[fonte as LeadFonte] ?? "#999",
-                        display: "inline-block",
-                      }}
-                    />
+                  <div key={fonte} className="leg-item">
+                    <span className="leg-dot" style={{ background: FONTE_COLOR[fonte as LeadFonte] ?? "#999" }} />
                     <span>{fonte}</span>
-                    <span className="sub">
+                    <span className="leg-val">
                       {value} ({Math.round((value / totalLeads) * 100)}%)
                     </span>
                   </div>

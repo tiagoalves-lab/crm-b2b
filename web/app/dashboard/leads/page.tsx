@@ -85,7 +85,7 @@ export default async function LeadsPage({
           <div className="stat-label">Na fila de triagem</div>
           <div className="stat-value">{novos.length}</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile green">
           <div className="stat-label">Quentes (≥70)</div>
           <div className="stat-value">{quenteCount}</div>
         </div>
@@ -93,7 +93,7 @@ export default async function LeadsPage({
           <div className="stat-label">Mornos (45–69)</div>
           <div className="stat-value">{mornoCount}</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile danger">
           <div className="stat-label">Frios (&lt;45)</div>
           <div className="stat-value">{frioCount}</div>
         </div>

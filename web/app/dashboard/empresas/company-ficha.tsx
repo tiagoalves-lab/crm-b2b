@@ -125,11 +125,11 @@ export default async function CompanyFicha({
       {currentAba === "overview" && (
         <>
           <div className="stat-grid">
-            <div className="stat-tile">
+            <div className="stat-tile green">
               <div className="stat-label">LTV (ganho)</div>
               <div className="stat-value">{brl(ltv)}</div>
             </div>
-            <div className="stat-tile">
+            <div className="stat-tile blue">
               <div className="stat-label">Em negociação</div>
               <div className="stat-value">{brl(emNegociacao)}</div>
             </div>
@@ -137,7 +137,7 @@ export default async function CompanyFicha({
               <div className="stat-label">Interações</div>
               <div className="stat-value">{activities.length}</div>
             </div>
-            <div className="stat-tile">
+            <div className="stat-tile purple">
               <div className="stat-label">Tarefas abertas</div>
               <div className="stat-value">{tarefasAbertas}</div>
             </div>

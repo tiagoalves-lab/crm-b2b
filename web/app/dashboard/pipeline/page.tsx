@@ -146,11 +146,11 @@ export default async function PipelinePage({
       {error && <div className="error-banner">{error}</div>}
 
       <div className="stat-grid">
-        <div className="stat-tile">
+        <div className="stat-tile blue">
           <div className="stat-label">Previsão ponderada</div>
           <div className="stat-value">{brl(previsaoPonderada)}</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile green">
           <div className="stat-label">Taxa de fechamento</div>
           <div className="stat-value">{taxaFechamentoGlobal}%</div>
         </div>
