@@ -19,6 +19,22 @@ export function companyDisplayName(
   );
 }
 
+// Telefone chega do banco só com dígitos (import antigo não normalizou
+// pontuação). Formata só quando bate DDD+número (10 ou 11 dígitos) — pra
+// entrada fora desse padrão (dado sujo de importação), devolve como veio em
+// vez de arriscar formatar errado.
+export function formatPhoneBR(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return phone;
+}
+
 export function listCompanies(
   token: string,
   includeDeleted = false,
