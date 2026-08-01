@@ -1503,6 +1503,7 @@ a {
 /* ---------- Tabela "plana" do protótipo (empresas/tarefas/leads) ---------- */
 .t-co {
   font-weight: 600;
+  text-decoration: none;
 }
 
 .t-sub {
