@@ -5,16 +5,18 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 `geracao-qualificacao-leads.md` (módulo de leads), `seguranca.md`
 (segurança — leia antes de tocar em `web/` ou em endpoints do backend).
 
-## Retomando a sessão (última atualização: 2026-07-31)
+## Retomando a sessão (última atualização: 2026-08-01)
 
-**HANDOFF — sessão anterior foi interrompida (computador desligou sozinho)
-no meio da execução do `SPEC-CRM-GAMA.md`.** Se você é um colega
-retomando isso pra outra pessoa: leia `SPEC-CRM-GAMA.md` inteiro primeiro
-(é a ordem de serviço), depois esta seção. **A Fatia 6 (abaixo) ainda não
-foi testada no navegador nem commitada** — só build + testes automatizados
-passando localmente. Rode o checklist da seção 8 do spec de novo antes de
-seguir pra Fatia 7, e confirme visualmente a tela `/dashboard/leads` com
-credencial real antes de considerar a fatia fechada de verdade.
+**HANDOFF — as 9 fatias do `SPEC-CRM-GAMA.md` estão implementadas,
+commitadas, testadas (70 unit + 111 e2e, tudo verde) e publicadas** nas
+URLs de teste (seção abaixo). A sessão que fechou isso foi interrompida
+duas vezes por queda de energia (evento climático) e retomada sem perda
+de trabalho — migrations e commits já estavam persistidos a cada
+interrupção. **Ainda falta**: testar no navegador com credencial real
+(nunca foi feito em nenhuma fatia, ver seção própria abaixo) e configurar
+`SUPABASE_SERVICE_ROLE_KEY` no Railway pra Fatia 8 (anexos) funcionar em
+produção — sem essa env var, upload de anexo devolve erro claro (o resto
+do app funciona normal).
 
 ### Estado da execução do SPEC-CRM-GAMA.md (seção 6 — 9 fatias)
 
@@ -67,14 +69,69 @@ credencial real antes de considerar a fatia fechada de verdade.
       precisa apagar a `Activity` associada antes, senão bate no mesmo
       CHECK constraint latente já documentado na memória de Tarefas/Kanban.
       Detalhe completo em memória (`project_spec_crm_gama_execucao`).
-- [ ] **Fatia 7** — Dashboard + Relatórios (§4.5) — **próxima a fazer**.
-- [ ] **Fatia 8** — Anexos: bucket Storage privado `task-attachments`
-      (a tabela já existe, da Fatia 1) + upload via signed URL.
-- [ ] **Fatia 9** — Papéis Admin/Operador (§7.5) — **fazer por último**,
-      só depois de Empresas/Pipeline/Tarefas testados com um usuário só.
-      Sequência de segurança não-negociável: middleware injeta
-      `app.current_user_id`/`app.current_role` → testar → só então
-      aplicar as policies de RLS por papel → retestar com dois usuários.
+- [x] **Fatia 7** — Dashboard (`/dashboard`) + Relatórios
+      (`/dashboard/relatorios`, §4.5). KPIs, funil resumido, ações de
+      hoje, taxa de fechamento/ciclo médio/ticket médio/origem dos leads.
+      100% CONECTAR — nenhum endpoint novo, tudo derivado de
+      `GET /opportunities`/`/tasks`/`/raw-leads`/`/pipelines` que já
+      existiam. "Pipeline por produto" do protótipo ficou de fora de
+      propósito — não existe campo "produto" em `Opportunity` neste
+      schema (o protótipo simula algo que o backend real nunca teve).
+- [x] **Fatia 8** — Anexos. Bucket privado `task-attachments` criado no
+      Storage do Supabase (25MB/arquivo, sem policy em
+      `storage.objects` — só `service_role` acessa, nenhuma outra role
+      consegue ler/escrever, nem `anon` nem `authenticated`).
+      `SupabaseStorageService` (`src/storage/`) assina URLs de
+      upload/download; o binário nunca passa pelo NestJS — o Server
+      Action do Next.js recebe o arquivo via FormData e faz o PUT
+      direto pra signed URL, depois do backend confirmar que a tarefa
+      pertence ao workspace. UI: seção "Anexos" na ficha da tarefa
+      (enviar/baixar/remover — só quem enviou remove) + badge 📎 na
+      Lista e no Kanban. **Pendência de infra**: `SUPABASE_SERVICE_ROLE_KEY`
+      não está configurada no Railway (nem localmente) — eu não tenho
+      esse segredo e não crio/exponho ele (regra de segurança do
+      projeto). Sem ela, upload devolve 500 com mensagem clara; o resto
+      do app funciona normal. **Ação humana pendente**: pegar a key em
+      Supabase → Project Settings → API → service_role, colocar como
+      env var no serviço `backend` do Railway (nunca em `web/`).
+- [x] **Fatia 9** — Papéis Admin/Operador (§7.5). `TenantContextService`
+      passa a injetar `app.current_role` (além de `user_id`/`workspace_id`
+      que já injetava) em toda transação. RLS por papel aplicada em
+      `companies`/`opportunities`/`tasks` (leitura restrita por
+      papel+posse; escrita continua workspace-scoped, igual antes).
+      `raw_leads` fica sem policy de papel — área comum, por decisão
+      explícita do spec. **Dois bugs reais achados e corrigidos rodando
+      a suíte inteira antes de fechar a fatia** (nenhum dos dois
+      existia antes desta mudança):
+      1. `current_role` é palavra reservada do SQL — `SET LOCAL
+         app.current_role` quebra o parser mesmo com o namespace
+         `app.` na frente ("syntax error at or near current_role").
+         Corrigido com identificador quotado: `SET LOCAL
+         "app.current_role" = '...'`.
+      2. Toda escrita via Prisma usa `RETURNING`, e o Postgres exige
+         que a linha devolvida também satisfaça a policy de SELECT da
+         tabela — não só o `WITH CHECK` do INSERT/UPDATE. A policy de
+         SELECT de `companies` (só "vinculada a uma oportunidade minha")
+         fazia o próprio cadastro de empresa nova por um operador falhar
+         (empresa recém-criada ainda não tem oportunidade nenhuma).
+         Corrigido alargando a condição pra também aceitar
+         `owner_user_id` direto (campo que já existe em `Company` desde
+         a Fase 2) — e o mesmo padrão pra `tasks` com `created_by`.
+      Três migrations (`20260731200000`/`210000`/`220000` — a segunda e
+      terceira são correções encontradas testando, não features novas).
+      `test/rls-role-isolation.e2e-spec.ts` prova a restrição com dois
+      operadores + um admin, direto contra o Postgres real (o
+      "retestar com dois usuários" do spec, feito via e2e automatizado
+      já que não há credencial de navegador disponível). 111 e2e + 70
+      unit verdes depois de aplicar tudo.
+      **Nota**: o papel `manager` já tinha lógica própria funcionando na
+      camada de app (`PolicyService`, hierarquia de subordinados) desde
+      a Fase 2, mas o spec pede pra não implementar RLS pra ele nesta
+      rodada — resolvido incluindo `manager` no mesmo bypass de
+      admin/owner na RLS (RLS vira no-op pra esse papel, comportamento
+      idêntico a antes desta fatia; `PolicyService` continua sendo o
+      único ponto de decisão pra `manager`, como já documentado que
+      deveria ficar).
 
 **NÃO testado no navegador em nenhuma fatia** (sem credencial real
 disponível nas sessões que construíram isso) — só build + testes
@@ -96,6 +153,24 @@ teste manual quando alguém logar:**
    client-side da tela, `leads-table.tsx`) e aprovar um lead pelo botão
    da ficha (`?lead=<id>&aba=dados`) — confirmar que ele some da lista e
    aparece em Empresas.
+6. **Painel (`/dashboard`) e Relatórios (Fatia 7, novas)** — conferir que
+   os KPIs batem com o que está em Pipeline/Tarefas/Leads (é o mesmo
+   dado, só agregado diferente) e que o gráfico de origem dos leads
+   (SVG donut gerado server-side) renderiza certo.
+7. **Anexos em tarefa (Fatia 8, nova)** — **só funciona depois de
+   configurar `SUPABASE_SERVICE_ROLE_KEY` no Railway** (ver Fatia 8
+   acima). Testar: enviar um arquivo na ficha de uma tarefa, baixar de
+   volta, confirmar que outro usuário não consegue remover (só quem
+   enviou vê o botão de remover, mas vale confirmar que o backend
+   também barra por API direta).
+8. **Papéis Admin/Operador (Fatia 9, nova)** — precisa de dois usuários
+   reais logados (um com `role='admin'`, outro `role='sales_rep'` — mudar
+   em `/dashboard/membros`) pra testar de verdade no navegador; a
+   restrição já está provada via e2e contra o Postgres real
+   (`test/rls-role-isolation.e2e-spec.ts`), mas nunca foi clicada. Testar:
+   operador só vê as próprias oportunidades/tarefas/empresas vinculadas;
+   admin vê tudo; um operador não consegue promover a si mesmo pra admin
+   (só admin/owner mexe em papel de outro membro).
 
 Cada fatia tem os detalhes de decisão/gotcha registrados na memória do
 Claude Code (`project_spec_crm_gama_execucao` — mas isso é local da
@@ -105,8 +180,9 @@ são a fonte de verdade completa).
 
 URLs de teste publicadas (mesmo Supabase real, sem banco de teste
 separado): frontend `https://web-gamma-olive-80.vercel.app`, backend
-`https://backend-production-bc44.up.railway.app` (agora rodando em
-**US East**, não mais `sfo` — migração de região completou nesta sessão).
+`https://backend-production-bc44.up.railway.app` (rodando em **US
+East**). **Ambos redeployados em 2026-08-01 com as 9 fatias completas**
+(commits `2a903aa`/`6aaa680`/`7173574`).
 Redeploy: `railway up` (raiz) / `vercel --prod` (dentro de `web/`) — não
 é automático por push.
 
