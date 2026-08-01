@@ -2094,7 +2094,8 @@ tr:hover .cell-actions {
   top: 0;
   right: 0;
   height: 100vh;
-  width: 640px;
+  width: 50vw;
+  min-width: 640px;
   max-width: 92vw;
   background: var(--bg);
   border-left: 1px solid var(--border-strong);

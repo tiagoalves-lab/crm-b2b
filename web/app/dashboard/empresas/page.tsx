@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { listCompanies } from "@/lib/api/companies";
+import { companyDisplayName, listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
+import { listSalesHistory } from "@/lib/api/sales-history";
 import type { Company } from "@/lib/api/types";
 import EmpresasTable, { type EmpresaRow } from "./empresas-table";
 
@@ -20,9 +21,10 @@ export default async function EmpresasPage({
   const token = await getServerAccessToken();
 
   const showDeleted = includeDeleted === "1";
-  const [{ items: allCompanies }, { items: opportunities }] = await Promise.all([
+  const [{ items: allCompanies }, { items: opportunities }, salesHistory] = await Promise.all([
     listCompanies(token, showDeleted),
     listOpportunities(token),
+    listSalesHistory(token),
   ]);
 
   // Company-lead ainda em triagem (SPEC-CRM-GAMA.md §4.4) não é uma
@@ -40,17 +42,26 @@ export default async function EmpresasPage({
     c.tags.includes("cliente") ? "cliente" : "lead";
 
   // Status espelha o Tipo (protótipo só usa "ativo"/"negociando", nunca
-  // "inativo" — gama-crm-mvp.html, DB.clientes). LTV/última compra continuam
-  // vindo de Opportunity "won" de verdade, sem relação com o Tipo/Status.
+  // "inativo" — gama-crm-mvp.html, DB.clientes). LTV/última compra somam
+  // Opportunity "won" de verdade (pipeline novo, começou do zero) com
+  // sales_history (histórico de vendas importado do eGestor, sem dono nem
+  // ligação com Opportunity de propósito — ver migration
+  // 20260801230000_sales_history).
   type CompanyStats = { status: "ativo" | "negociando"; ltv: number; ultimaCompra: string | null };
   const statsByCompany = new Map<string, CompanyStats>();
   for (const company of companies) {
     const won = opportunities.filter((o) => o.companyId === company.id && !o.deletedAt && o.status === "won");
-    const ltv = won.reduce((s, o) => s + Number(o.amount), 0);
-    const ultimaCompra = won.reduce<string | null>((latest, o) => {
-      if (!o.closedAt) return latest;
-      return !latest || o.closedAt > latest ? o.closedAt : latest;
-    }, null);
+    const sales = salesHistory.filter((s) => s.companyId === company.id);
+    const ltv =
+      won.reduce((s, o) => s + Number(o.amount), 0) + sales.reduce((s, v) => s + Number(v.valorTotal), 0);
+    const datas = [
+      ...won.map((o) => o.closedAt).filter((d): d is string => !!d),
+      ...sales.map((s) => s.dtVenda),
+    ];
+    const ultimaCompra = datas.reduce<string | null>(
+      (latest, d) => (!latest || d > latest ? d : latest),
+      null,
+    );
     statsByCompany.set(company.id, {
       status: tipoOf(company) === "cliente" ? "ativo" : "negociando",
       ltv,
@@ -64,11 +75,20 @@ export default async function EmpresasPage({
   const visible = companies.filter(
     (c) => currentFiltro === "todas" || tipoOf(c) === currentFiltro,
   );
-  const rows: EmpresaRow[] = visible.map((company) => ({
-    company,
-    tipo: tipoOf(company),
-    ...statsByCompany.get(company.id)!,
-  }));
+  // Ordem alfabética pela 1ª coluna (razão social — mesmo critério de
+  // exibição do empresas-table.tsx).
+  const rows: EmpresaRow[] = visible
+    .map((company) => ({
+      company,
+      tipo: tipoOf(company),
+      ...statsByCompany.get(company.id)!,
+    }))
+    .sort((a, b) =>
+      (a.company.razaoSocial?.trim() || companyDisplayName(a.company)).localeCompare(
+        b.company.razaoSocial?.trim() || companyDisplayName(b.company),
+        "pt-BR",
+      ),
+    );
 
   return (
     <>
