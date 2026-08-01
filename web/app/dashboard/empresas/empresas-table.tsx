@@ -30,6 +30,13 @@ function brl(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 }
 
+// Primeira coluna mostra razão social (igual ao protótipo, clienteRows()
+// usa c.razao) — cai pra companyDisplayName só se a empresa não tiver razão
+// social cadastrada (ex.: criada só com fantasia).
+function primaryName(company: Company): string {
+  return company.razaoSocial?.trim() || companyDisplayName(company);
+}
+
 // Toolbar (seg + busca) e tabela vivem no mesmo client component porque a
 // busca por nome (client-side, como no protótipo — gama-crm-mvp.html,
 // filterClientes()) precisa filtrar a mesma lista que a tabela renderiza.
@@ -51,7 +58,7 @@ export default function EmpresasTable({
 
   const q = query.trim().toLowerCase();
   const visible = q
-    ? rows.filter((r) => companyDisplayName(r.company).toLowerCase().includes(q))
+    ? rows.filter((r) => primaryName(r.company).toLowerCase().includes(q))
     : rows;
 
   const filtroHref = (f: "todas" | "lead" | "cliente") =>
@@ -109,7 +116,7 @@ export default function EmpresasTable({
             <tr key={company.id} className="row-clickable">
               <td>
                 <Link href={`/dashboard/empresas/${company.id}`} className="t-co">
-                  {companyDisplayName(company)}
+                  {primaryName(company)}
                 </Link>
                 <div className="t-sub">{company.cpfCnpj ?? "sem CPF/CNPJ"}</div>
               </td>
