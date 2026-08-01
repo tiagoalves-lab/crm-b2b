@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { getCompany } from "@/lib/api/companies";
+import { companyDisplayName, getCompany } from "@/lib/api/companies";
 import CompanyForm from "../../company-form";
 
 // Fallback full-page — em navegação normal a mesma rota é interceptada
@@ -22,7 +22,7 @@ export default async function EditarEmpresaPage({
     <>
       <div className="topbar">
         <div>
-          <div className="page-title">Editar {company.name}</div>
+          <div className="page-title">Editar {companyDisplayName(company)}</div>
           <div className="page-sub">Dados básicos do cadastro</div>
         </div>
         <Link href={back} className="btn btn-ghost btn-sm">

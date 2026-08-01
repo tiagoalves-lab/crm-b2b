@@ -1,3 +1,4 @@
+import { companyDisplayName } from "@/lib/api/companies";
 import type { Activity } from "@/lib/api/types";
 import type { FichaData } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
@@ -26,6 +27,7 @@ interface CnpjLookupSnapshot {
   naturezaJuridica?: string | null;
   cnaePrincipal?: string | null;
   cnaeSecundarios?: string[];
+  estabelecimento?: string | null;
   telefoneReceita?: string | null;
   emailReceita?: string | null;
   fonteFederal?: string;
@@ -183,7 +185,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
             <div className="cad-grid">
               <div className="cad-cell">
                 <div className="cad-k">Razão social</div>
-                <div className="cad-v">{company.razaoSocial ?? company.name}</div>
+                <div className="cad-v">{company.razaoSocial ?? companyDisplayName(company)}</div>
               </div>
               <div className="cad-cell">
                 <div className="cad-k">Nome fantasia</div>
@@ -208,6 +210,10 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
               <div className="cad-cell">
                 <div className="cad-k">Porte</div>
                 <div className="cad-v">{cad.porte ?? "—"}</div>
+              </div>
+              <div className="cad-cell">
+                <div className="cad-k">Estabelecimento</div>
+                <div className="cad-v">{cad.estabelecimento ?? "—"}</div>
               </div>
               <div className="cad-cell full">
                 <div className="cad-k">Natureza jurídica</div>

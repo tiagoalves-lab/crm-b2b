@@ -100,12 +100,12 @@ async function main() {
       (await tx.company.create({
         data: {
           workspaceId: workspace.id,
-          name: 'Empresa de Teste',
+          razaoSocial: 'Empresa de Teste',
           domain: 'empresateste.com.br',
           ownerUserId: devUserId,
         },
       }));
-    console.log(`Company: ${company.name} (${company.id})`);
+    console.log(`Company: ${company.razaoSocial} (${company.id})`);
 
     // Leads fictícios pra popular a triagem (SPEC-CRM-GAMA.md §4.4) — até
     // esta seed rodar, raw_leads fica vazio (ingestão real por crawler é
@@ -196,7 +196,6 @@ async function main() {
         const leadCompany = await tx.company.create({
           data: {
             workspaceId: workspace.id,
-            name: seed.razaoSocial,
             razaoSocial: seed.razaoSocial,
             cpfCnpj: seed.cnpj,
             tipo: 'PJ',

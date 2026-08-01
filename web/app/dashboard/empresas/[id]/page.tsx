@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
+import { companyDisplayName } from "@/lib/api/companies";
 import { loadFicha } from "../_ficha/load";
 import FichaTabs, { currentAbaOf } from "../_ficha/ficha-tabs";
 import FichaBody from "../_ficha/ficha-body";
@@ -26,7 +27,7 @@ export default async function EmpresaFichaPage({
     <>
       <div className="topbar">
         <div>
-          <div className="page-title">{company.name}</div>
+          <div className="page-title">{companyDisplayName(company)}</div>
           <div className="page-sub">
             {company.cpfCnpj ?? "sem CPF/CNPJ"}
             {company.cidade ? ` · ${company.cidade}${company.uf ? `/${company.uf}` : ""}` : ""}

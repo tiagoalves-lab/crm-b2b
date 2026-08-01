@@ -59,7 +59,7 @@ describe('RawLeadController (e2e) — POST /raw-leads/:id/approve (SPEC-CRM-GAMA
         tx.company.create({
           data: {
             workspaceId: workspace.id,
-            name: 'Empresa do lead a aprovar',
+            razaoSocial: 'Empresa do lead a aprovar',
             tags: ['lead-triagem', 'outra-tag'],
           },
         }),
@@ -108,7 +108,7 @@ describe('RawLeadController (e2e) — POST /raw-leads/:id/approve (SPEC-CRM-GAMA
       workspace.id,
       (tx) =>
         tx.company.create({
-          data: { workspaceId: workspace.id, name: 'Já aprovada', tags: [] },
+          data: { workspaceId: workspace.id, razaoSocial: 'Já aprovada', tags: [] },
         }),
     );
     const lead = await withTenant(
@@ -235,7 +235,7 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
         tx.company.findUniqueOrThrow({ where: { id: body.promotedCompanyId } }),
     );
     expect(company.tags).toContain('lead-triagem');
-    expect(company.name).toBe('Metalúrgica Quente Ltda');
+    expect(company.razaoSocial).toBe('Metalúrgica Quente Ltda');
   }, 15000);
 
   it('GET /raw-leads lista só status=novo por padrão, ordenado por score desc', async () => {

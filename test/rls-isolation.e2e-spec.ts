@@ -128,7 +128,7 @@ describe('RLS — isolamento entre workspaces', () => {
   it('lê a própria empresa dentro do workspace correto', async () => {
     const created = await withWorkspace(workspaceA.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspaceA.id, name: 'Empresa A' },
+        data: { workspaceId: workspaceA.id, razaoSocial: 'Empresa A' },
       }),
     );
 
@@ -137,13 +137,13 @@ describe('RLS — isolamento entre workspaces', () => {
     );
 
     expect(found).not.toBeNull();
-    expect(found?.name).toBe('Empresa A');
+    expect(found?.razaoSocial).toBe('Empresa A');
   });
 
   it('CRÍTICO: empresa do workspace A não vaza pro workspace B', async () => {
     const created = await withWorkspace(workspaceA.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspaceA.id, name: 'Empresa Secreta A' },
+        data: { workspaceId: workspaceA.id, razaoSocial: 'Empresa Secreta A' },
       }),
     );
 
@@ -162,7 +162,7 @@ describe('RLS — isolamento entre workspaces', () => {
     await expect(
       withWorkspace(workspaceA.id, (tx) =>
         tx.company.create({
-          data: { workspaceId: workspaceB.id, name: 'Tentativa cruzada' },
+          data: { workspaceId: workspaceB.id, razaoSocial: 'Tentativa cruzada' },
         }),
       ),
     ).rejects.toThrow();
@@ -199,7 +199,7 @@ describe('RLS — isolamento entre workspaces', () => {
   it('CRÍTICO: task_checklist_items/task_comments (RLS via subquery em task_id) não vazam pro workspace B', async () => {
     const company = await withWorkspace(workspaceA.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspaceA.id, name: 'Empresa pra checklist' },
+        data: { workspaceId: workspaceA.id, razaoSocial: 'Empresa pra checklist' },
       }),
     );
     const task = await withWorkspace(workspaceA.id, (tx) =>

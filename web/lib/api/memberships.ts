@@ -6,7 +6,8 @@ export function listMemberships(token: string): Promise<Membership[]> {
 }
 
 export interface CreateMembershipInput {
-  email: string;
+  name: string;
+  login: string;
   password: string;
   role?: MembershipRole;
   managerId?: string;
@@ -14,7 +15,9 @@ export interface CreateMembershipInput {
 
 // Cria o login (Supabase Auth) e o Membership numa chamada só — o
 // backend fala com a Admin API do Supabase usando a service role key,
-// que nunca entra em web/ (docs/seguranca.md).
+// que nunca entra em web/ (docs/seguranca.md). Login é texto livre; a
+// conversão pro formato exigido pelo Supabase Auth acontece só dentro
+// do backend (SupabaseUserService) — web/ nunca lida com e-mail aqui.
 export function createMembership(
   token: string,
   input: CreateMembershipInput,
@@ -27,6 +30,11 @@ export function createMembership(
 }
 
 export interface UpdateMembershipInput {
+  name?: string;
+  // Redefine a senha do login — ausente/undefined não mexe na atual.
+  // Não existe "ver senha" (Supabase guarda só hash, ver comentário no
+  // backend), isto é o equivalente prático.
+  password?: string;
   role?: MembershipRole;
   status?: MembershipStatus;
   managerId?: string | null;

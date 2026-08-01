@@ -12,10 +12,6 @@ import {
 } from 'class-validator';
 
 export class CreateCompanyDto {
-  @IsString()
-  @MaxLength(255)
-  name!: string;
-
   @IsOptional()
   @IsString()
   @MaxLength(255)
@@ -45,9 +41,11 @@ export class CreateCompanyDto {
   @IsObject()
   customFields?: Record<string, unknown>;
 
-  // Cadastro completo (ex-Contact, dobrado em Company) — todos opcionais,
-  // "name" continua sendo o único campo obrigatório. Preenchidos manualmente
-  // ou via busca por CNPJ (CompanyController#lookupCnpj).
+  // Cadastro completo (ex-Contact, dobrado em Company) — todos opcionais
+  // aqui no DTO (sem campo obrigatório fixo desde 2026-08-01, ver
+  // schema.prisma); o frontend exige razaoSocial OU fantasia antes de
+  // enviar (createCompanyAction), não é validação de backend. Preenchidos
+  // manualmente ou via busca por CNPJ (CompanyController#lookupCnpj).
   @IsOptional()
   @IsString()
   @MaxLength(255)

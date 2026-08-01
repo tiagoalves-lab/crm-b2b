@@ -58,11 +58,19 @@ function parseCompanyFields(formData: FormData) {
 
 export async function createCompanyAction(formData: FormData) {
   const token = await getServerAccessToken();
-  const name = String(formData.get("name") ?? "").trim();
   const back = String(formData.get("back") ?? "/dashboard/empresas");
+  const fields = parseCompanyFields(formData);
+
+  // Company não tem mais campo obrigatório fixo (ver schema.prisma) —
+  // exige aqui, não no backend, que ao menos um identificador esteja
+  // preenchido, senão a lista/cards ficam com "Empresa sem nome"
+  // (fallback de companyDisplayName).
+  if (!fields.razaoSocial && !fields.fantasia) {
+    redirectWithError(back, new Error("Preencha Razão social ou Fantasia."));
+  }
 
   try {
-    await createCompany(token, { name, ...parseCompanyFields(formData) });
+    await createCompany(token, fields);
   } catch (error) {
     redirectWithError(back, error);
   }
@@ -99,16 +107,21 @@ export async function restoreCompanyAction(formData: FormData) {
   redirectWithMessage("/dashboard/empresas", "Empresa restaurada");
 }
 
-// Modal "Editar empresa" (aberto a partir da ficha) — nome vem junto
-// (campo obrigatório em Company), o resto reusa o mesmo parser do create.
+// Modal "Editar empresa" (aberto a partir da ficha) — reusa o mesmo
+// parser do create; o form já vem pré-preenchido, então razaoSocial/
+// fantasia só chegam vazios aqui se o usuário limpou os dois de propósito.
 export async function updateCompanyAction(formData: FormData) {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
   const back = String(formData.get("back") ?? "/dashboard/empresas");
-  const name = emptyToUndefined(formData.get("name"));
+  const fields = parseCompanyFields(formData);
+
+  if (!fields.razaoSocial && !fields.fantasia) {
+    redirectWithError(back, new Error("Preencha Razão social ou Fantasia."));
+  }
 
   try {
-    await updateCompany(token, id, { name, ...parseCompanyFields(formData) });
+    await updateCompany(token, id, fields);
   } catch (error) {
     redirectWithError(back, error);
   }
@@ -192,6 +205,7 @@ export async function refreshCnpjDataAction(formData: FormData) {
           naturezaJuridica: lookup.naturezaJuridica ?? null,
           cnaePrincipal: lookup.cnaePrincipal ?? null,
           cnaeSecundarios: lookup.cnaeSecundarios ?? [],
+          estabelecimento: lookup.estabelecimento ?? null,
           telefoneReceita: lookup.fones[0] ?? null,
           emailReceita: lookup.emails[0] ?? null,
           fonteFederal: "Receita Federal · BrasilAPI",

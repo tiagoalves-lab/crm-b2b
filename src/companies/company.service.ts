@@ -46,6 +46,7 @@ export interface CnpjLookupResult {
   naturezaJuridica?: string;
   cnaePrincipal?: string;
   cnaeSecundarios?: string[];
+  estabelecimento?: string;
 }
 
 // Formato de resposta da BrasilAPI (https://brasilapi.com.br/api/cnpj/v1) —
@@ -71,6 +72,7 @@ interface BrasilApiCnpjResponse {
   cnae_fiscal?: number;
   cnae_fiscal_descricao?: string;
   cnaes_secundarios?: Array<{ codigo?: number; descricao?: string }>;
+  descricao_identificador_matriz_filial?: string;
 }
 
 @Injectable()
@@ -95,7 +97,6 @@ export class CompanyService {
     const company = await tx.company.create({
       data: {
         workspaceId: membership.workspaceId,
-        name: dto.name,
         domain: dto.domain,
         industry: dto.industry,
         size: dto.size,
@@ -191,7 +192,6 @@ export class CompanyService {
     const updated = await tx.company.update({
       where: { id: existing.id },
       data: {
-        name: dto.name,
         domain: dto.domain,
         industry: dto.industry,
         size: dto.size,
@@ -298,7 +298,18 @@ export class CompanyService {
       throw new BadRequestException('CNPJ precisa ter 14 dígitos.');
     }
 
-    const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
+    // Sem User-Agent/Accept, o fetch parece tráfego de bot anônimo — a
+    // proteção do Vercel/Cloudflare na frente da BrasilAPI bloqueia com
+    // 403 (`x-vercel-mitigated: deny`) antes mesmo de chegar na API de
+    // verdade. Descoberto rodando de dentro do Railway (2026-08-01) — de
+    // fora (curl local) o mesmo CNPJ respondia 200 normalmente.
+    const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent':
+          'Mozilla/5.0 (compatible; CRM-Gama-Brasil/1.0; +https://web-gamma-olive-80.vercel.app)',
+      },
+    });
     if (response.status === 404) {
       throw new NotFoundException(`CNPJ "${digits}" não encontrado.`);
     }
@@ -344,6 +355,7 @@ export class CompanyService {
       cnaeSecundarios: (data.cnaes_secundarios ?? [])
         .filter((c) => c.codigo != null || c.descricao)
         .map((c) => `${c.codigo ?? ''}${c.descricao ? ` - ${c.descricao}` : ''}`.trim()),
+      estabelecimento: data.descricao_identificador_matriz_filial,
     };
   }
 

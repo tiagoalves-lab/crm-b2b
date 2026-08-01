@@ -14,6 +14,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { companyDisplayName } from "@/lib/api/companies";
 import type { Company, Opportunity, Stage } from "@/lib/api/types";
 import { moveOpportunityStageAction } from "./actions";
 import { stageColor } from "./stage-colors";
@@ -134,7 +135,10 @@ export default function PipelineBoard({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  const companyName = (id: string) => companies.find((c) => c.id === id)?.name ?? "—";
+  const companyName = (id: string) => {
+    const company = companies.find((c) => c.id === id);
+    return company ? companyDisplayName(company) : "—";
+  };
   // Membership não guarda e-mail/nome (só userId, ver dashboard/membros/
   // page.tsx) — mesmo fallback usado lá: "Você" para o usuário atual,
   // prefixo do id pros demais.

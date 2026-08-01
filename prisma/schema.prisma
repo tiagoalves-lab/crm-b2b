@@ -148,7 +148,6 @@ model Membership {
 model Company {
   id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId     String      @map("workspace_id") @db.Uuid
-  name            String
   domain          String?
   industry        String?
   size            String?
@@ -158,10 +157,14 @@ model Company {
 
   // Cadastro completo (ex-Contact, dobrado em Company — ver
   // docs/arquitetura-dados.md, decisão de 2026-07-28): pessoa física ou
-  // jurídica, dados fiscais/cadastrais e endereço. Todos opcionais porque
-  // `name` continua sendo o único campo obrigatório de criação (mesmo
-  // padrão anterior) — estes se preenchem depois, inclusive via busca por
-  // CNPJ (ver CompanyController#lookupCnpj).
+  // jurídica, dados fiscais/cadastrais e endereço. Todos opcionais — não
+  // existe mais campo obrigatório fixo em Company (decisão de
+  // 2026-08-01: a antiga coluna `name` virou redundante com razão
+  // social/fantasia e foi removida, ver migration
+  // 20260801220000_drop_company_name). A criação exige razão social OU
+  // fantasia preenchida, checado em createCompanyAction (web/), não
+  // aqui — nome de exibição é computado na hora a partir desses campos
+  // (web/lib/api/companies.ts#companyDisplayName), nunca persistido.
   razaoSocial     String?     @map("razao_social")
   fantasia        String?
   nomeParaContato String?     @map("nome_para_contato")

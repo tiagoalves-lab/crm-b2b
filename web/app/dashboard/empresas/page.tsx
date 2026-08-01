@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { listCompanies } from "@/lib/api/companies";
+import { companyDisplayName, listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import type { Company } from "@/lib/api/types";
 import { deleteCompanyAction, restoreCompanyAction } from "./actions";
@@ -38,6 +38,39 @@ export default async function EmpresasPage({
   );
   const tipoOf = (c: Company): "lead" | "cliente" =>
     wonCompanyIds.has(c.id) ? "cliente" : "lead";
+
+  // Colunas Status/LTV/Última compra do protótipo (gama-crm-mvp.html,
+  // clienteRows()) eram dado fictício solto na linha; aqui derivamos de
+  // Opportunity de verdade — status: tem oportunidade aberta = "negociando"
+  // (mais acionável), senão tem alguma ganha = "ativo", senão "inativo".
+  type CompanyStats = { status: "ativo" | "negociando" | "inativo"; ltv: number; ultimaCompra: string | null };
+  const statsByCompany = new Map<string, CompanyStats>();
+  for (const company of companies) {
+    const own = opportunities.filter((o) => o.companyId === company.id && !o.deletedAt);
+    const won = own.filter((o) => o.status === "won");
+    const hasOpen = own.some((o) => o.status === "open");
+    const ltv = won.reduce((s, o) => s + Number(o.amount), 0);
+    const ultimaCompra = won.reduce<string | null>((latest, o) => {
+      if (!o.closedAt) return latest;
+      return !latest || o.closedAt > latest ? o.closedAt : latest;
+    }, null);
+    statsByCompany.set(company.id, {
+      status: hasOpen ? "negociando" : won.length > 0 ? "ativo" : "inativo",
+      ltv,
+      ultimaCompra,
+    });
+  }
+  const STATUS_LABEL: Record<CompanyStats["status"], string> = {
+    ativo: "ativo",
+    negociando: "negociando",
+    inativo: "inativo",
+  };
+  const STATUS_PILL: Record<CompanyStats["status"], string> = {
+    ativo: "pill pill-green",
+    negociando: "pill pill-amber",
+    inativo: "pill pill-gray",
+  };
+  const brl = (value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
   const currentFiltro: Filtro = filtro === "lead" || filtro === "cliente" ? filtro : "todas";
   const leadsCount = companies.filter((c) => tipoOf(c) === "lead").length;
@@ -90,32 +123,46 @@ export default async function EmpresasPage({
         <table>
           <thead>
             <tr>
-              <th>Nome</th>
+              <th>Empresa</th>
               <th>Tipo</th>
-              <th>CPF/CNPJ</th>
-              <th>Cidade/UF</th>
-              <th>Tags</th>
+              <th>Contato</th>
+              <th>Cidade</th>
+              <th>Status</th>
+              <th style={{ textAlign: "right" }}>LTV</th>
+              <th>Última compra</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {visible.map((company) => (
+            {visible.map((company) => {
+              const stats = statsByCompany.get(company.id)!;
+              return (
               <tr key={company.id} className="row-clickable">
                 <td>
                   <Link href={`/dashboard/empresas/${company.id}`} className="t-co">
-                    {company.name}
+                    {companyDisplayName(company)}
                   </Link>
+                  <div className="t-sub">{company.cpfCnpj ?? "sem CPF/CNPJ"}</div>
                 </td>
                 <td>
                   <span className={tipoOf(company) === "cliente" ? "pill pill-green" : "pill pill-blue"}>
                     {tipoOf(company) === "cliente" ? "Cliente" : "Lead"}
                   </span>
                 </td>
-                <td className="t-sub">{company.cpfCnpj ?? "—"}</td>
+                <td>
+                  {company.nomeParaContato ?? "—"}
+                  <div className="t-sub">{company.fones[0] ?? ""}</div>
+                </td>
                 <td>
                   {company.cidade ? `${company.cidade}${company.uf ? `/${company.uf}` : ""}` : "—"}
                 </td>
-                <td className="t-sub">{company.tags.length > 0 ? company.tags.join(", ") : "—"}</td>
+                <td>
+                  <span className={STATUS_PILL[stats.status]}>{STATUS_LABEL[stats.status]}</span>
+                </td>
+                <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: stats.ltv > 0 ? "var(--green)" : "var(--text-tertiary)" }}>
+                  {stats.ltv > 0 ? brl(stats.ltv) : "—"}
+                </td>
+                <td className="t-sub">{stats.ultimaCompra ? new Date(stats.ultimaCompra).toLocaleDateString("pt-BR") : "—"}</td>
                 <td>
                   <div className="cell-actions">
                     <Link href={`/dashboard/empresas/${company.id}`} className="icon-btn" title="Abrir ficha">
@@ -153,10 +200,11 @@ export default async function EmpresasPage({
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={8} className="empty">
                   Nenhuma empresa encontrada.
                 </td>
               </tr>

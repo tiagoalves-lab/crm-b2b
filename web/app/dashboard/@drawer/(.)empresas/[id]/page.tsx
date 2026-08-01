@@ -4,6 +4,7 @@ import FichaTabs from "@/app/dashboard/empresas/_ficha/ficha-tabs";
 import FichaBody from "@/app/dashboard/empresas/_ficha/ficha-body";
 import OverlayDrawer from "@/app/dashboard/_overlay/overlay-drawer";
 import { getServerAccessToken } from "@/lib/api/auth";
+import { companyDisplayName } from "@/lib/api/companies";
 
 export default async function EmpresaFichaDrawer({
   params,
@@ -24,7 +25,7 @@ export default async function EmpresaFichaDrawer({
       head={
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div>
-            <div className="drawer-co-name">{company.name}</div>
+            <div className="drawer-co-name">{companyDisplayName(company)}</div>
             <div className="drawer-co-meta">
               {company.cpfCnpj ?? "sem CPF/CNPJ"}
               {company.cidade ? ` · ${company.cidade}${company.uf ? `/${company.uf}` : ""}` : ""}

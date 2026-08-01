@@ -47,8 +47,9 @@ export class MembershipService {
     }
 
     const { id: userId } = await this.supabaseUser.createUser(
-      dto.email,
+      dto.login,
       dto.password,
+      dto.name,
     );
 
     return tx.membership.create({

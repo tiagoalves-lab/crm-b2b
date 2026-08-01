@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { listCompanies } from "@/lib/api/companies";
+import { companyDisplayName, listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
 import { listRawLeads } from "@/lib/api/raw-leads";
@@ -64,7 +64,10 @@ export default async function DashboardPage() {
     (t) => t.status === "pending" && t.dueAt !== null && new Date(t.dueAt) <= hojeFim,
   );
 
-  const companyName = (id: string | null) => companies.find((c) => c.id === id)?.name ?? "—";
+  const companyName = (id: string | null) => {
+    const company = companies.find((c) => c.id === id);
+    return company ? companyDisplayName(company) : "—";
+  };
   const targetLabel = (task: Task) => {
     if (task.companyId) return `📈 ${companyName(task.companyId)}`;
     if (task.opportunityId) {

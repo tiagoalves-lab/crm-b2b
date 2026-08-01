@@ -1,3 +1,4 @@
+import { companyDisplayName } from "@/lib/api/companies";
 import type { Company, Opportunity, TaskList } from "@/lib/api/types";
 import { createTaskAction } from "../actions";
 
@@ -43,7 +44,7 @@ export default function NovaForm({
           <option value="">—</option>
           {companies.map((company) => (
             <option key={company.id} value={company.id}>
-              {company.name}
+              {companyDisplayName(company)}
             </option>
           ))}
         </select>
@@ -54,12 +55,15 @@ export default function NovaForm({
           <option value="">—</option>
           {opportunities
             .filter((opp) => !opp.deletedAt)
-            .map((opp) => (
-              <option key={opp.id} value={opp.id}>
-                {companies.find((c) => c.id === opp.companyId)?.name ?? opp.id} — {opp.currency}{" "}
-                {Number(opp.amount).toLocaleString("pt-BR")}
-              </option>
-            ))}
+            .map((opp) => {
+              const oppCompany = companies.find((c) => c.id === opp.companyId);
+              return (
+                <option key={opp.id} value={opp.id}>
+                  {oppCompany ? companyDisplayName(oppCompany) : opp.id} — {opp.currency}{" "}
+                  {Number(opp.amount).toLocaleString("pt-BR")}
+                </option>
+              );
+            })}
         </select>
       </label>
       <div style={{ gridColumn: "1 / -1" }} className="field-hint">

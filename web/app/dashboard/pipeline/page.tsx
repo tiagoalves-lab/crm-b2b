@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
-import { listCompanies } from "@/lib/api/companies";
+import { companyDisplayName, listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
 import type { Opportunity } from "@/lib/api/types";
@@ -93,7 +93,10 @@ export default async function PipelinePage({
   }
 
   const stages = [...pipeline.stages].sort((a, b) => a.order - b.order);
-  const companyName = (id: string) => companies.find((c) => c.id === id)?.name ?? "—";
+  const companyName = (id: string) => {
+    const company = companies.find((c) => c.id === id);
+    return company ? companyDisplayName(company) : "—";
+  };
 
   const pipelineOpps = opportunities.filter((o) => o.pipelineId === pipeline.id && !o.deletedAt);
   const openOpps = pipelineOpps.filter((o) => o.status === "open");

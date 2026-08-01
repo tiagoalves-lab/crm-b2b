@@ -12,7 +12,7 @@ import { createFakeAuthApp, withTenant } from './utils/fake-auth';
 
 interface CompanyBody {
   id: string;
-  name: string;
+  razaoSocial: string | null;
   ownerUserId: string;
   industry: string | null;
   deletedAt: string | null;
@@ -77,10 +77,10 @@ describe('CompanyController (e2e)', () => {
   it('POST /companies cria uma empresa', async () => {
     const res = await request(app.getHttpServer())
       .post('/companies')
-      .send({ name: 'Empresa E2E' })
+      .send({ razaoSocial: 'Empresa E2E' })
       .expect(201);
     const body = res.body as CompanyBody;
-    expect(body.name).toBe('Empresa E2E');
+    expect(body.razaoSocial).toBe('Empresa E2E');
     expect(body.ownerUserId).toBe(membership.userId);
     companyId = body.id;
   });
@@ -88,12 +88,16 @@ describe('CompanyController (e2e)', () => {
   it('POST /companies rejeita campo desconhecido (whitelist)', async () => {
     await request(app.getHttpServer())
       .post('/companies')
-      .send({ name: 'X', notAField: 'bomb' })
+      .send({ razaoSocial: 'X', notAField: 'bomb' })
       .expect(400);
   });
 
-  it('POST /companies rejeita corpo sem "name"', async () => {
-    await request(app.getHttpServer()).post('/companies').send({}).expect(400);
+  // Não existe mais campo obrigatório em Company (decisão de 2026-08-01,
+  // ver migration 20260801220000_drop_company_name) — corpo vazio é
+  // válido no backend agora; a exigência de razaoSocial/fantasia é só do
+  // formulário (web/app/dashboard/empresas/actions.ts#createCompanyAction).
+  it('POST /companies aceita corpo vazio (nenhum campo obrigatório)', async () => {
+    await request(app.getHttpServer()).post('/companies').send({}).expect(201);
   });
 
   it('GET /companies lista a empresa criada', async () => {

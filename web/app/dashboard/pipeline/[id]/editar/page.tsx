@@ -1,4 +1,5 @@
 import { getServerAccessToken } from "@/lib/api/auth";
+import { companyDisplayName } from "@/lib/api/companies";
 import { loadOpportunityDetail } from "../../_detail/load";
 import { updateOpportunityDetailsAction } from "../../actions";
 import EditForm from "./edit-form";
@@ -20,7 +21,7 @@ export default async function EditarOportunidadePage({
       <div className="topbar">
         <div>
           <div className="page-title">Editar oportunidade</div>
-          <div className="page-sub">{data.company.name}</div>
+          <div className="page-sub">{companyDisplayName(data.company)}</div>
         </div>
       </div>
       <div className="content">

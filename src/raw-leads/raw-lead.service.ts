@@ -48,7 +48,6 @@ export class RawLeadService {
     // aqui em memória (não vem de HTTP/ValidationPipe), mesmo padrão de
     // reuso interno já usado por outros services do projeto.
     const companyDto: CreateCompanyDto = {
-      name: dto.razaoSocial,
       razaoSocial: dto.razaoSocial,
       cpfCnpj: dto.cnpj,
       tipo: 'PJ',

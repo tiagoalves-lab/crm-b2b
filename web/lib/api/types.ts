@@ -19,6 +19,11 @@ export interface Membership {
   managerId: string | null;
   joinedAt: string | null;
   createdAt: string;
+  // Só presentes em GET /memberships — enriquecido a partir do Supabase
+  // Auth (SupabaseUserService#getIdentities), não é coluna de Membership.
+  // null quando o Admin API falha ou o membro é anterior a este campo.
+  login?: string | null;
+  name?: string | null;
 }
 
 export interface MeResponse {
@@ -30,7 +35,6 @@ export type PessoaTipo = "PF" | "PJ";
 
 export interface Company {
   id: string;
-  name: string;
   domain: string | null;
   industry: string | null;
   size: string | null;

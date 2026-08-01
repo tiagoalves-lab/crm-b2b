@@ -42,7 +42,7 @@ describe('SearchController (e2e) — GET /busca-empresa-lead (SPEC-CRM-GAMA.md �
       tx.company.create({
         data: {
           workspaceId: workspace.id,
-          name: 'Metalúrgica Busca Ltda',
+          razaoSocial: 'Metalúrgica Busca Ltda',
           cpfCnpj: '11222333000181',
         },
       }),
@@ -55,7 +55,7 @@ describe('SearchController (e2e) — GET /busca-empresa-lead (SPEC-CRM-GAMA.md �
       tx.company.create({
         data: {
           workspaceId: workspace.id,
-          name: 'Empresa ainda em triagem',
+          razaoSocial: 'Empresa ainda em triagem',
           tags: ['lead-triagem'],
         },
       }),

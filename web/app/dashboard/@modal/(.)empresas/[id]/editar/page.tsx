@@ -1,5 +1,5 @@
 import { getServerAccessToken } from "@/lib/api/auth";
-import { getCompany } from "@/lib/api/companies";
+import { companyDisplayName, getCompany } from "@/lib/api/companies";
 import CompanyForm from "@/app/dashboard/empresas/company-form";
 import OverlayModal from "@/app/dashboard/_overlay/overlay-modal";
 
@@ -16,7 +16,7 @@ export default async function EditarEmpresaModal({
   const company = await getCompany(token, id);
 
   return (
-    <OverlayModal title={`Editar ${company.name}`} wide>
+    <OverlayModal title={`Editar ${companyDisplayName(company)}`} wide>
       {error && <div className="error-banner">{error}</div>}
       <CompanyForm company={company} backHref={`/dashboard/empresas/${id}`} />
     </OverlayModal>

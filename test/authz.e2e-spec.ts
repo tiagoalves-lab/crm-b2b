@@ -86,7 +86,7 @@ describe('Autorização por papel — RBAC + ownership (Fase 2, núcleo)', () =>
         tx.company.create({
           data: {
             workspaceId: workspace.id,
-            name: 'Empresa do sales_rep',
+            razaoSocial: 'Empresa do sales_rep',
             ownerUserId: salesRep.userId,
           },
         }),
@@ -98,7 +98,7 @@ describe('Autorização por papel — RBAC + ownership (Fase 2, núcleo)', () =>
         tx.company.create({
           data: {
             workspaceId: workspace.id,
-            name: 'Empresa de outra pessoa',
+            razaoSocial: 'Empresa de outra pessoa',
             ownerUserId: otherSalesRep.userId,
           },
         }),

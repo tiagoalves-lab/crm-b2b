@@ -60,7 +60,7 @@ describe('TaskController (e2e)', () => {
 
     const company = await withTenant(prisma, userId, workspace.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspace.id, name: 'Empresa Tasks' },
+        data: { workspaceId: workspace.id, razaoSocial: 'Empresa Tasks' },
       }),
     );
     companyId = company.id;

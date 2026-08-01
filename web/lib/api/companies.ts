@@ -1,6 +1,24 @@
 import { apiFetch } from "./client";
 import type { Company, PaginatedResult, PessoaTipo } from "./types";
 
+// Company não guarda mais um "nome" próprio (coluna removida em
+// 2026-08-01, decisão do usuário — era redundante com razão
+// social/fantasia, que já cobriam o mesmo caso de uso e ainda por cima
+// preenchem sozinhos via busca de CNPJ). Todo lugar que exibia
+// company.name passa a chamar isto — mesma ordem de prioridade usada na
+// migration pra view v_busca_empresa_lead (fantasia > razão social >
+// nome pra contato), pra bater com o que a busca de empresa/lead mostra.
+export function companyDisplayName(
+  company: Pick<Company, "fantasia" | "razaoSocial" | "nomeParaContato">,
+): string {
+  return (
+    company.fantasia?.trim() ||
+    company.razaoSocial?.trim() ||
+    company.nomeParaContato?.trim() ||
+    "Empresa sem nome"
+  );
+}
+
 export function listCompanies(
   token: string,
   includeDeleted = false,
@@ -13,7 +31,6 @@ export function listCompanies(
 }
 
 export interface CreateCompanyInput {
-  name: string;
   domain?: string;
   industry?: string;
   size?: string;
@@ -83,6 +100,7 @@ export interface CnpjLookupResult {
   naturezaJuridica?: string;
   cnaePrincipal?: string;
   cnaeSecundarios?: string[];
+  estabelecimento?: string;
 }
 
 // Extrai só dígitos antes de montar a URL — o valor pode vir com pontuação

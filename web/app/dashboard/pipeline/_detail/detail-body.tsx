@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { companyDisplayName } from "@/lib/api/companies";
 import type { OpportunityDetail } from "./load";
 import { deleteOpportunityAction, markWonAction, reopenAction } from "../actions";
 
@@ -20,7 +21,7 @@ export function DetailKv({ data }: { data: OpportunityDetail }) {
   return (
     <dl className="kv">
       <dt>Empresa</dt>
-      <dd>{company.name}</dd>
+      <dd>{companyDisplayName(company)}</dd>
       <dt>Valor</dt>
       <dd style={{ fontFamily: "var(--font-mono)", color: "var(--accent-secondary)", fontWeight: 600 }}>
         {brlFull(Number(o.amount), o.currency)}

@@ -4,6 +4,9 @@
   "description": "CRM B2B Multi-tenant — API",
   "license": "UNLICENSED",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "postinstall": "prisma generate",
     "build": "nest build",

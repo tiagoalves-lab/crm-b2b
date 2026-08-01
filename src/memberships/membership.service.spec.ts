@@ -83,7 +83,8 @@ describe('MembershipService', () => {
       const tx = fakeTx();
       await expect(
         service.create(tx, callerMembership({ role: 'sales_rep' }), {
-          email: 'novo@gamabrasil.com.br',
+          name: 'Novo Membro',
+          login: 'novo.membro',
           password: 'senha1234',
         }),
       ).rejects.toThrow(ForbiddenException);
@@ -94,7 +95,8 @@ describe('MembershipService', () => {
       const tx = fakeTx();
       await expect(
         service.create(tx, callerMembership(), {
-          email: 'novo@gamabrasil.com.br',
+          name: 'Novo Membro',
+          login: 'novo.membro',
           password: 'senha1234',
           managerId: 'membership-inexistente',
         }),
@@ -105,12 +107,14 @@ describe('MembershipService', () => {
     it('cria o login no Supabase Auth e o Membership com role default sales_rep', async () => {
       const tx = fakeTx();
       const created = await service.create(tx, callerMembership(), {
-        email: 'novo@gamabrasil.com.br',
+        name: 'Novo Membro',
+        login: 'novo.membro',
         password: 'senha1234',
       });
       expect(supabaseUser.createUser).toHaveBeenCalledWith(
-        'novo@gamabrasil.com.br',
+        'novo.membro',
         'senha1234',
+        'Novo Membro',
       );
       expect((tx.membership.create as jest.Mock).mock.calls[0][0].data).toMatchObject({
         workspaceId: WORKSPACE_ID,
@@ -121,14 +125,15 @@ describe('MembershipService', () => {
       expect(created.userId).toBe('auth-user-1');
     });
 
-    it('propaga ConflictException quando o e-mail já existe', async () => {
+    it('propaga ConflictException quando o login já existe', async () => {
       (supabaseUser.createUser as jest.Mock).mockRejectedValue(
-        new ConflictException('Já existe um usuário com este e-mail.'),
+        new ConflictException('Já existe um usuário com este login.'),
       );
       const tx = fakeTx();
       await expect(
         service.create(tx, callerMembership(), {
-          email: 'ja-existe@gamabrasil.com.br',
+          name: 'Já Existe',
+          login: 'ja-existe',
           password: 'senha1234',
         }),
       ).rejects.toThrow(ConflictException);

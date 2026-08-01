@@ -48,7 +48,7 @@ describe('OpportunityController (e2e)', () => {
 
     const company = await withTenant(prisma, userId, workspace.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspace.id, name: 'Empresa Opportunities' },
+        data: { workspaceId: workspace.id, razaoSocial: 'Empresa Opportunities' },
       }),
     );
     companyId = company.id;
@@ -120,7 +120,7 @@ describe('OpportunityController (e2e)', () => {
   it('GET /opportunities?companyId= filtra pela empresa (ficha, SPEC-CRM-GAMA.md §4.1)', async () => {
     const outraCompany = await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspace.id, name: 'Empresa sem oportunidade' },
+        data: { workspaceId: workspace.id, razaoSocial: 'Empresa sem oportunidade' },
       }),
     );
     const res = await request(app.getHttpServer())

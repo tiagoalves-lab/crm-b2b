@@ -131,7 +131,7 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
 
   it('CRÍTICO: sales_rep só enxerga as próprias oportunidades, não as de outro operador', async () => {
     const company = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, name: 'Empresa papéis' } }),
+      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa papéis' } }),
     )) as { id: string };
 
     const oppDoOperador = (await asMember(admin, 'admin', (tx) =>
@@ -180,7 +180,7 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
       tx.taskList.create({ data: { workspaceId: workspace.id, name: 'Coluna (teste)', order: 0 } }),
     )) as { id: string };
     const company = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, name: 'Empresa tarefas' } }),
+      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa tarefas' } }),
     )) as { id: string };
 
     const taskDoOperador = (await asMember(admin, 'admin', (tx) =>
@@ -217,10 +217,10 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
 
   it('CRÍTICO: sales_rep só enxerga company ligada a uma oportunidade sua', async () => {
     const companyDoOperador = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, name: 'Empresa do operador' } }),
+      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa do operador' } }),
     )) as { id: string };
     const companySemVinculo = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, name: 'Empresa sem vínculo' } }),
+      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa sem vínculo' } }),
     )) as { id: string };
 
     await asMember(admin, 'admin', (tx) =>
@@ -253,7 +253,7 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
 
   it('escrita continua workspace-scoped (não owner-scoped) — RLS de INSERT não bloqueia operador criando pra si', async () => {
     const company = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, name: 'Empresa insert operador' } }),
+      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa insert operador' } }),
     )) as { id: string };
 
     const created = (await asMember(operador, 'sales_rep', (tx) =>

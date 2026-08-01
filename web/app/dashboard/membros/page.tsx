@@ -1,33 +1,9 @@
+import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { listMemberships } from "@/lib/api/memberships";
-import type { Membership, MembershipRole } from "@/lib/api/types";
-import { createMemberAction, removeMemberAction, updateMemberAction } from "./actions";
-
-const ROLE_OPTIONS: MembershipRole[] = [
-  "owner",
-  "admin",
-  "manager",
-  "sales_rep",
-  "readonly",
-];
-
-const ROLE_LABELS: Record<MembershipRole, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  manager: "Gerente",
-  sales_rep: "Representante",
-  readonly: "Leitura",
-};
-
-// Membership não guarda nome/e-mail (só userId, FK lógica pra auth.users
-// do Supabase) — mostrar o e-mail de outra pessoa exigiria consultar a
-// Admin API do Supabase com a service_role key, que nunca pode entrar em
-// web/ (docs/seguranca.md). Pra uma ferramenta interna pequena, id curto
-// + destaque "Você" já basta por enquanto.
-function displayName(userId: string, meUserId: string): string {
-  return userId === meUserId ? "Você" : `${userId.slice(0, 8)}…`;
-}
+import type { Membership } from "@/lib/api/types";
+import { ROLE_LABELS, ROLE_PILL, memberLogin, memberName } from "./roles";
 
 export default async function MembrosPage({
   searchParams,
@@ -45,143 +21,81 @@ export default async function MembrosPage({
   const managerName = (managerId: string | null) => {
     if (!managerId) return "—";
     const manager = members.find((m: Membership) => m.id === managerId);
-    return manager ? displayName(manager.userId, me.user.id) : "—";
+    return manager ? memberName(manager) : "—";
   };
 
   return (
-    <div className="content-wide">
-      <div className="panel-head">
-        <h2>Membros do workspace</h2>
-        <p className="sub">
-          {members.length} membro(s) — representante gerencia o próprio,
-          gerente vê o próprio + o dos subordinados (definido aqui).
-        </p>
+    <>
+      <div className="topbar">
+        <div>
+          <div className="page-title">Membros do workspace</div>
+          <div className="page-sub">
+            {members.length} membro(s) — representante gerencia o próprio,
+            gerente vê o próprio + o dos subordinados (definido aqui)
+          </div>
+        </div>
+        {canManage && (
+          <Link href="/dashboard/membros/novo" className="btn btn-primary">
+            + Novo membro
+          </Link>
+        )}
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      <div className="content">
+        {error && <div className="error-banner">{error}</div>}
 
-      {canManage && (
-        <div className="form-panel">
-          <div className="panel-head">
-            <h3 style={{ fontSize: 14 }}>Novo membro</h3>
-            <p className="sub">Cria o login (e-mail/senha) e já entra no workspace.</p>
-          </div>
-          <form action={createMemberAction} className="form-grid">
-            <label>
-              Login*
-              <input type="text" name="email" required maxLength={255} autoComplete="off" />
-            </label>
-            <label>
-              Senha*
-              <input
-                type="password"
-                name="password"
-                required
-                minLength={8}
-                maxLength={72}
-                autoComplete="new-password"
-              />
-            </label>
-            <label>
-              Papel
-              <select name="role" defaultValue="sales_rep">
-                {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>
-                    {ROLE_LABELS[role]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Gerente
-              <select name="managerId" defaultValue="">
-                <option value="">— sem gerente —</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {displayName(m.userId, me.user.id)} ({ROLE_LABELS[m.role]})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="submit" className="btn btn-primary">
-              Criar membro
-            </button>
-          </form>
-          <p className="field-hint">Senha com mínimo de 8 caracteres. Comunique login e senha direto pro membro — não existe convite automático ainda.</p>
-        </div>
-      )}
-
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Usuário</th>
-            <th>Papel</th>
-            <th>Gerente</th>
-            <th>Status</th>
-            {canManage && <th>Ação</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((member) => (
-            <tr key={member.id}>
-              <td>{displayName(member.userId, me.user.id)}</td>
-              {canManage ? (
-                <td colSpan={3}>
-                  <form action={updateMemberAction} className="row-form">
-                    <input type="hidden" name="id" value={member.id} />
-                    <select name="role" defaultValue={member.role}>
-                      {ROLE_OPTIONS.map((role) => (
-                        <option key={role} value={role}>
-                          {ROLE_LABELS[role]}
-                        </option>
-                      ))}
-                    </select>
-                    <select name="managerId" defaultValue={member.managerId ?? ""}>
-                      <option value="">— sem gerente —</option>
-                      {members
-                        .filter((other) => other.id !== member.id)
-                        .map((other) => (
-                          <option key={other.id} value={other.id}>
-                            {displayName(other.userId, me.user.id)} ({ROLE_LABELS[other.role]})
-                          </option>
-                        ))}
-                    </select>
-                    <select name="status" defaultValue={member.status}>
-                      <option value="active">Ativo</option>
-                      <option value="suspended">Suspenso</option>
-                    </select>
-                    <button type="submit" className="btn btn-primary btn-sm">
-                      Salvar
-                    </button>
-                  </form>
-                  {member.userId !== me.user.id && (
-                    <form action={removeMemberAction} className="row-form">
-                      <input type="hidden" name="id" value={member.id} />
-                      <button type="submit" className="btn btn-danger btn-sm">
-                        Remover
-                      </button>
-                    </form>
-                  )}
-                </td>
-              ) : (
-                <>
-                  <td>{ROLE_LABELS[member.role]}</td>
-                  <td>{managerName(member.managerId)}</td>
-                  <td>
-                    <span
-                      className={
-                        member.status === "active" ? "badge badge-accent" : "badge badge-danger"
-                      }
-                    >
-                      {member.status === "active" ? "Ativo" : "Suspenso"}
-                    </span>
-                  </td>
-                </>
-              )}
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Login</th>
+              <th>Papel</th>
+              <th>Gerente</th>
+              {canManage && <th></th>}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {members.map((member) => (
+              <tr key={member.id}>
+                <td>
+                  <span className="t-co">
+                    {memberName(member)}
+                    {member.userId === me.user.id ? " (você)" : ""}
+                  </span>
+                </td>
+                <td className="t-sub">{memberLogin(member)}</td>
+                <td>
+                  <span className={ROLE_PILL[member.role]}>{ROLE_LABELS[member.role]}</span>
+                </td>
+                <td>{managerName(member.managerId)}</td>
+                {canManage && (
+                  <td>
+                    <div className="cell-actions">
+                      <Link
+                        href={`/dashboard/membros/${member.id}/editar`}
+                        className="icon-btn"
+                        title="Editar"
+                      >
+                        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </Link>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {members.length === 0 && (
+              <tr>
+                <td colSpan={canManage ? 5 : 4} className="empty">
+                  Nenhum membro encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

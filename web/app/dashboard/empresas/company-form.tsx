@@ -138,24 +138,24 @@ export default function CompanyForm({
         Puxa razão social, endereço e situação da Receita Federal (BrasilAPI). A Inscrição
         Estadual é dado da SEFAZ e entra à parte, na seção &ldquo;Dados fiscais estaduais&rdquo; abaixo.
       </p>
+      <p className="field-hint" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: -4, marginBottom: 12 }}>
+        Preencha ao menos Razão social ou Fantasia — é o que identifica a empresa nas listas e
+        cards do sistema.
+      </p>
 
       <form action={action} className="form-grid">
         {company && <input type="hidden" name="id" value={company.id} />}
         {backHref && <input type="hidden" name="back" value={backHref} />}
         <label>
-          Nome*
-          <input name="name" required defaultValue={company?.name} />
-        </label>
-        <label>
           Nome pra contato
           <input name="nomeParaContato" defaultValue={company?.nomeParaContato ?? ""} />
         </label>
         <label>
-          Razão social
+          Razão social*
           <input name="razaoSocial" {...field("razaoSocial")} />
         </label>
         <label>
-          Fantasia
+          Fantasia*
           <input name="fantasia" {...field("fantasia")} />
         </label>
         <label>

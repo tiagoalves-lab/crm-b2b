@@ -1,4 +1,5 @@
 import { getServerAccessToken } from "@/lib/api/auth";
+import { companyDisplayName } from "@/lib/api/companies";
 import { loadOpportunityDetail } from "@/app/dashboard/pipeline/_detail/load";
 import { updateOpportunityDetailsAction } from "@/app/dashboard/pipeline/actions";
 import EditForm from "@/app/dashboard/pipeline/[id]/editar/edit-form";
@@ -17,7 +18,7 @@ export default async function EditarOportunidadeModal({
   const data = await loadOpportunityDetail(token, id);
 
   return (
-    <OverlayModal title={`Editar oportunidade — ${data.company.name}`}>
+    <OverlayModal title={`Editar oportunidade — ${companyDisplayName(data.company)}`}>
       {error && <div className="error-banner">{error}</div>}
       <EditForm data={data} action={updateOpportunityDetailsAction} backHref={`/dashboard/pipeline/${id}/editar`} />
     </OverlayModal>

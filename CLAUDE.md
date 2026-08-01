@@ -354,6 +354,7 @@ processo antigo; checar com `netstat` antes de assumir a porta).
 Instrução explícita do usuário (2026-07-27): **responder sempre em
 português do Brasil**, em qualquer sessão, independente do idioma da
 mensagem de entrada.
+Sempre ao concluir uma tarefa de ajuste no código faça o deploy na Vercel.
 
 ## Segurança — não negociável, ler antes de qualquer coisa em `web/`
 

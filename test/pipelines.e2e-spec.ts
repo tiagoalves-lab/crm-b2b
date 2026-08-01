@@ -186,7 +186,7 @@ describe('PipelineController (e2e)', () => {
       workspace.id,
       (tx) =>
         tx.company.create({
-          data: { workspaceId: workspace.id, name: 'Empresa pra Opportunity' },
+          data: { workspaceId: workspace.id, razaoSocial: 'Empresa pra Opportunity' },
         }),
     );
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>

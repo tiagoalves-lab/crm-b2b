@@ -1,4 +1,5 @@
 import { getServerAccessToken } from "@/lib/api/auth";
+import { companyDisplayName } from "@/lib/api/companies";
 import { loadOpportunityDetail } from "../_detail/load";
 import { DetailFooter, DetailKv } from "../_detail/detail-body";
 
@@ -18,7 +19,7 @@ export default async function OpportunityDetailPage({
     <>
       <div className="topbar">
         <div>
-          <div className="page-title">{data.company.name}</div>
+          <div className="page-title">{companyDisplayName(data.company)}</div>
           <div className="page-sub">Oportunidade</div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { getServerAccessToken } from "@/lib/api/auth";
+import { companyDisplayName } from "@/lib/api/companies";
 import { loadOpportunityDetail } from "../../_detail/load";
 import LoseForm from "./lose-form";
 
@@ -16,7 +17,7 @@ export default async function MarcarPerdidaPage({
       <div className="topbar">
         <div>
           <div className="page-title">Marcar como perdida</div>
-          <div className="page-sub">{data.company.name}</div>
+          <div className="page-sub">{companyDisplayName(data.company)}</div>
         </div>
       </div>
       <div className="content">

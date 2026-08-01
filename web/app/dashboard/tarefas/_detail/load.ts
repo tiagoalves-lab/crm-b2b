@@ -1,5 +1,5 @@
 import { getMe } from "@/lib/api/me";
-import { getCompany } from "@/lib/api/companies";
+import { companyDisplayName, getCompany } from "@/lib/api/companies";
 import { getOpportunity } from "@/lib/api/opportunities";
 import { getTask } from "@/lib/api/tasks";
 import { listAttachments } from "@/lib/api/task-attachments";
@@ -19,11 +19,11 @@ export async function loadTaskDetail(token: string, id: string) {
   let targetLabel = "—";
   if (task.companyId) {
     const company = await getCompany(token, task.companyId);
-    targetLabel = `Empresa: ${company.name}`;
+    targetLabel = `Empresa: ${companyDisplayName(company)}`;
   } else if (task.opportunityId) {
     const opp = await getOpportunity(token, task.opportunityId);
     const company = await getCompany(token, opp.companyId);
-    targetLabel = `Oportunidade: ${company.name}`;
+    targetLabel = `Oportunidade: ${companyDisplayName(company)}`;
   }
 
   return { me, task, attachments, memberships, targetLabel };

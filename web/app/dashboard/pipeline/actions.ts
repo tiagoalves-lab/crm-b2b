@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { ApiError } from "@/lib/api/client";
-import { createCompany, lookupCnpj } from "@/lib/api/companies";
+import { companyDisplayName, createCompany, lookupCnpj } from "@/lib/api/companies";
 import { createOpportunity, deleteOpportunity, updateOpportunity } from "@/lib/api/opportunities";
 import { createPipeline, createStage } from "@/lib/api/pipelines";
 import { approveLead } from "@/lib/api/raw-leads";
@@ -154,7 +154,7 @@ export async function approveLeadAction(
   try {
     const company = await approveLead(token, rawLeadId);
     revalidatePath("/dashboard/empresas");
-    return { ok: true, data: { id: company.id, name: company.name } };
+    return { ok: true, data: { id: company.id, name: companyDisplayName(company) } };
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao aprovar o lead.") };
   }
@@ -167,7 +167,6 @@ export async function createCompanyFromCnpjAction(
   try {
     const data = await lookupCnpj(token, cnpj);
     const company = await createCompany(token, {
-      name: data.razaoSocial ?? data.fantasia ?? `Empresa ${cnpj.slice(-4)}`,
       razaoSocial: data.razaoSocial,
       fantasia: data.fantasia,
       cpfCnpj: data.cpfCnpj,
@@ -183,7 +182,7 @@ export async function createCompanyFromCnpjAction(
       uf: data.uf,
     });
     revalidatePath("/dashboard/empresas");
-    return { ok: true, data: { id: company.id, name: company.name } };
+    return { ok: true, data: { id: company.id, name: companyDisplayName(company) } };
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao cadastrar a empresa.") };
   }

@@ -64,7 +64,7 @@ describe('ActivityController (e2e)', () => {
   it('setup: cria uma company (gera Activity "created" automaticamente)', async () => {
     const res = await request(app.getHttpServer())
       .post('/companies')
-      .send({ name: 'Empresa com histórico' })
+      .send({ razaoSocial: 'Empresa com histórico' })
       .expect(201);
     companyId = (res.body as { id: string }).id;
   });

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { listCompanies } from "@/lib/api/companies";
+import { companyDisplayName, listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listTasks } from "@/lib/api/tasks";
-import type { Task } from "@/lib/api/types";
+import type { Company, Task } from "@/lib/api/types";
 import { completeTaskAction, reopenTaskAction } from "./actions";
 import CalendarView from "./calendar-view";
 
@@ -11,16 +11,17 @@ type ViewName = "tabela" | "calendario";
 
 function targetLabel(
   task: Task,
-  companies: { id: string; name: string }[],
+  companies: Company[],
   opportunities: { id: string; companyId: string; deletedAt: string | null }[],
 ): string {
   if (task.companyId) {
-    return `📈 ${companies.find((c) => c.id === task.companyId)?.name ?? "—"}`;
+    const company = companies.find((c) => c.id === task.companyId);
+    return `📈 ${company ? companyDisplayName(company) : "—"}`;
   }
   if (task.opportunityId) {
     const opp = opportunities.find((o) => o.id === task.opportunityId);
     const company = opp ? companies.find((c) => c.id === opp.companyId) : null;
-    return `📈 ${company?.name ?? "—"}`;
+    return `📈 ${company ? companyDisplayName(company) : "—"}`;
   }
   return "—";
 }
