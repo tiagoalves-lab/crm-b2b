@@ -1,14 +1,25 @@
 import Link from "next/link";
+import type { TaskAttachment } from "@/lib/api/task-attachments";
 import type { Company, Membership, Opportunity, TaskWithDetails } from "@/lib/api/types";
 import {
   createChecklistItemAction,
   createCommentAction,
+  deleteAttachmentAction,
   deleteChecklistItemAction,
   deleteCommentAction,
   deleteTaskAction,
+  downloadAttachmentAction,
   toggleChecklistItemAction,
   updateTaskDetailAction,
+  uploadAttachmentAction,
 } from "./actions";
+
+function formatBytes(bytes: number | null): string {
+  if (bytes === null) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function memberLabel(userId: string, members: Membership[], currentUserId: string): string {
   if (userId === currentUserId) return "Você";
@@ -39,6 +50,7 @@ export default function TaskDetail({
   opportunities,
   members,
   currentUserId,
+  attachments,
   error,
 }: {
   task: TaskWithDetails;
@@ -47,6 +59,7 @@ export default function TaskDetail({
   opportunities: Opportunity[];
   members: Membership[];
   currentUserId: string;
+  attachments: TaskAttachment[];
   error?: string;
 }) {
   const checklistTotal = task.checklistItems.length;
@@ -143,6 +156,50 @@ export default function TaskDetail({
             <input name="text" placeholder="Novo item" />
             <button type="submit" className="btn btn-sm">
               Adicionar
+            </button>
+          </form>
+        </div>
+
+        <div className="attachments-block">
+          <h3>
+            Anexos{" "}
+            {attachments.length > 0 && <span className="count">{attachments.length}</span>}
+          </h3>
+          {attachments.map((att) => (
+            <div key={att.id} className="row-form" style={{ marginBottom: 6 }}>
+              <form action={downloadAttachmentAction} style={{ display: "inline" }}>
+                <input type="hidden" name="taskId" value={task.id} />
+                <input type="hidden" name="attachmentId" value={att.id} />
+                <input type="hidden" name="back" value={backHref} />
+                <button type="submit" className="btn btn-ghost btn-sm">
+                  📎 {att.fileName}
+                </button>
+              </form>
+              <span className="sub">{formatBytes(att.sizeBytes)}</span>
+              {att.uploadedBy === currentUserId && (
+                <form action={deleteAttachmentAction} style={{ display: "inline" }}>
+                  <input type="hidden" name="taskId" value={task.id} />
+                  <input type="hidden" name="attachmentId" value={att.id} />
+                  <input type="hidden" name="back" value={backHref} />
+                  <button type="submit" className="btn btn-ghost btn-sm" aria-label="Remover anexo">
+                    ×
+                  </button>
+                </form>
+              )}
+            </div>
+          ))}
+          {attachments.length === 0 && <p className="sub">Nenhum anexo ainda.</p>}
+          <form
+            action={uploadAttachmentAction}
+            encType="multipart/form-data"
+            className="row-form"
+            style={{ marginTop: 8 }}
+          >
+            <input type="hidden" name="taskId" value={task.id} />
+            <input type="hidden" name="back" value={backHref} />
+            <input type="file" name="file" required />
+            <button type="submit" className="btn btn-sm">
+              Enviar
             </button>
           </form>
         </div>

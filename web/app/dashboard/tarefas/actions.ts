@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { redirectWithError } from "@/lib/api/action-helpers";
@@ -10,6 +11,11 @@ import {
   deleteComment,
   updateChecklistItem,
 } from "@/lib/api/task-cards";
+import {
+  createUploadUrl,
+  deleteAttachment,
+  getDownloadUrl,
+} from "@/lib/api/task-attachments";
 import {
   createTaskList,
   deleteTaskList,
@@ -263,4 +269,79 @@ export async function deleteCommentAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard/tarefas");
+}
+
+// ---------- Anexos (SPEC-CRM-GAMA.md §3.2/§4.3, Fatia 8) ----------
+// O binário nunca passa pelo NestJS: o backend só assina a URL de
+// upload; quem faz o PUT do arquivo é este Server Action, direto no
+// Storage do Supabase — mesmo raciocínio de nunca expor a service role
+// key ao navegador (docs/seguranca.md).
+
+export async function uploadAttachmentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const taskId = String(formData.get("taskId"));
+  const file = formData.get("file");
+
+  if (!(file instanceof File) || file.size === 0) {
+    redirectWithError(back, new Error("Selecione um arquivo pra enviar."));
+    return;
+  }
+
+  try {
+    const { uploadUrl } = await createUploadUrl(token, taskId, {
+      fileName: file.name,
+      mimeType: file.type || undefined,
+      sizeBytes: file.size,
+    });
+    const bytes = await file.arrayBuffer();
+    const res = await fetch(uploadUrl, {
+      method: "PUT",
+      body: bytes,
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+    });
+    if (!res.ok) {
+      throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
+    }
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath(back);
+}
+
+// Gera a signed URL só quando clicado (nunca antecipado na listagem) e
+// redireciona pra ela — evita assinar N URLs a cada carregamento da
+// página de detalhe.
+export async function downloadAttachmentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const taskId = String(formData.get("taskId"));
+  const attachmentId = String(formData.get("attachmentId"));
+
+  let url: string;
+  try {
+    const result = await getDownloadUrl(token, taskId, attachmentId);
+    url = result.url;
+  } catch (error) {
+    redirectWithError(back, error);
+    return;
+  }
+
+  redirect(url);
+}
+
+export async function deleteAttachmentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const taskId = String(formData.get("taskId"));
+  const attachmentId = String(formData.get("attachmentId"));
+
+  try {
+    await deleteAttachment(token, taskId, attachmentId);
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath(back);
 }

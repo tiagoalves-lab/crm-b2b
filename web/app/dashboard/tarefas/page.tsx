@@ -5,6 +5,7 @@ import { listCompanies } from "@/lib/api/companies";
 import { listMemberships } from "@/lib/api/memberships";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listTaskLists } from "@/lib/api/task-lists";
+import { listAttachments } from "@/lib/api/task-attachments";
 import { getTask, listTasks } from "@/lib/api/tasks";
 import type { Task } from "@/lib/api/types";
 import {
@@ -59,7 +60,10 @@ export default async function TarefasPage({
   const baseHref = `/dashboard/tarefas?view=${currentView}${month ? `&month=${month}` : ""}`;
 
   if (card) {
-    const detail = await getTask(token, card);
+    const [detail, attachments] = await Promise.all([
+      getTask(token, card),
+      listAttachments(token, card),
+    ]);
     return (
       <TaskDetail
         task={detail}
@@ -68,6 +72,7 @@ export default async function TarefasPage({
         opportunities={opportunities}
         members={members}
         currentUserId={me.user.id}
+        attachments={attachments}
         error={error}
       />
     );
@@ -255,16 +260,22 @@ export default async function TarefasPage({
               <tr key={task.id}>
                 <td>
                   <Link href={`${baseHref}&card=${task.id}`}>{task.title}</Link>
-                  {task._count && (task._count.comments > 0 || task._count.checklistItems > 0) && (
-                    <span className="row-form" style={{ display: "inline-flex", marginLeft: 8 }}>
-                      {task._count.comments > 0 && (
-                        <span className="badge" title="Comentários">💬 {task._count.comments}</span>
-                      )}
-                      {task._count.checklistItems > 0 && (
-                        <span className="badge" title="Itens de checklist">☑ {task._count.checklistItems}</span>
-                      )}
-                    </span>
-                  )}
+                  {task._count &&
+                    (task._count.comments > 0 ||
+                      task._count.checklistItems > 0 ||
+                      task._count.attachments > 0) && (
+                      <span className="row-form" style={{ display: "inline-flex", marginLeft: 8 }}>
+                        {task._count.comments > 0 && (
+                          <span className="badge" title="Comentários">💬 {task._count.comments}</span>
+                        )}
+                        {task._count.checklistItems > 0 && (
+                          <span className="badge" title="Itens de checklist">☑ {task._count.checklistItems}</span>
+                        )}
+                        {task._count.attachments > 0 && (
+                          <span className="badge" title="Anexos">📎 {task._count.attachments}</span>
+                        )}
+                      </span>
+                    )}
                 </td>
                 <td>{targetLabel(task)}</td>
                 <td>

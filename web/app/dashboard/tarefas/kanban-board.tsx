@@ -78,6 +78,9 @@ function Card({
           {task._count && task._count.checklistItems > 0 && (
             <span className="badge" title="Itens de checklist">☑ {task._count.checklistItems}</span>
           )}
+          {task._count && task._count.attachments > 0 && (
+            <span className="badge" title="Anexos">📎 {task._count.attachments}</span>
+          )}
         </div>
       </Link>
     </div>
