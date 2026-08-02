@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
+import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import {
   createChecklistItem,
   createComment,
@@ -53,6 +53,38 @@ export async function createTaskAction(formData: FormData) {
 
   revalidatePath("/dashboard/tarefas");
   redirectWithMessage("/dashboard/tarefas", "Tarefa criada");
+}
+
+export type CreateTaskState = { ok: true } | { ok: false; message: string };
+
+// Mesma criação de createTaskAction, só que devolve o resultado em vez de
+// redirecionar — usado via useActionState só pelo form "Nova tarefa"
+// (nova-form.tsx), pro modal fechar com router.push no client depois de
+// confirmar (redirect() de dentro da action não derruba o slot @modal da
+// rota interceptada — mesmo motivo documentado em empresas/actions.ts
+// createCompanyAction). createTaskAction continua como está porque
+// também é usada pelo quick-add de tarefa dentro da ficha de lead, que
+// não é modal e não deve mudar de comportamento.
+export async function createTaskModalAction(
+  _prevState: CreateTaskState | null,
+  formData: FormData,
+): Promise<CreateTaskState> {
+  const token = await getServerAccessToken();
+
+  try {
+    await createTask(token, {
+      title: String(formData.get("title") ?? "").trim(),
+      dueAt: emptyToUndefined(formData.get("dueAt")),
+      companyId: emptyToUndefined(formData.get("companyId")),
+      opportunityId: emptyToUndefined(formData.get("opportunityId")),
+      listId: emptyToUndefined(formData.get("listId")),
+    });
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+
+  revalidatePath("/dashboard/tarefas");
+  return { ok: true };
 }
 
 export async function completeTaskAction(formData: FormData) {

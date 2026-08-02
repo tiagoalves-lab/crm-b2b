@@ -1,3 +1,8 @@
+"use client";
+
+import { useActionState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { Membership } from "@/lib/api/types";
 import { createMemberAction } from "./actions";
 import { ROLE_LABELS, ROLE_OPTIONS, memberName } from "./roles";
@@ -5,11 +10,24 @@ import { ROLE_LABELS, ROLE_OPTIONS, memberName } from "./roles";
 // Usado pelo cadastro de membro (modal "Novo membro", interceptado, e o
 // fallback de página cheia em /dashboard/membros/novo — ver
 // @modal/(.)membros/novo). Cria nome+login+senha (login é texto livre,
-// sem e-mail — ver actions.ts) e já entra no workspace.
+// sem e-mail — ver actions.ts) e já entra no workspace. Fecha via
+// router.back() depois de criar — ver comentário em
+// empresas/company-form.tsx sobre por que back() e não push()/redirect();
+// toast via sessionStorage porque back() não aceita querystring.
 export default function MemberForm({ members }: { members: Membership[] }) {
+  const router = useRouter();
+  const [state, formAction] = useActionState(createMemberAction, null);
+  useEffect(() => {
+    if (state?.ok) {
+      sessionStorage.setItem(TOAST_SESSION_KEY, "Membro criado");
+      router.back();
+    }
+  }, [state, router]);
+
   return (
     <div>
-      <form action={createMemberAction} className="form-grid">
+      {state?.ok === false && <div className="error-banner">{state.message}</div>}
+      <form action={formAction} className="form-grid">
         <label>
           Nome*
           <input type="text" name="name" required minLength={2} maxLength={255} autoComplete="off" />

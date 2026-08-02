@@ -52,13 +52,20 @@ export async function createStageAction(formData: FormData) {
   redirectWithMessage("/dashboard/pipeline", "Etapa adicionada");
 }
 
-export async function createOpportunityAction(formData: FormData) {
+// Devolve o resultado em vez de redirecionar no sucesso — usado via
+// useActionState (nova-form.tsx) pro modal fechar com router.push no
+// client depois de confirmar. Mesmo motivo de createCompanyAction em
+// empresas/actions.ts: redirect() de dentro da Server Action não derruba
+// o slot @modal da rota interceptada.
+export async function createOpportunityAction(
+  _prevState: ActionResult<null> | null,
+  formData: FormData,
+): Promise<ActionResult<null>> {
   const token = await getServerAccessToken();
   const companyId = String(formData.get("companyId") ?? "").trim();
-  const back = String(formData.get("back") ?? "/dashboard/pipeline/nova");
 
   if (!companyId) {
-    redirectWithError(back, new Error("Selecione uma empresa para a oportunidade."));
+    return { ok: false, message: "Selecione uma empresa para a oportunidade." };
   }
 
   try {
@@ -71,11 +78,11 @@ export async function createOpportunityAction(formData: FormData) {
       expectedCloseDate: emptyToUndefined(formData.get("expectedCloseDate")),
     });
   } catch (error) {
-    redirectWithError(back, error);
+    return { ok: false, message: actionError(error, "Erro ao criar a oportunidade.") };
   }
 
   revalidatePath("/dashboard/pipeline");
-  redirectWithMessage("/dashboard/pipeline", "Oportunidade criada");
+  return { ok: true, data: null };
 }
 
 // Modal "Editar oportunidade" — valor/moeda/etapa/previsão de fechamento.

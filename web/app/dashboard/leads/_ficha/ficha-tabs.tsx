@@ -23,13 +23,15 @@ export default function FichaTabs({
 }) {
   const current = currentAbaOf(aba);
   const href = (a: Aba) => `/dashboard/leads/${leadId}?aba=${a}`;
+  // `replace` em vez de push — ver mesmo comentário em empresas/_ficha/
+  // ficha-tabs.tsx: sem isso o X do drawer só desfaz uma aba por clique.
 
   return (
     <>
       {ABAS.map((a) => {
         const count = a.id === "timeline" ? counts.timeline : a.id === "tarefas" ? counts.tarefas : undefined;
         return (
-          <Link key={a.id} href={href(a.id)} className={current === a.id ? "drawer-tab active" : "drawer-tab"}>
+          <Link key={a.id} href={href(a.id)} replace className={current === a.id ? "drawer-tab active" : "drawer-tab"}>
             {a.label}
             {count !== undefined && <span className="tab-count">{count}</span>}
           </Link>

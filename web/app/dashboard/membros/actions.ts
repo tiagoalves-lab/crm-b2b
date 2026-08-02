@@ -2,15 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
+import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { createMembership, deleteMembership, updateMembership } from "@/lib/api/memberships";
 import type { MembershipRole, MembershipStatus } from "@/lib/api/types";
 
-// Redireciona pra /dashboard/membros (fora da rota interceptada
-// /dashboard/membros/novo) tanto no sucesso quanto no erro — mesmo padrão
-// de createCompanyAction (empresas/actions.ts): sem client JS, o
-// redirect() é o que fecha o modal (a navegação sai da rota interceptada).
-export async function createMemberAction(formData: FormData) {
+export type CreateMemberState = { ok: true } | { ok: false; message: string };
+
+// Devolve o resultado em vez de redirecionar no sucesso — usado via
+// useActionState (member-form.tsx) pro modal fechar com router.push no
+// client depois de confirmar. redirect() de dentro da Server Action não
+// derruba o slot @modal da rota interceptada (mesmo motivo documentado em
+// createCompanyAction, empresas/actions.ts) — o modal ficava aberto com o
+// membro já criado.
+export async function createMemberAction(
+  _prevState: CreateMemberState | null,
+  formData: FormData,
+): Promise<CreateMemberState> {
   const token = await getServerAccessToken();
   const name = String(formData.get("name") ?? "").trim();
   const login = String(formData.get("login") ?? "").trim();
@@ -27,11 +34,11 @@ export async function createMemberAction(formData: FormData) {
       managerId: managerIdRaw ? String(managerIdRaw) : undefined,
     });
   } catch (error) {
-    redirectWithError("/dashboard/membros", error);
+    return { ok: false, message: errorMessage(error) };
   }
 
   revalidatePath("/dashboard/membros");
-  redirectWithMessage("/dashboard/membros", "Membro criado");
+  return { ok: true };
 }
 
 export async function updateMemberAction(formData: FormData) {

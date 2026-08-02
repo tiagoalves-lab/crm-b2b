@@ -27,7 +27,7 @@ export default async function NovaOportunidadePage({
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
         <div className="form-panel">
-          <NovaForm pipelineId={pipeline.id} stages={stages} backHref="/dashboard/pipeline/nova" />
+          <NovaForm pipelineId={pipeline.id} stages={stages} />
         </div>
       </div>
     </>

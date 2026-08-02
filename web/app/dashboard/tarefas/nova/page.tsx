@@ -27,7 +27,7 @@ export default async function NovaTarefaPage({
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
         <div className="form-panel">
-          <NovaForm taskLists={taskLists} companies={companies} opportunities={opportunities} backHref="/dashboard/tarefas/nova" />
+          <NovaForm taskLists={taskLists} companies={companies} opportunities={opportunities} />
         </div>
       </div>
     </>

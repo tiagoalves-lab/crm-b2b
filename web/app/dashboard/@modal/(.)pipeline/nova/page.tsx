@@ -26,7 +26,7 @@ export default async function NovaOportunidadeModal({
   return (
     <OverlayModal title="Nova oportunidade" wide>
       {error && <div className="error-banner">{error}</div>}
-      <NovaForm pipelineId={pipeline.id} stages={stages} backHref="/dashboard/pipeline/nova" />
+      <NovaForm pipelineId={pipeline.id} stages={stages} />
     </OverlayModal>
   );
 }

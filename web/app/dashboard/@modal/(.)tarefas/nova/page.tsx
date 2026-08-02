@@ -21,7 +21,7 @@ export default async function NovaTarefaModal({
   return (
     <OverlayModal title="Nova tarefa" wide>
       {error && <div className="error-banner">{error}</div>}
-      <NovaForm taskLists={taskLists} companies={companies} opportunities={opportunities} backHref="/dashboard/tarefas/nova" />
+      <NovaForm taskLists={taskLists} companies={companies} opportunities={opportunities} />
     </OverlayModal>
   );
 }

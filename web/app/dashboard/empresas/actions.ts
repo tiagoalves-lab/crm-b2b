@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
+import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { createActivity } from "@/lib/api/activities";
 import type { PessoaTipo } from "@/lib/api/types";
 import {
@@ -56,9 +56,20 @@ function parseCompanyFields(formData: FormData) {
   };
 }
 
-export async function createCompanyAction(formData: FormData) {
+export type CreateCompanyState = { ok: true } | { ok: false; message: string };
+
+// Chamado via useActionState (company-form.tsx), não `<form action=...>`
+// direto — devolve o resultado em vez de redirecionar mesmo no sucesso,
+// pro form fechar o modal com router.push no client depois de confirmar
+// que criou. redirect() daqui de dentro tecnicamente atualiza a URL, mas
+// não derruba o slot @modal da rota interceptada (bug conhecido do Next
+// App Router com Server Action + intercepting routes) — o modal ficava
+// aberto com o registro já salvo.
+export async function createCompanyAction(
+  _prevState: CreateCompanyState | null,
+  formData: FormData,
+): Promise<CreateCompanyState> {
   const token = await getServerAccessToken();
-  const back = String(formData.get("back") ?? "/dashboard/empresas");
   const fields = parseCompanyFields(formData);
 
   // Company não tem mais campo obrigatório fixo (ver schema.prisma) —
@@ -66,17 +77,17 @@ export async function createCompanyAction(formData: FormData) {
   // preenchido, senão a lista/cards ficam com "Empresa sem nome"
   // (fallback de companyDisplayName).
   if (!fields.razaoSocial && !fields.fantasia) {
-    redirectWithError(back, new Error("Preencha Razão social ou Fantasia."));
+    return { ok: false, message: "Preencha Razão social ou Fantasia." };
   }
 
   try {
     await createCompany(token, fields);
   } catch (error) {
-    redirectWithError(back, error);
+    return { ok: false, message: errorMessage(error) };
   }
 
   revalidatePath("/dashboard/empresas");
-  redirectWithMessage("/dashboard/empresas", "Empresa criada");
+  return { ok: true };
 }
 
 export async function deleteCompanyAction(formData: FormData) {

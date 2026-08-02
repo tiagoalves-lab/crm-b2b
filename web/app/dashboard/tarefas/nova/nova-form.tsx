@@ -1,23 +1,42 @@
+"use client";
+
+import { useActionState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import { companyDisplayName } from "@/lib/api/companies";
 import type { Company, Opportunity, TaskList } from "@/lib/api/types";
-import { createTaskAction } from "../actions";
+import { createTaskModalAction } from "../actions";
 
 // Compartilhado entre a versão full-page e a versão modal de "Nova
-// tarefa" (protótipo: openTaskForm sem id).
+// tarefa" (protótipo: openTaskForm sem id). Fecha via router.back() depois
+// de criar — ver comentário em company-form.tsx sobre por que back() e não
+// push()/redirect(); toast via sessionStorage porque back() não aceita
+// querystring.
 export default function NovaForm({
   taskLists,
   companies,
   opportunities,
-  backHref,
 }: {
   taskLists: TaskList[];
   companies: Company[];
   opportunities: Opportunity[];
-  backHref: string;
 }) {
+  const router = useRouter();
+  const [state, formAction] = useActionState(createTaskModalAction, null);
+  useEffect(() => {
+    if (state?.ok) {
+      sessionStorage.setItem(TOAST_SESSION_KEY, "Tarefa criada");
+      router.back();
+    }
+  }, [state, router]);
+
   return (
-    <form action={createTaskAction} className="form-grid">
-      <input type="hidden" name="back" value={backHref} />
+    <form action={formAction} className="form-grid">
+      {state?.ok === false && (
+        <div className="error-banner" style={{ gridColumn: "1 / -1" }}>
+          {state.message}
+        </div>
+      )}
       <label style={{ gridColumn: "1 / -1" }}>
         Descrição*
         <input name="title" required placeholder="Ex: Ligar para retorno da proposta" />

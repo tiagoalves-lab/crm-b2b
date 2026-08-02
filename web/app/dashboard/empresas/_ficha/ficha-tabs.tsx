@@ -29,6 +29,10 @@ export default function FichaTabs({
 }) {
   const current = currentAbaOf(aba);
   const href = (a: Aba) => `/dashboard/empresas/${companyId}?aba=${a}`;
+  // `replace` em vez de push: sem isso, cada troca de aba empilha uma
+  // entrada de histórico e o X do drawer (router.back() em
+  // overlay-drawer.tsx) só desfaz uma aba por clique em vez de fechar de
+  // vez, não importa em qual aba o usuário estava.
 
   return (
     <>
@@ -39,6 +43,7 @@ export default function FichaTabs({
           <Link
             key={a.id}
             href={href(a.id)}
+            replace
             className={current === a.id ? "drawer-tab active" : "drawer-tab"}
           >
             {a.label}

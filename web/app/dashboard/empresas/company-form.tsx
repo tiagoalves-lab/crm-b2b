@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { CnpjLookupResult } from "@/lib/api/companies";
 import type { Company } from "@/lib/api/types";
 import { createCompanyAction, updateCompanyAction } from "./actions";
@@ -66,10 +68,29 @@ export default function CompanyForm({
   company?: Company;
   backHref?: string;
 }) {
+  const router = useRouter();
   const [fields, setFields] = useState<Fields>(() => fieldsFrom(company));
   const [cnpjQuery, setCnpjQuery] = useState(company?.cpfCnpj ?? "");
   const [loading, setLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+
+  // Cadastro (sem `company`) fecha o modal via router.back() depois de
+  // criar — mesmo mecanismo que já fecha o drawer/modal pelo X
+  // (overlay-modal.tsx/overlay-drawer.tsx). Testado à parte (sandbox
+  // isolado, ver histórico da sessão): nem redirect() de dentro da Server
+  // Action nem router.push() pro fundo colapsam o slot @modal da rota
+  // interceptada — só router.back() funciona de verdade. router.back()
+  // não aceita querystring, por isso o toast vai via sessionStorage (ver
+  // toast.tsx) em vez de ?msg=. Edição continua no
+  // <form action={updateCompanyAction}> de sempre (fica na mesma rota,
+  // não precisa fechar nada).
+  const [createState, createFormAction] = useActionState(createCompanyAction, null);
+  useEffect(() => {
+    if (createState?.ok) {
+      sessionStorage.setItem(TOAST_SESSION_KEY, "Empresa criada");
+      router.back();
+    }
+  }, [createState, router]);
 
   const field = (name: keyof Fields) => ({
     value: fields[name],
@@ -114,8 +135,6 @@ export default function CompanyForm({
     }
   }
 
-  const action = company ? updateCompanyAction : createCompanyAction;
-
   return (
     <div>
       <div className="row-form" style={{ marginBottom: 12 }}>
@@ -134,6 +153,7 @@ export default function CompanyForm({
         </button>
       </div>
       {lookupError && <div className="error-banner">{lookupError}</div>}
+      {createState?.ok === false && <div className="error-banner">{createState.message}</div>}
       <p className="field-hint" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: -4, marginBottom: 12 }}>
         Puxa razão social, endereço e situação da Receita Federal (BrasilAPI). A Inscrição
         Estadual é dado da SEFAZ e entra à parte, na seção &ldquo;Dados fiscais estaduais&rdquo; abaixo.
@@ -143,7 +163,7 @@ export default function CompanyForm({
         cards do sistema.
       </p>
 
-      <form action={action} className="form-grid">
+      <form action={company ? updateCompanyAction : createFormAction} className="form-grid">
         {company && <input type="hidden" name="id" value={company.id} />}
         {backHref && <input type="hidden" name="back" value={backHref} />}
         <label>
