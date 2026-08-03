@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { scoreTier } from "@/lib/api/raw-leads";
+import { effectiveTier } from "@/lib/api/raw-leads";
 import { loadLeadFicha } from "../_ficha/load";
 import FichaTabs from "../_ficha/ficha-tabs";
 import FichaBody from "../_ficha/ficha-body";
@@ -19,7 +19,7 @@ export default async function LeadFichaPage({
   const token = await getServerAccessToken();
   const data = await loadLeadFicha(token, id);
   const { lead, activities, tasks } = data;
-  const tier = scoreTier(lead.score);
+  const tier = effectiveTier(lead);
 
   return (
     <>

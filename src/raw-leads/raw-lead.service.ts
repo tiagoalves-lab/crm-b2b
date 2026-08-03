@@ -11,6 +11,7 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateRawLeadDto } from './dto/create-raw-lead.dto';
 import type { ListRawLeadsQueryDto } from './dto/list-raw-leads-query.dto';
+import type { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
 import { LeadScoringService } from './lead-scoring.service';
 import { parseLeadsSpreadsheet, type RowError } from './spreadsheet-import.util';
 
@@ -129,21 +130,41 @@ export class RawLeadService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 50;
     const status = query.status ?? 'novo';
-    const scoreRange = this.tierRange(query.tier);
 
+    // Filtro por tier considera a classificação manual como override: um
+    // lead com manualTier='quente' aparece no filtro "quente" mesmo que o
+    // score não bata na faixa, e o inverso também (manualTier='frio" some
+    // do filtro "quente" mesmo com score alto). Sem manualTier, cai no
+    // cálculo automático de sempre (faixa de score). `AND` (em vez de um
+    // segundo `OR` no mesmo objeto) porque o filtro de busca `q` já usa a
+    // chave `OR` — duas chaves `OR` no mesmo objeto colidiriam.
+    const scoreRange = this.tierRange(query.tier);
     const where: Prisma.RawLeadWhereInput = {
       workspaceId: membership.workspaceId,
       status,
-      ...(scoreRange ? { score: scoreRange } : {}),
-      ...(query.q
-        ? {
-            OR: [
-              { razaoSocial: { contains: query.q, mode: 'insensitive' } },
-              { cnaePrincipal: { contains: query.q, mode: 'insensitive' } },
-              { cnaeDescricao: { contains: query.q, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
+      AND: [
+        ...(query.tier
+          ? [
+              {
+                OR: [
+                  { manualTier: query.tier },
+                  { manualTier: null, score: scoreRange },
+                ],
+              } satisfies Prisma.RawLeadWhereInput,
+            ]
+          : []),
+        ...(query.q
+          ? [
+              {
+                OR: [
+                  { razaoSocial: { contains: query.q, mode: 'insensitive' } },
+                  { cnaePrincipal: { contains: query.q, mode: 'insensitive' } },
+                  { cnaeDescricao: { contains: query.q, mode: 'insensitive' } },
+                ],
+              } satisfies Prisma.RawLeadWhereInput,
+            ]
+          : []),
+      ],
     };
 
     const [items, total] = await Promise.all([
@@ -218,6 +239,23 @@ export class RawLeadService {
     return tx.rawLead.update({
       where: { id: lead.id },
       data: { status: 'descartado' },
+    });
+  }
+
+  // Classificação manual (Quente/Morno/Frio) — pedido direto do usuário,
+  // fora do §4.4 original. `tier: null` limpa a marcação e volta a usar o
+  // score automático (ver comentário em findAll sobre como o filtro
+  // considera as duas coisas juntas).
+  async setManualTier(
+    tx: TenantTx,
+    membership: MembershipContext,
+    id: string,
+    dto: UpdateLeadTierDto,
+  ): Promise<RawLead> {
+    await this.mustExist(tx, membership.workspaceId, id);
+    return tx.rawLead.update({
+      where: { id },
+      data: { manualTier: dto.tier },
     });
   }
 

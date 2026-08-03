@@ -362,6 +362,58 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
     expect(updated.score).toBe(lead.score);
   }, 15000);
 
+  it('PATCH /raw-leads/:id/tier sobrepõe a classificação automática (na leitura e no filtro)', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({
+        razaoSocial: 'Lead pra classificar na mão',
+        cnaePrincipal: '4663-0', // fora do CNAE alvo → score baixo (frio)
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
+      .expect(201);
+    const lead = created.body as { id: string; score: number };
+    expect(lead.score).toBeLessThan(45);
+
+    const patched = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/tier`)
+      .send({ tier: 'quente' })
+      .expect(200);
+    expect((patched.body as { manualTier: string }).manualTier).toBe('quente');
+
+    const quentes = await request(app.getHttpServer())
+      .get('/raw-leads?tier=quente')
+      .expect(200);
+    const quentesBody = quentes.body as { items: Array<{ id: string }> };
+    expect(quentesBody.items.map((i) => i.id)).toContain(lead.id);
+
+    const frios = await request(app.getHttpServer())
+      .get('/raw-leads?tier=frio')
+      .expect(200);
+    const friosBody = frios.body as { items: Array<{ id: string }> };
+    expect(friosBody.items.map((i) => i.id)).not.toContain(lead.id);
+
+    // tier: null limpa a marcação manual e volta pro cálculo automático.
+    const cleared = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/tier`)
+      .send({ tier: null })
+      .expect(200);
+    expect((cleared.body as { manualTier: string | null }).manualTier).toBeNull();
+  }, 15000);
+
+  it('PATCH /raw-leads/:id/tier devolve 400 pra valor fora do enum', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({ razaoSocial: 'Lead pra tier inválido', situacao: 'ATIVA', uf: 'RS' })
+      .expect(201);
+    const lead = created.body as { id: string };
+
+    await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/tier`)
+      .send({ tier: 'ardente' })
+      .expect(400);
+  }, 15000);
+
   it('GET /raw-leads/:id devolve 404 pra lead de outro workspace', async () => {
     const otherWorkspace = await prisma.workspace.create({
       data: {

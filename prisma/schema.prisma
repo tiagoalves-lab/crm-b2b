@@ -90,6 +90,15 @@ enum LeadFonte {
   manual
 }
 
+// Classificação manual (Quente/Morno/Frio) que o usuário pode atribuir a um
+// lead pra sobrepor o tier calculado por LeadScoringService#tier a partir
+// do score — mesma escala, valor opcional (NULL = usa o score automático).
+enum LeadTier {
+  quente
+  morno
+  frio
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Workspace — unidade de tenant. Toda tabela abaixo (exceto esta) carrega
 // workspace_id e tem RLS baseada em `app.current_workspace_id`.
@@ -256,6 +265,7 @@ model RawLead {
   importador        Boolean       @default(false)
   fonte             LeadFonte     @default(manual)
   score             Int           @default(0)
+  manualTier        LeadTier?     @map("manual_tier")
   status            RawLeadStatus @default(novo)
   promotedCompanyId String?       @map("promoted_company_id") @db.Uuid
   createdAt         DateTime      @default(now()) @map("created_at")

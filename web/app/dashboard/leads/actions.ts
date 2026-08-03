@@ -12,10 +12,12 @@ import {
   discardLead,
   importRawLeadsSpreadsheet,
   rescoreLeads,
+  updateLeadTier,
   type BulkResult,
   type ImportResult,
+  type ScoreTier,
 } from "@/lib/api/raw-leads";
-import type { LeadFonte } from "@/lib/api/types";
+import type { LeadFonte, RawLead } from "@/lib/api/types";
 
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   const str = value ? String(value).trim() : "";
@@ -124,6 +126,23 @@ export async function bulkDiscardLeadsAction(
     return { ok: true, data: result };
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao descartar os leads selecionados.") };
+  }
+}
+
+// Classificação manual (Quente/Morno/Frio) editada direto na linha da
+// tabela — RPC via Server Action (mesmo padrão de bulkApprove/rescore),
+// não <form action>: precisa devolver o lead atualizado sem navegar.
+export async function setLeadTierAction(
+  id: string,
+  tier: ScoreTier | null,
+): Promise<ActionResult<RawLead>> {
+  const token = await getServerAccessToken();
+  try {
+    const result = await updateLeadTier(token, id, tier);
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao classificar o lead.") };
   }
 }
 

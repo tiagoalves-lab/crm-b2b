@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { listRawLeads, scoreTier, type ScoreTier } from "@/lib/api/raw-leads";
+import { effectiveTier, listRawLeads, type ScoreTier } from "@/lib/api/raw-leads";
 import ImportSpreadsheetForm from "./import-spreadsheet-form";
 import LeadsTable from "./leads-table";
 import RescoreButton from "./rescore-button";
@@ -21,15 +21,15 @@ export default async function LeadsPage({
     listRawLeads(token, { status: "descartado", pageSize: 1 }),
   ]);
 
-  const quenteCount = novos.filter((r) => scoreTier(r.score) === "quente").length;
-  const mornoCount = novos.filter((r) => scoreTier(r.score) === "morno").length;
-  const frioCount = novos.filter((r) => scoreTier(r.score) === "frio").length;
+  const quenteCount = novos.filter((r) => effectiveTier(r) === "quente").length;
+  const mornoCount = novos.filter((r) => effectiveTier(r) === "morno").length;
+  const frioCount = novos.filter((r) => effectiveTier(r) === "frio").length;
 
   const currentTier: TierFilter = tier === "quente" || tier === "morno" || tier === "frio" ? tier : "todos";
   const search = (q ?? "").trim().toLowerCase();
 
   const rows = novos
-    .filter((r) => currentTier === "todos" || scoreTier(r.score) === currentTier)
+    .filter((r) => currentTier === "todos" || effectiveTier(r) === currentTier)
     .filter(
       (r) =>
         !search ||

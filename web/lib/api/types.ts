@@ -202,6 +202,7 @@ export interface SalesHistory {
 
 export type RawLeadStatus = "novo" | "aprovado" | "descartado";
 export type LeadFonte = "econodata" | "apify" | "comexstat" | "manual";
+export type LeadTier = "quente" | "morno" | "frio";
 
 export interface RawLead {
   id: string;
@@ -216,6 +217,7 @@ export interface RawLead {
   importador: boolean;
   fonte: LeadFonte;
   score: number;
+  manualTier: LeadTier | null;
   status: RawLeadStatus;
   promotedCompanyId: string | null;
   createdAt: string;

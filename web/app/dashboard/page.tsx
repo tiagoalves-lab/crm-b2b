@@ -112,7 +112,7 @@ export default async function DashboardPage() {
             <div className="kpi-delta up">▲ {ganhasNoMes.length} fechada(s)</div>
           </div>
           <Link href="/dashboard/leads" className="stat-tile purple" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
-            <div className="stat-label">Fila de triagem</div>
+            <div className="stat-label">Fila de qualificação</div>
             <div className="stat-value">{leadsNovos.length}</div>
             <div className={leadsNovos.length > 0 ? "kpi-delta down" : "kpi-delta"}>
               {leadsNovos.length > 0 ? "⚠ leads a qualificar" : "fila zerada"}

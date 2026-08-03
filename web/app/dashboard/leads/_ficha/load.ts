@@ -2,6 +2,7 @@ import { getMe } from "@/lib/api/me";
 import { getRawLead } from "@/lib/api/raw-leads";
 import { listActivities } from "@/lib/api/activities";
 import { listTasks } from "@/lib/api/tasks";
+import { ApiError } from "@/lib/api/client";
 
 // Carregamento compartilhado entre a versão full-page da ficha do lead
 // (leads/[id]/page.tsx, fallback de acesso direto) e a versão drawer
@@ -10,11 +11,34 @@ export async function loadLeadFicha(token: string, leadId: string) {
   const [me, lead] = await Promise.all([getMe(token), getRawLead(token, leadId)]);
 
   const companyId = lead.promotedCompanyId;
-  const [{ items: activities }, { items: tasks }] = companyId
-    ? await Promise.all([listActivities(token, { companyId }), listTasks(token, { companyId })])
-    : [{ items: [] }, { items: [] }];
+  let activities: Awaited<ReturnType<typeof listActivities>>["items"] = [];
+  let tasks: Awaited<ReturnType<typeof listTasks>>["items"] = [];
+  let accessRestricted = false;
 
-  return { me, lead, companyId, activities, tasks };
+  if (companyId) {
+    try {
+      const [act, tsk] = await Promise.all([
+        listActivities(token, { companyId }),
+        listTasks(token, { companyId }),
+      ]);
+      activities = act.items;
+      tasks = tsk.items;
+    } catch (error) {
+      // A empresa por trás do lead ainda não tem responsável atribuído —
+      // manager/sales_rep não enxergam histórico/tarefas dela (regra de
+      // PolicyService), diferente do raw_lead em si, que é "área comum".
+      // Não deixa a ficha inteira quebrar (era um 404 não tratado que
+      // derrubava o Server Component inteiro) — degrada pras abas
+      // mostrarem um aviso em vez de estourar exceção.
+      if (error instanceof ApiError && error.status === 404) {
+        accessRestricted = true;
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return { me, lead, companyId, activities, tasks, accessRestricted };
 }
 
 export type LeadFicha = Awaited<ReturnType<typeof loadLeadFicha>>;

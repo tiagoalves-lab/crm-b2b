@@ -12,6 +12,7 @@ dist/
 # next.js (web/)
 .next/
 web/next-env.d.ts
+web/tsconfig.tsbuildinfo
 
 # deploy CLIs (config local de link do projeto, não segredo mas não deve
 # ser versionado — cada máquina/deploy linka o seu)

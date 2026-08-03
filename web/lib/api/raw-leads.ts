@@ -11,6 +11,14 @@ export function scoreTier(score: number): ScoreTier {
   return "frio";
 }
 
+// Tier "de verdade" pra exibir/filtrar: a classificação manual (quando o
+// usuário define uma) sobrepõe o cálculo automático por score — mesma
+// regra que o backend aplica no filtro de GET /raw-leads (ver
+// RawLeadService#findAll).
+export function effectiveTier(lead: Pick<RawLead, "score" | "manualTier">): ScoreTier {
+  return lead.manualTier ?? scoreTier(lead.score);
+}
+
 // Espelha LeadScoringService#score no backend — só o texto explicativo
 // (score.reasons), pra exibir o tooltip "ⓘ" e a aba "Dados do lead"
 // (SPEC-CRM-GAMA.md §4.4, protótipo: score-why/kv "Cálculo"). O `score`
@@ -88,6 +96,20 @@ export function discardLead(token: string, id: string): Promise<RawLead> {
   return apiFetch<RawLead>(`/raw-leads/${id}/discard`, {
     method: "POST",
     token,
+  });
+}
+
+// Classificação manual (Quente/Morno/Frio) — tier: null limpa a marcação e
+// volta a usar o cálculo automático por score.
+export function updateLeadTier(
+  token: string,
+  id: string,
+  tier: ScoreTier | null,
+): Promise<RawLead> {
+  return apiFetch<RawLead>(`/raw-leads/${id}/tier`, {
+    method: "PATCH",
+    token,
+    body: { tier },
   });
 }
 

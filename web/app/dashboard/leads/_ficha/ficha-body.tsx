@@ -1,5 +1,5 @@
 import type { Activity } from "@/lib/api/types";
-import { scoreReasons, scoreTier } from "@/lib/api/raw-leads";
+import { effectiveTier, scoreReasons } from "@/lib/api/raw-leads";
 import type { LeadFicha } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
 import { createNoteAction } from "../../empresas/actions";
@@ -40,16 +40,16 @@ function ActivityItem({ activity, currentUserId }: { activity: Activity; current
 // gama-crm-mvp.html) — compartilhado entre a versão drawer e a versão
 // full-page.
 export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string }) {
-  const { me, lead, companyId, activities, tasks } = data;
+  const { me, lead, companyId, activities, tasks, accessRestricted } = data;
   const currentAba = currentAbaOf(aba);
   const abaHref = (a: string) => `/dashboard/leads/${lead.id}?aba=${a}`;
-  const tier = scoreTier(lead.score);
+  const tier = effectiveTier(lead);
   const isNovo = lead.status === "novo";
 
   if (currentAba === "timeline") {
     return (
       <>
-        {companyId && (
+        {companyId && !accessRestricted && (
           <div className="add-note">
             <form action={createNoteAction}>
               <input type="hidden" name="companyId" value={companyId} />
@@ -75,13 +75,17 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
             </form>
           </div>
         )}
-        <div className="timeline">
-          {activities.length > 0 ? (
-            activities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} />)
-          ) : (
-            <p className="empty">Nenhum contato registrado ainda. Use o campo acima para anotar a primeira conversa.</p>
-          )}
-        </div>
+        {accessRestricted ? (
+          <p className="empty">Sem acesso ao histórico desta empresa (ainda não tem responsável atribuído).</p>
+        ) : (
+          <div className="timeline">
+            {activities.length > 0 ? (
+              activities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} />)
+            ) : (
+              <p className="empty">Nenhum contato registrado ainda. Use o campo acima para anotar a primeira conversa.</p>
+            )}
+          </div>
+        )}
       </>
     );
   }
@@ -89,7 +93,7 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
   if (currentAba === "tarefas") {
     return (
       <>
-        {companyId && (
+        {companyId && !accessRestricted && (
           <form action={createTaskAction} className="form-grid" style={{ marginBottom: 14 }}>
             <input type="hidden" name="companyId" value={companyId} />
             <input type="hidden" name="back" value={abaHref("tarefas")} />
@@ -106,7 +110,9 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
             </button>
           </form>
         )}
-        {tasks.length > 0 ? (
+        {accessRestricted ? (
+          <p className="empty">Sem acesso às tarefas desta empresa (ainda não tem responsável atribuído).</p>
+        ) : tasks.length > 0 ? (
           tasks.map((t) => (
             <div key={t.id} className="drawer-list-item">
               <div>

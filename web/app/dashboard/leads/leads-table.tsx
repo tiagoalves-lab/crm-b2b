@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { RawLead } from "@/lib/api/types";
-import { scoreReasons, scoreTier, type ScoreTier } from "@/lib/api/raw-leads";
-import { approveOneLeadAction, bulkApproveLeadsAction, bulkDiscardLeadsAction, discardOneLeadAction } from "./actions";
+import { effectiveTier, scoreReasons, scoreTier, type ScoreTier } from "@/lib/api/raw-leads";
+import { approveOneLeadAction, bulkApproveLeadsAction, bulkDiscardLeadsAction, discardOneLeadAction, setLeadTierAction } from "./actions";
 
 const TIER_COLOR: Record<ScoreTier, string> = {
   quente: "var(--green)",
@@ -22,6 +22,7 @@ export default function LeadsTable({ rows }: { rows: RawLead[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tierBusy, setTierBusy] = useState<Set<string>>(new Set());
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -37,7 +38,25 @@ export default function LeadsTable({ rows }: { rows: RawLead[] }) {
   }
 
   function selectQuentes() {
-    setSelected(new Set(rows.filter((r) => scoreTier(r.score) === "quente").map((r) => r.id)));
+    setSelected(new Set(rows.filter((r) => effectiveTier(r) === "quente").map((r) => r.id)));
+  }
+
+  // Classificação manual — "" limpa a marcação e volta pro score
+  // automático (ver setLeadTierAction/RawLeadService#setManualTier).
+  async function handleTierChange(id: string, value: string) {
+    const tier = value === "" ? null : (value as ScoreTier);
+    setTierBusy((prev) => new Set(prev).add(id));
+    const res = await setLeadTierAction(id, tier);
+    setTierBusy((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (!res.ok) {
+      setError(res.message);
+      return;
+    }
+    router.refresh();
   }
 
   async function runBulk(action: typeof bulkApproveLeadsAction) {
@@ -101,7 +120,7 @@ export default function LeadsTable({ rows }: { rows: RawLead[] }) {
           </thead>
           <tbody>
             {rows.map((lead) => {
-              const tier = scoreTier(lead.score);
+              const tier = effectiveTier(lead);
               return (
                 <tr key={lead.id} className={selected.has(lead.id) ? "triage-row picked" : "triage-row"}>
                   <td className="checkcol">
@@ -140,6 +159,18 @@ export default function LeadsTable({ rows }: { rows: RawLead[] }) {
                         ⓘ
                       </span>
                     </div>
+                    <select
+                      value={lead.manualTier ?? ""}
+                      disabled={tierBusy.has(lead.id)}
+                      onChange={(e) => void handleTierChange(lead.id, e.target.value)}
+                      title="Classificação manual — sobrepõe o cálculo automático por score"
+                      style={{ marginTop: 6 }}
+                    >
+                      <option value="">Automático ({scoreTier(lead.score)})</option>
+                      <option value="quente">Quente</option>
+                      <option value="morno">Morno</option>
+                      <option value="frio">Frio</option>
+                    </select>
                   </td>
                   <td style={{ textAlign: "right" }}>
                     <div className="cell-actions" style={{ justifyContent: "flex-end" }}>

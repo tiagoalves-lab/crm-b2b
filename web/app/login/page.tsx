@@ -11,7 +11,7 @@ export default async function LoginPage({
     <main className="auth-shell">
       <div className="auth-card">
         <img
-          src="/logo-gama-dark.svg"
+          src="/logo-gama.svg"
           alt="Gama Brasil"
           className="auth-logo"
           width={138}

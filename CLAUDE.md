@@ -7,6 +7,47 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 
 ## Retomando a sessão (última atualização: 2026-08-03)
 
+**ATUALIZAÇÃO (2026-08-03, sessão seguinte) — tema mudou de escuro pra
+claro, a pedido do usuário.** A decisão anterior ("dark é o único tema,
+sem variante clara — igual ao protótipo", registrada mais abaixo) foi
+revertida por pedido explícito. Fluxo usado (repetível se pedirem prévia
+de novo antes de decidir): editei as variáveis de cor do `:root` em
+`web/app/globals.css` (mesmos nomes de variável, só os valores viraram
+claros — paleta antiga comentada no próprio arquivo pra referência) e
+publiquei como **deploy de preview da Vercel** (`vercel deploy`, sem
+`--prod`) — isso gera uma URL separada sem tocar a produção, dá pra
+aprovar ou descartar sem risco. Só depois do usuário confirmar
+("perfeito, pode fazer o deploy") promovi com `vercel --prod`.
+**Gotcha real**: os deploys de preview desse projeto vinham dando 500
+(`MIDDLEWARE_INVOCATION_FAILED`) porque `NEXT_PUBLIC_SUPABASE_URL`/
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`/`NEXT_PUBLIC_API_URL` só estavam
+configuradas no ambiente **Production** da Vercel, nunca no **Preview**
+— o `middleware.ts` (checa sessão em todo request) recebia essas
+variáveis vazias e quebrava. Ao tentar copiar os valores de Production
+pra Preview via `vercel env pull`, a Vercel devolveu só o placeholder
+`"[SENSITIVE]"` (variáveis marcadas "Sensitive" nunca podem ser lidas de
+volta depois de criadas, nem por mim nem pelo dono do projeto) — isso
+causou uma primeira rodada de correção errada (gravei o placeholder
+literal como valor). Corrigido usando os valores reais do
+`web/.env.local` do próprio projeto (nunca exibidos no chat) pra
+configurar o ambiente Preview corretamente. **Se isso vier a acontecer
+de novo**: `vercel env ls` mostra em quais ambientes cada variável
+existe; se Preview estiver faltando, não dá pra usar `env pull` pra
+copiar de Production (trava em "[SENSITIVE]") — pegar o valor real de
+uma fonte confiável local (`.env.local`) ou pedir pro usuário adicionar
+via dashboard da Vercel (lá dá pra só marcar "Preview" como ambiente
+adicional de uma variável já existente, sem precisar redigitar o valor).
+Também achei e corrigi um `background: rgba(20, 24, 29, 0.85)` fixo no
+`.topbar` (não usava variável, só esse componente ficou escuro depois da
+troca de paleta) e troquei a logo: `logo-gama-dark.svg` (texto branco,
+pro fundo escuro antigo) por `logo-gama.svg` (texto `#020a26`, já
+existia em `web/public/`, nunca tinha sido usada — idêntica ao arquivo
+que o usuário anexou no chat, não precisei salvar nada novo) em
+`web/app/login/page.tsx` e `web/app/dashboard/layout.tsx`. **Publicado
+em produção** (`vercel --prod`) depois da aprovação. **Não commitado**
+— soma ao diff pendente de sempre (regra do projeto: commit só quando
+pedido à parte).
+
 **ATUALIZAÇÃO (2026-08-03) — todo o diff acumulado das sessões abaixo
 (reconstrução do frontend, importação de leads por planilha, histórico
 de vendas, anexos/comentários no pipeline) foi commitado e enviado pro
@@ -160,8 +201,10 @@ mas ainda não commitada no git** — ver pendência específica lá.
   tinham sido portados (cards de KPI sem borda colorida, sidebar sem
   ícones/badges, layout com `max-width` limitando a largura). Corrigido:
   `web/app/globals.css` reescrito mapeando a paleta e os componentes do
-  `gama-crm-mvp.html` 1:1 (dark é o único tema agora, sem variante
-  clara — igual ao protótipo). Sidebar ganhou ícones SVG (copiados do
+  `gama-crm-mvp.html` 1:1 (dark era o único tema nessa época, sem
+  variante clara — igual ao protótipo; **revertido em 2026-08-03, ver
+  atualização no topo deste arquivo** — o site foi pro tema claro por
+  pedido do usuário). Sidebar ganhou ícones SVG (copiados do
   protótipo) + badges de contagem ao vivo (leads novos, oportunidades
   abertas, tarefas pendentes, empresas) + papel do membro no rodapé.
   Fora de escopo deliberado: topbar fixo com blur do protótipo — exigiria

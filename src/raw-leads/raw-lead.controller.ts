@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -17,6 +18,7 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { BulkRawLeadsDto } from './dto/bulk-raw-leads.dto';
 import { CreateRawLeadDto } from './dto/create-raw-lead.dto';
 import { ListRawLeadsQueryDto } from './dto/list-raw-leads-query.dto';
+import { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
 import { RawLeadService } from './raw-lead.service';
 
 @Controller('raw-leads')
@@ -127,6 +129,18 @@ export class RawLeadController {
     return this.tenantContext.run(
       { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
       (tx) => this.rawLeads.approve(tx, membership, id),
+    );
+  }
+
+  @Patch(':id/tier')
+  setTier(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLeadTierDto,
+  ) {
+    return this.tenantContext.run(
+      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      (tx) => this.rawLeads.setManualTier(tx, membership, id, dto),
     );
   }
 

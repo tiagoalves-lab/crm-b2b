@@ -1,5 +1,5 @@
 import { getServerAccessToken } from "@/lib/api/auth";
-import { scoreTier } from "@/lib/api/raw-leads";
+import { effectiveTier } from "@/lib/api/raw-leads";
 import { loadLeadFicha } from "@/app/dashboard/leads/_ficha/load";
 import FichaTabs from "@/app/dashboard/leads/_ficha/ficha-tabs";
 import FichaBody from "@/app/dashboard/leads/_ficha/ficha-body";
@@ -17,7 +17,7 @@ export default async function LeadFichaDrawer({
   const token = await getServerAccessToken();
   const data = await loadLeadFicha(token, id);
   const { lead, activities, tasks } = data;
-  const tier = scoreTier(lead.score);
+  const tier = effectiveTier(lead);
 
   return (
     <OverlayDrawer
