@@ -5,7 +5,17 @@ Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
 `geracao-qualificacao-leads.md` (módulo de leads), `seguranca.md`
 (segurança — leia antes de tocar em `web/` ou em endpoints do backend).
 
-## Retomando a sessão (última atualização: 2026-08-01)
+## Retomando a sessão (última atualização: 2026-08-03)
+
+**ATUALIZAÇÃO (2026-08-03) — todo o diff acumulado das sessões abaixo
+(reconstrução do frontend, importação de leads por planilha, histórico
+de vendas, anexos/comentários no pipeline) foi commitado e enviado pro
+GitHub** (commit `b01256c`, branch `master`, remoto
+`tiagoalves-lab/crm-b2b`). As menções a "não commitado"/"NÃO commitado"
+mais abaixo neste arquivo são histórico de quando cada trabalho foi
+feito — a pendência de commit em si **não existe mais**. O menu
+"Leads" também foi renomeado pra "Prospecção" nessa mesma leva
+(`dashboard-nav.tsx`) e publicado na Vercel.
 
 **HANDOFF — as 9 fatias do `SPEC-CRM-GAMA.md` estão implementadas,
 commitadas, testadas (70 unit + 111 e2e, tudo verde) e publicadas** nas
