@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { Opportunity, OpportunityStatus, PaginatedResult } from "./types";
+import type { Opportunity, OpportunityStatus, OpportunityWithDetails, PaginatedResult } from "./types";
 
 export function listOpportunities(
   token: string,
@@ -12,8 +12,8 @@ export function listOpportunities(
   });
 }
 
-export function getOpportunity(token: string, id: string): Promise<Opportunity> {
-  return apiFetch<Opportunity>(`/opportunities/${id}`, { token });
+export function getOpportunity(token: string, id: string): Promise<OpportunityWithDetails> {
+  return apiFetch<OpportunityWithDetails>(`/opportunities/${id}`, { token });
 }
 
 export function deleteOpportunity(token: string, id: string): Promise<Opportunity> {

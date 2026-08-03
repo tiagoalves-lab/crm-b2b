@@ -1,6 +1,8 @@
 import { LeadFonte } from '@prisma/client';
 import {
+  IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
@@ -61,4 +63,32 @@ export class CreateRawLeadDto {
   @IsOptional()
   @IsEnum(LeadFonte)
   fonte?: LeadFonte;
+
+  // Campos abaixo não existem em RawLead — só alimentam a Company criada
+  // junto (ver RawLeadService#create). Vieram junto com a importação por
+  // planilha (SPEC além do §4.4 original), mas o form manual também pode
+  // preencher se quiser.
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  fantasia?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  emails?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fones?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  socios?: string[];
+
+  @IsOptional()
+  @IsDateString()
+  dtAbertura?: string;
 }

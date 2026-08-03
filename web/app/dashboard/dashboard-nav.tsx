@@ -72,7 +72,7 @@ interface NavCounts {
 // originais, mesmo padrão do protótipo de grupo com um item só (Análise).
 const items = [
   { href: "/dashboard", label: "Painel", group: "Comercial", icon: "painel", count: undefined },
-  { href: "/dashboard/leads", label: "Leads", group: "Comercial", icon: "leads", count: "leads" as const },
+  { href: "/dashboard/leads", label: "Prospecção", group: "Comercial", icon: "leads", count: "leads" as const },
   { href: "/dashboard/pipeline", label: "Pipeline", group: "Comercial", icon: "pipeline", count: "pipeline" as const },
   { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" as const },
   { href: "/dashboard/empresas", label: "Empresas", group: "Cadastros", icon: "empresas", count: "empresas" as const },

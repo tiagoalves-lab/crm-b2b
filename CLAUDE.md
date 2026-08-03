@@ -349,6 +349,107 @@ como a sessão anterior foi encerrada — backend em `:3001`, frontend
 tipicamente em `:3002` (não `:3000`, que costuma já estar ocupado por
 processo antigo; checar com `netstat` antes de assumir a porta).
 
+- **2026-08-01 — Importação de leads por planilha (CSV/Excel) + carga
+  real do crawler.** Pedido direto do usuário, fora do SPEC original
+  (§9 já previa "ingestão automática" como fase seguinte). `RawLeadService`
+  ganhou `importSpreadsheet()` + `POST /raw-leads/import` (multipart,
+  `FileInterceptor`, limite 10MB) reaproveitando o mesmo `create()` do
+  form manual linha a linha — erro em uma linha não derruba as outras,
+  volta `{ total, imported, errors: [{row, reason}] }`. Parsing/DE-PARA
+  isolado em `src/raw-leads/spreadsheet-import.util.ts` (testado,
+  `spreadsheet-import.util.spec.ts`, dados fictícios): aceita headers
+  "Empresa/Razão Social", "Fantasia", "Cidade/Município", "UF",
+  "Telefone"/"Telefone 2" (descarta placeholder só-zero), "Email
+  (Receita)" (valida formato), "Porte" (EPP→PEQUENO, Demais→MÉDIO —
+  decisão do usuário, já que o score só distingue GRANDE/MÉDIO
+  explicitamente), "Socios (QSA)" (vira `Company.customFields.socios`,
+  split por `|`), "CNAE", "Abertura" (`YYYYMMDD`→`Company.dtCad`). Sem
+  coluna de situação cadastral na planilha, assume `ATIVA` (decisão do
+  usuário: crawler já filtra só ativas antes de gerar a planilha, não
+  faz sentido penalizar todo mundo em -20 no score por falta do dado).
+  Fonte fica no default `manual` do DTO — usuário decidiu não criar
+  enum novo pra "crawler CNPJ" (`LeadFonte` seguiu com
+  econodata/apify/comexstat/manual, sem migration). `CreateRawLeadDto`
+  ganhou campos opcionais `fantasia/emails/fones/socios/dtAbertura` que
+  só alimentam a `Company` criada junto (não existem em `RawLead`) — o
+  form manual de "Importar lead manualmente" continua funcionando igual,
+  esses campos são opcionais. Parser usa `exceljs` (não `xlsx`/SheetJS —
+  tem CVE de prototype pollution + ReDoS não corrigido no pacote do npm;
+  `exceljs` foi a escolha por não ter vulnerabilidade direta no caminho
+  de parsing, mesmo pesando mais em node_modules). UI: novo
+  `+ Importar planilha` em `/dashboard/leads` (`import-spreadsheet-form.tsx`,
+  client component — mostra quantas linhas importaram e a lista de erros
+  por linha depois do upload). **Carga real executada**: 149 empresas do
+  arquivo "Crawler CNPJ Gama" (`Downloads/`, nunca commitado nem colado
+  em chat/doc — só os totais ficam aqui) foram injetadas direto via
+  script Node ad-hoc (fora do repo, `scratchpad` da sessão, descartável)
+  que reusa o `dist/` compilado do mesmo parser+scoring, porque ainda
+  não existe nenhum `Membership` real no workspace (ninguém logou —
+  mesma limitação de sempre) — o script abre uma transação Prisma e seta
+  manualmente as mesmas variáveis de sessão que `TenantContextService`
+  injetaria (`app.current_workspace_id`/`app.current_user_id`/
+  `"app.current_role"='owner'`), sem bypassar RLS de verdade, só sem o
+  Nest no meio. `Company.ownerUserId` ficou `NULL` nas 149 (sem usuário
+  real pra atribuir ainda) — a policy de papel aceita porque a sessão
+  usou `role='owner'`. Resultado: 149/149 `RawLead` + `Company` (tag
+  `lead-triagem`) criadas, confirmado por query pós-import. Build +
+  74+8=82 unit tests verdes (backend) e build limpo (frontend) antes do
+  deploy. Publicado: `railway up` + `vercel --prod` (mesmo par sempre
+  junto, contrato DTO mudou). **Não commitado** — pedido à parte, como
+  sempre; soma-se ao diff já pendente da reconstrução do frontend
+  (seção acima).
+
+- **2026-08-02 — Anexos + chat nos cards do Pipeline, e "gerar tarefa" a
+  partir do card.** Feature nova, fora do SPEC-CRM-GAMA.md original
+  (confirmado com o usuário: "isso não está no projeto original"). Mirror
+  1:1 do que já existia pra Tarefas (Fatia 3/8): `OpportunityComment` e
+  `OpportunityAttachment` novos no schema (migration
+  `20260802000000_opportunity_attachments_comments`, RLS por subquery via
+  `opportunities.workspace_id`, mesmo padrão de `task_comments`/
+  `task_attachments` — não replica a policy por papel de `opportunities`,
+  visibilidade continua garantida em `OpportunityService.mustBeVisible`).
+  **Decisão de infra**: reaproveitado o bucket `task-attachments` já
+  existente no Supabase Storage, com prefixo de path `opportunities/` em
+  vez de criar bucket novo — a segurança nunca esteve numa policy de
+  `storage.objects` por bucket (só `service_role` acessa), então não
+  precisou de nenhuma ação manual no painel do Supabase.
+  `OpportunityService.mustBeVisible` virou público (era `private`) pros
+  novos `OpportunityAttachmentService`/`OpportunityCommentService`
+  chamarem, mesmo padrão de `TaskService`. `GET /opportunities/:id`
+  passou a embutir `comments` (anexos continuam em endpoint próprio,
+  igual Task). Novos módulos:
+  `src/opportunities/opportunity-{attachment,comment}.{service,controller}.ts`.
+  Frontend: `pipeline/_detail/detail-body.tsx` ganhou `DetailBody`
+  (`DetailKv` + seção Anexos + seção Comentários, cópia direta da seção
+  equivalente de `tarefas/_detail/detail-body.tsx`, mesmas classes CSS
+  `.attach-*`/`.chat-*` — já eram genéricas); modal do card ganhou `wide`.
+  **"Gerar tarefa" a partir do card**: `tarefas/nova/nova-form.tsx` ganhou
+  props opcionais `lockedOpportunityId`/`lockedLabel` (esconde os
+  `<select>` de Empresa/Oportunidade e trava o vínculo) — reusado em duas
+  rotas novas, `pipeline/[id]/nova-tarefa` (fallback) e
+  `@modal/(.)pipeline/[id]/nova-tarefa` (modal, botão "+ Gerar tarefa" no
+  rodapé do card). Tarefa criada por esse caminho aparece no board de
+  Tarefas automaticamente — não foi preciso nenhuma sincronização nova,
+  todo `Task` com `dueAt` já lista lá (confirmado com o usuário via
+  pergunta direta antes de implementar, pra não inventar uma feature de
+  "prazo de oportunidade aparece em Tarefas" que não foi pedida).
+  **Fora de escopo deliberado**: não criei UI de "tarefas vinculadas a
+  esta oportunidade" dentro do card (só a ação de gerar) nem badge de
+  contagem de anexo/comentário no board (Kanban) — só no modal de
+  detalhe. **Verificação**: 92 unit + 116 e2e passando (backend, 3 specs
+  novos: `opportunity-attachment.service.spec.ts`,
+  `opportunity-comment.service.spec.ts`, bloco novo em
+  `test/opportunities.e2e-spec.ts`), migration aplicada contra o
+  Supabase real, build limpo (frontend e backend), checklist de
+  segurança limpo. Publicado: `railway up` + `vercel --prod`. **Não
+  testado no navegador** (mesma limitação de sempre, sem credencial
+  disponível) — prioridade de teste manual quando alguém logar: abrir um
+  card do Pipeline, anexar um arquivo, comentar, e clicar "+ Gerar
+  tarefa" confirmando que a tarefa nova aparece em `/dashboard/tarefas`
+  com o vínculo certo. **Não commitado** — soma-se ao diff já pendente
+  da reconstrução do frontend e da importação de leads por planilha
+  (pedido de commit continua sendo à parte, regra do projeto).
+
 ## Comunicação
 
 Instrução explícita do usuário (2026-07-27): **responder sempre em

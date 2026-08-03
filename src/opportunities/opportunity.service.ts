@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import type {
   Opportunity,
+  OpportunityComment,
   OpportunityStatus,
   Prisma,
   Stage,
@@ -30,6 +31,13 @@ const ALLOWED_TRANSITIONS: Record<OpportunityStatus, OpportunityStatus[]> = {
   open: ['won', 'lost'],
   won: ['open'],
   lost: ['open'],
+};
+
+// Comentários do card (feature nova, ver OpportunityCommentService) —
+// embutidos em findOne, mesmo padrão de TaskWithDetails. Anexos ficam de
+// fora (endpoint próprio), igual Task.
+export type OpportunityWithDetails = Opportunity & {
+  comments: OpportunityComment[];
 };
 
 @Injectable()
@@ -144,12 +152,16 @@ export class OpportunityService {
     return rows.map((r) => r.id);
   }
 
-  findOne(
+  async findOne(
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
-  ): Promise<Opportunity> {
-    return this.mustBeVisible(tx, membership, id);
+  ): Promise<OpportunityWithDetails> {
+    await this.mustBeVisible(tx, membership, id);
+    return tx.opportunity.findUniqueOrThrow({
+      where: { id },
+      include: { comments: { orderBy: { createdAt: 'asc' } } },
+    });
   }
 
   async update(
@@ -408,7 +420,10 @@ export class OpportunityService {
     return stage;
   }
 
-  private async mustBeVisible(
+  // Público — OpportunityAttachmentService/OpportunityCommentService
+  // chamam isto pra confirmar posse antes de assinar URL/gravar
+  // comentário, mesmo padrão de TaskService.mustBeVisible.
+  async mustBeVisible(
     tx: TenantTx,
     membership: MembershipContext,
     id: string,

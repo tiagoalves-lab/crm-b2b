@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiError } from "./client";
 import type { Company, LeadFonte, PaginatedResult, RawLead, RawLeadStatus } from "./types";
 
 export type ScoreTier = "quente" | "morno" | "frio";
@@ -117,4 +117,42 @@ export function rescoreLeads(token: string): Promise<{ updated: number }> {
     method: "POST",
     token,
   });
+}
+
+export interface ImportResult {
+  total: number;
+  imported: number;
+  errors: Array<{ row: number; reason: string }>;
+}
+
+// Fora do padrão apiFetch (JSON-only) de propósito: multipart precisa que
+// o próprio fetch monte o Content-Type com boundary — se a gente setar
+// manualmente, o multer do backend não consegue parsear o arquivo.
+export async function importRawLeadsSpreadsheet(
+  token: string,
+  file: File,
+): Promise<ImportResult> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) {
+    throw new Error("NEXT_PUBLIC_API_URL não configurada.");
+  }
+
+  const body = new FormData();
+  body.append("file", file, file.name);
+
+  const res = await fetch(`${apiUrl}/raw-leads/import`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+    cache: "no-store",
+  });
+
+  const contentType = res.headers.get("content-type");
+  const data: unknown = contentType?.includes("application/json") ? await res.json() : null;
+
+  if (!res.ok) {
+    throw new ApiError(res.status, data);
+  }
+
+  return data as ImportResult;
 }

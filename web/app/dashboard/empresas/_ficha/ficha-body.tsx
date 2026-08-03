@@ -71,13 +71,17 @@ function ActivityItem({ activity, currentUserId }: { activity: Activity; current
 // moldura em volta (ver empresas/[id]/page.tsx e
 // @drawer/(.)empresas/[id]/page.tsx).
 export default function FichaBody({ data, aba }: { data: FichaData; aba?: string }) {
-  const { me, company, activities, tasks, opportunities } = data;
+  const { me, company, activities, tasks, opportunities, salesHistory } = data;
   const currentAba = currentAbaOf(aba);
   const abaHref = (a: string) => `/dashboard/empresas/${company.id}?aba=${a}`;
 
   const wonOpps = opportunities.filter((o) => o.status === "won" && !o.deletedAt);
   const openOpps = opportunities.filter((o) => o.status === "open" && !o.deletedAt);
-  const ltv = wonOpps.reduce((s, o) => s + Number(o.amount), 0);
+  // LTV soma Opportunity "won" (pipeline novo) + sales_history (histórico
+  // importado do eGestor, sem Opportunity — ver web/app/dashboard/empresas/page.tsx).
+  const ltv =
+    wonOpps.reduce((s, o) => s + Number(o.amount), 0) +
+    salesHistory.reduce((s, v) => s + Number(v.valorTotal), 0);
   const emNegociacao = openOpps.reduce((s, o) => s + Number(o.amount), 0);
   const tarefasAbertas = tasks.filter((t) => t.status === "pending").length;
   const ultimaAtividade = activities[0];

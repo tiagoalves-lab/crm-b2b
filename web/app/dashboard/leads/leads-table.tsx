@@ -85,7 +85,7 @@ export default function LeadsTable({ rows }: { rows: RawLead[] }) {
       </div>
 
       <div className="panel">
-        <table>
+        <table className="data-table">
           <thead>
             <tr>
               <th className="checkcol">

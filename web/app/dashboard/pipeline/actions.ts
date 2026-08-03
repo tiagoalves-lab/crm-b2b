@@ -1,12 +1,19 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { ApiError } from "@/lib/api/client";
 import { companyDisplayName, createCompany, lookupCnpj } from "@/lib/api/companies";
 import { createOpportunity, deleteOpportunity, updateOpportunity } from "@/lib/api/opportunities";
-import { createPipeline, createStage } from "@/lib/api/pipelines";
+import {
+  createUploadUrl,
+  deleteAttachment,
+  getDownloadUrl,
+} from "@/lib/api/opportunity-attachments";
+import { createComment, deleteComment } from "@/lib/api/opportunity-comments";
+import { createPipeline } from "@/lib/api/pipelines";
 import { approveLead } from "@/lib/api/raw-leads";
 import { searchEmpresaLead, type BuscaEmpresaLeadResult } from "@/lib/api/search";
 
@@ -21,6 +28,13 @@ function emptyToUndefined(value: FormDataEntryValue | null): string | undefined 
   return str === "" ? undefined : str;
 }
 
+// Toda action de anexo/comentário volta pra essa mesma URL (preserva o
+// card que o usuário estava editando) — mesmo padrão de backPath em
+// tarefas/actions.ts.
+function backPath(formData: FormData): string {
+  return emptyToUndefined(formData.get("back")) ?? "/dashboard/pipeline";
+}
+
 export async function createPipelineAction(formData: FormData) {
   const token = await getServerAccessToken();
   const name = String(formData.get("name") ?? "").trim();
@@ -33,23 +47,6 @@ export async function createPipelineAction(formData: FormData) {
 
   revalidatePath("/dashboard/pipeline");
   redirectWithMessage("/dashboard/pipeline", "Pipeline criado");
-}
-
-export async function createStageAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const pipelineId = String(formData.get("pipelineId"));
-  const name = String(formData.get("name") ?? "").trim();
-  const order = Number(formData.get("order") ?? 0);
-  const probability = Number(formData.get("probability") ?? 0);
-
-  try {
-    await createStage(token, pipelineId, { name, order, probability });
-  } catch (error) {
-    redirectWithError("/dashboard/pipeline", error);
-  }
-
-  revalidatePath("/dashboard/pipeline");
-  redirectWithMessage("/dashboard/pipeline", "Etapa adicionada");
 }
 
 // Devolve o resultado em vez de redirecionar no sucesso — usado via
@@ -246,4 +243,111 @@ export async function reopenAction(formData: FormData) {
 
   revalidatePath("/dashboard/pipeline");
   redirectWithMessage("/dashboard/pipeline", "Oportunidade reaberta");
+}
+
+// ---------- Comentários (feature nova, fora do SPEC-CRM-GAMA.md) ----------
+
+export async function createOpportunityCommentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const opportunityId = String(formData.get("opportunityId"));
+  const body = String(formData.get("body") ?? "").trim();
+
+  if (body) {
+    try {
+      await createComment(token, opportunityId, body);
+    } catch (error) {
+      redirectWithError(back, error);
+    }
+  }
+
+  revalidatePath("/dashboard/pipeline");
+}
+
+export async function deleteOpportunityCommentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const opportunityId = String(formData.get("opportunityId"));
+  const commentId = String(formData.get("commentId"));
+
+  try {
+    await deleteComment(token, opportunityId, commentId);
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath("/dashboard/pipeline");
+}
+
+// ---------- Anexos (feature nova, fora do SPEC-CRM-GAMA.md) ----------
+// O binário nunca passa pelo NestJS: o backend só assina a URL de
+// upload; quem faz o PUT do arquivo é este Server Action, direto no
+// Storage do Supabase — mesmo padrão de tarefas/actions.ts.
+
+export async function uploadOpportunityAttachmentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const opportunityId = String(formData.get("opportunityId"));
+  const file = formData.get("file");
+
+  if (!(file instanceof File) || file.size === 0) {
+    redirectWithError(back, new Error("Selecione um arquivo pra enviar."));
+    return;
+  }
+
+  try {
+    const { uploadUrl } = await createUploadUrl(token, opportunityId, {
+      fileName: file.name,
+      mimeType: file.type || undefined,
+      sizeBytes: file.size,
+    });
+    const bytes = await file.arrayBuffer();
+    const res = await fetch(uploadUrl, {
+      method: "PUT",
+      body: bytes,
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+    });
+    if (!res.ok) {
+      throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
+    }
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath(back);
+  redirectWithMessage(back, "Anexo adicionado");
+}
+
+export async function downloadOpportunityAttachmentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const opportunityId = String(formData.get("opportunityId"));
+  const attachmentId = String(formData.get("attachmentId"));
+
+  let url: string;
+  try {
+    const result = await getDownloadUrl(token, opportunityId, attachmentId);
+    url = result.url;
+  } catch (error) {
+    redirectWithError(back, error);
+    return;
+  }
+
+  redirect(url);
+}
+
+export async function deleteOpportunityAttachmentAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const back = backPath(formData);
+  const opportunityId = String(formData.get("opportunityId"));
+  const attachmentId = String(formData.get("attachmentId"));
+
+  try {
+    await deleteAttachment(token, opportunityId, attachmentId);
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath(back);
+  redirectWithMessage(back, "Anexo removido");
 }

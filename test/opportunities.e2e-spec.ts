@@ -18,8 +18,10 @@ const prisma = new PrismaClient();
 
 describe('OpportunityController (e2e)', () => {
   let app: INestApplication;
+  let adminApp: INestApplication;
   let workspace: { id: string };
   let membership: MembershipContext;
+  let adminMembership: MembershipContext;
   let companyId: string;
   let pipelineId: string;
   let stageAId: string;
@@ -74,9 +76,24 @@ describe('OpportunityController (e2e)', () => {
     stageBId = stageB.id;
 
     app = await createFakeAuthApp(membership);
+
+    const adminUserId = randomUUID();
+    adminMembership = await withTenant(prisma, adminUserId, workspace.id, (tx) =>
+      tx.membership.create({
+        data: {
+          workspaceId: workspace.id,
+          userId: adminUserId,
+          role: 'admin',
+          status: 'active',
+          joinedAt: new Date(),
+        },
+      }),
+    );
+    adminApp = await createFakeAuthApp(adminMembership);
   }, 30000);
 
   afterAll(async () => {
+    await adminApp.close();
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.activity.deleteMany({ where: { workspaceId: workspace.id } }),
     );
@@ -240,6 +257,47 @@ describe('OpportunityController (e2e)', () => {
     expect(statuses.filter((s) => s === 200)).toHaveLength(1);
     expect(statuses.filter((s) => s === 409)).toHaveLength(1);
   }, 15000);
+
+  describe('Card — chat de comentários (feature nova, fora do SPEC-CRM-GAMA.md)', () => {
+    let commentId: string;
+
+    it('GET /opportunities/:id inclui comments vazio', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/opportunities/${opportunityId}`)
+        .expect(200);
+      expect((res.body as { comments: unknown[] }).comments).toEqual([]);
+    });
+
+    it('POST /opportunities/:id/comments cria comentário', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/opportunities/${opportunityId}/comments`)
+        .send({ body: 'Cliente pediu desconto' })
+        .expect(201);
+      const body = res.body as { id: string; body: string };
+      expect(body.body).toBe('Cliente pediu desconto');
+      commentId = body.id;
+    });
+
+    it('GET /opportunities/:id traz o comentário criado', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/opportunities/${opportunityId}`)
+        .expect(200);
+      const comments = (res.body as { comments: { id: string }[] }).comments;
+      expect(comments.some((c) => c.id === commentId)).toBe(true);
+    });
+
+    it('CRÍTICO: outro membro (não autor) não pode remover o comentário', async () => {
+      await request(adminApp.getHttpServer())
+        .delete(`/opportunities/${opportunityId}/comments/${commentId}`)
+        .expect(403);
+    });
+
+    it('o autor remove o próprio comentário', async () => {
+      await request(app.getHttpServer())
+        .delete(`/opportunities/${opportunityId}/comments/${commentId}`)
+        .expect(204);
+    });
+  });
 
   it('DELETE soft-deleta e POST restore reverte', async () => {
     await request(app.getHttpServer())

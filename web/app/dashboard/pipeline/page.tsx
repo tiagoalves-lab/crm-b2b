@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
-import { companyDisplayName, listCompanies } from "@/lib/api/companies";
+import { companyDisplayName, getCompany, listCompanies } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
-import type { Opportunity } from "@/lib/api/types";
-import { createPipelineAction, createStageAction } from "./actions";
+import type { Company, Opportunity } from "@/lib/api/types";
+import { createPipelineAction } from "./actions";
 import PipelineBoard from "./pipeline-board";
 
 function brl(value: number, currency = "BRL"): string {
@@ -93,8 +93,26 @@ export default async function PipelinePage({
   }
 
   const stages = [...pipeline.stages].sort((a, b) => a.order - b.order);
+
+  // listCompanies pagina em 100 (web/lib/api/companies.ts) — com o
+  // workspace passando de 100 empresas (leads importados via planilha
+  // viraram company com tag lead-triagem), uma oportunidade pode apontar
+  // pra uma empresa fora dessa primeira página, e o card do Pipeline caía
+  // no fallback "—" mesmo a empresa existindo. Busca só as que faltarem
+  // (bem menos requisições que aumentar o pageSize, que voltaria a
+  // quebrar conforme a base cresce).
+  const neededCompanyIds = new Set(opportunities.map((o) => o.companyId));
+  const missingCompanyIds = [...neededCompanyIds].filter(
+    (id) => !companies.some((c) => c.id === id),
+  );
+  const missingCompanies =
+    missingCompanyIds.length > 0
+      ? await Promise.all(missingCompanyIds.map((id) => getCompany(token, id).catch(() => null)))
+      : [];
+  const allCompanies: Company[] = [...companies, ...missingCompanies.filter((c): c is Company => c !== null)];
+
   const companyName = (id: string) => {
-    const company = companies.find((c) => c.id === id);
+    const company = allCompanies.find((c) => c.id === id);
     return company ? companyDisplayName(company) : "—";
   };
 
@@ -182,35 +200,7 @@ export default async function PipelinePage({
           </div>
         </div>
 
-        <PipelineBoard stages={stages} openOpportunities={openOpps} companies={companies} currentUserId={me.user.id} />
-
-        {canManagePipeline && (
-          <details style={{ marginTop: 20 }}>
-            <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
-              + Adicionar etapa a este pipeline
-            </summary>
-            <div className="form-panel" style={{ marginTop: 8 }}>
-              <form action={createStageAction} className="form-grid">
-                <input type="hidden" name="pipelineId" value={pipeline.id} />
-                <label>
-                  Nome*
-                  <input name="name" required minLength={2} maxLength={60} />
-                </label>
-                <label>
-                  Ordem*
-                  <input name="order" type="number" required defaultValue={stages.length + 1} />
-                </label>
-                <label>
-                  Probabilidade (%)*
-                  <input name="probability" type="number" min="0" max="100" required defaultValue={50} />
-                </label>
-                <button type="submit" className="btn btn-primary">
-                  Adicionar etapa
-                </button>
-              </form>
-            </div>
-          </details>
-        )}
+        <PipelineBoard stages={stages} openOpportunities={openOpps} companies={allCompanies} currentUserId={me.user.id} />
 
         <div className="closed-section">
           <div className="closed-head">

@@ -146,6 +146,16 @@ export class CompanyService {
       workspaceId: membership.workspaceId,
       ...ownerFilter,
       deletedAt: query.includeDeleted ? undefined : null,
+      // Company-lead ainda em triagem (tag "lead-triagem", SPEC-CRM-GAMA.md
+      // §4.4) não é uma empresa de verdade até ser aprovada — mesmo
+      // critério de exclusão que a view v_busca_empresa_lead já aplica.
+      // Precisa ser filtro de query (não só no frontend, como antes):
+      // orderBy createdAt desc + paginação faz a leva mais recente de
+      // triagem (import em massa) lotar a 1ª página inteira, deixando as
+      // empresas de verdade só na 2ª página em diante — a tela de
+      // Empresas nunca busca além da 1ª (pageSize fixo), então sumiam da
+      // lista mesmo existindo no banco.
+      NOT: { tags: { has: 'lead-triagem' } },
     };
 
     const [items, total] = await Promise.all([

@@ -1,20 +1,11 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { listRawLeads, scoreTier, type ScoreTier } from "@/lib/api/raw-leads";
-import { createRawLeadAction } from "./actions";
+import ImportSpreadsheetForm from "./import-spreadsheet-form";
 import LeadsTable from "./leads-table";
 import RescoreButton from "./rescore-button";
 
 type TierFilter = "todos" | ScoreTier;
-
-const PORTES = ["GRANDE", "MÉDIO", "PEQUENO"];
-const SITUACOES = ["ATIVA", "BAIXADA", "SUSPENSA", "INAPTA", "NULA"];
-const FONTES = [
-  { value: "manual", label: "Manual" },
-  { value: "econodata", label: "Econodata" },
-  { value: "apify", label: "Apify" },
-  { value: "comexstat", label: "Comex Stat" },
-];
 
 export default async function LeadsPage({
   searchParams,
@@ -57,25 +48,19 @@ export default async function LeadsPage({
           <div className="page-title">Leads</div>
           <div className="page-sub">Caixa de entrada do crawler · scoring, tarefas e histórico</div>
         </div>
-        <RescoreButton />
+        <div style={{ display: "flex", gap: 8 }}>
+          <RescoreButton />
+          <Link href="/dashboard/leads/novo" className="btn btn-primary">
+            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Novo lead
+          </Link>
+        </div>
       </div>
 
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
-
-        <div className="panel" style={{ background: "var(--blue-soft)", borderColor: "rgba(74,159,224,.3)", marginBottom: 16 }}>
-          <div className="panel-body" style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: 12 }}>
-            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2" style={{ width: 18, height: 18, flexShrink: 0 }}>
-              <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
-            </svg>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              Estes são os leads <b>brutos</b> do crawler/Apify. A máquina pontua;{" "}
-              <b style={{ color: "var(--accent-secondary)" }}>você aprova os bons</b> — eles viram empresas (tipo lead)
-              com ficha, tarefas e histórico. Nem todo lead vira cliente, mas o histórico fica registrado. O resto fica
-              aqui, sem poluir a carteira.
-            </span>
-          </div>
-        </div>
 
         <div className="funnel-stat">
           <div className="fstat">
@@ -135,73 +120,10 @@ export default async function LeadsPage({
 
         <details style={{ marginBottom: 16 }}>
           <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
-            + Importar lead manualmente
+            + Importar planilha (CSV/Excel do crawler)
           </summary>
           <div className="form-panel" style={{ marginTop: 8 }}>
-            <form action={createRawLeadAction} className="form-grid">
-              <label>
-                Razão social*
-                <input name="razaoSocial" required maxLength={255} />
-              </label>
-              <label>
-                CNPJ
-                <input name="cnpj" maxLength={20} />
-              </label>
-              <label>
-                CNAE principal
-                <input name="cnaePrincipal" placeholder="2511-0" maxLength={10} />
-              </label>
-              <label>
-                Descrição do CNAE
-                <input name="cnaeDescricao" maxLength={255} />
-              </label>
-              <label>
-                Porte
-                <select name="porte" defaultValue="">
-                  <option value="">—</option>
-                  {PORTES.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Situação cadastral
-                <select name="situacao" defaultValue="ATIVA">
-                  {SITUACOES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                UF
-                <input name="uf" maxLength={2} placeholder="RS" />
-              </label>
-              <label>
-                Município
-                <input name="municipio" maxLength={255} />
-              </label>
-              <label>
-                Origem
-                <select name="fonte" defaultValue="manual">
-                  {FONTES.map((f) => (
-                    <option key={f.value} value={f.value}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="row-form" style={{ alignItems: "center" }}>
-                <input type="checkbox" name="importador" style={{ width: "auto" }} />
-                Importador (Comex Stat)
-              </label>
-              <button type="submit" className="btn btn-primary">
-                Adicionar à triagem
-              </button>
-            </form>
+            <ImportSpreadsheetForm />
           </div>
         </details>
 

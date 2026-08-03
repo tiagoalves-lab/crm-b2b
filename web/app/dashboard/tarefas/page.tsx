@@ -99,7 +99,7 @@ export default async function TarefasPage({
 
         {currentView === "tabela" ? (
           <div className="panel">
-            <table>
+            <table className="data-table">
               <thead>
                 <tr>
                   <th style={{ width: 40 }}></th>

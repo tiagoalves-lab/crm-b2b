@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Membership } from "@/lib/api/types";
 import type { TaskDetail } from "./load";
 import {
   completeTaskAction,
@@ -45,9 +46,17 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function memberLabel(userId: string, currentUserId: string): string {
-  if (userId === currentUserId) return "Você";
-  return userId.slice(0, 2).toUpperCase();
+// Nome de exibição do autor do comentário — sempre o nome/login real do
+// membro (GET /memberships vem enriquecido a partir do Supabase Auth, ver
+// membros/roles.ts#memberName), nunca "Você" mesmo pro autor ser o
+// usuário logado.
+function memberDisplayName(userId: string, memberships: Membership[]): string {
+  const m = memberships.find((mm) => mm.userId === userId);
+  return m?.name?.trim() || m?.login?.trim() || `${userId.slice(0, 8)}…`;
+}
+
+function initialsOf(name: string): string {
+  return name.slice(0, 2).toUpperCase();
 }
 
 // Corpo (protótipo: openTaskDetail/renderTaskDetailModal) — pill de
@@ -56,7 +65,7 @@ function memberLabel(userId: string, currentUserId: string): string {
 // não pede; feature extra da v1 removida da UI a pedido do usuário — o
 // endpoint no backend continua existindo, só não é exposto aqui).
 export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: string }) {
-  const { task, attachments, targetLabel, me } = data;
+  const { task, attachments, targetLabel, me, memberships } = data;
 
   return (
     <>
@@ -138,12 +147,14 @@ export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: str
         <div className="drawer-section-title">Comentários{task.comments.length > 0 ? ` · ${task.comments.length}` : ""}</div>
         <div className="chat-thread">
           {task.comments.length > 0 ? (
-            task.comments.map((c) => (
+            task.comments.map((c) => {
+              const authorName = memberDisplayName(c.authorUserId, memberships);
+              return (
               <div key={c.id} className="chat-msg">
-                <div className="chat-avatar">{memberLabel(c.authorUserId, me.user.id)}</div>
+                <div className="chat-avatar">{initialsOf(authorName)}</div>
                 <div className="chat-bubble">
                   <div className="chat-msg-head">
-                    <span className="chat-author">{memberLabel(c.authorUserId, me.user.id)}</span>
+                    <span className="chat-author">{authorName}</span>
                     <span className="chat-time">{fmtDateTime(c.createdAt)}</span>
                   </div>
                   <div className="chat-text">{c.body}</div>
@@ -159,7 +170,8 @@ export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: str
                   )}
                 </div>
               </div>
-            ))
+              );
+            })
           ) : (
             <div className="chat-empty">Nenhum comentário ainda. Registre o andamento da tarefa.</div>
           )}

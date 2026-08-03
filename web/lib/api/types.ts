@@ -106,6 +106,20 @@ export interface Opportunity {
   closedAt: string | null;
 }
 
+// Chat de comentários do card de Oportunidade (feature nova, fora do
+// SPEC-CRM-GAMA.md original) — mirror de TaskComment.
+export interface OpportunityComment {
+  id: string;
+  opportunityId: string;
+  authorUserId: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface OpportunityWithDetails extends Opportunity {
+  comments: OpportunityComment[];
+}
+
 export type TaskStatus = "pending" | "done";
 
 export interface TaskList {
@@ -172,6 +186,18 @@ export interface PaginatedResult<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface SalesHistory {
+  id: string;
+  companyId: string;
+  codVenda: string | null;
+  dtVenda: string;
+  // Prisma Decimal serializa como string no JSON — nunca number direto.
+  valorTotal: string;
+  situacaoOs: string | null;
+  fonte: string;
+  createdAt: string;
 }
 
 export type RawLeadStatus = "novo" | "aprovado" | "descartado";

@@ -20,7 +20,11 @@ export default async function EmpresaFichaPage({
   const token = await getServerAccessToken();
   const data = await loadFicha(token, id);
   const { company, activities, tasks, opportunities } = data;
-  const isCliente = opportunities.some((o) => o.status === "won" && !o.deletedAt);
+  // Mesmo critério da lista (web/app/dashboard/empresas/page.tsx#tipoOf):
+  // tag "cliente" (dado real da importação), não presença de Opportunity
+  // "won" — pipeline novo começou do zero, sem negócio pros clientes já
+  // existentes antes dele.
+  const isCliente = company.tags.includes("cliente");
   const currentAba = currentAbaOf(aba);
 
   return (

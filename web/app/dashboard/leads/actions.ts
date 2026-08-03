@@ -10,8 +10,10 @@ import {
   bulkDiscardLeads,
   createRawLead,
   discardLead,
+  importRawLeadsSpreadsheet,
   rescoreLeads,
   type BulkResult,
+  type ImportResult,
 } from "@/lib/api/raw-leads";
 import type { LeadFonte } from "@/lib/api/types";
 
@@ -20,9 +22,22 @@ function emptyToUndefined(value: FormDataEntryValue | null): string | undefined 
   return str === "" ? undefined : str;
 }
 
-export async function createRawLeadAction(formData: FormData) {
+export type CreateRawLeadState = { ok: true } | { ok: false; message: string };
+
+// Chamado via useActionState (lead-form.tsx), não <form action=...> direto
+// — mesmo motivo do createCompanyAction em empresas/actions.ts: devolve o
+// resultado em vez de redirecionar mesmo no sucesso, pro form fechar o
+// modal com router.back() no client (redirect() daqui de dentro não
+// derruba o slot @modal da rota interceptada).
+export async function createRawLeadAction(
+  _prevState: CreateRawLeadState | null,
+  formData: FormData,
+): Promise<CreateRawLeadState> {
   const token = await getServerAccessToken();
   const razaoSocial = String(formData.get("razaoSocial") ?? "").trim();
+  if (!razaoSocial) {
+    return { ok: false, message: "Preencha a razão social." };
+  }
 
   try {
     await createRawLead(token, {
@@ -38,11 +53,11 @@ export async function createRawLeadAction(formData: FormData) {
       fonte: (emptyToUndefined(formData.get("fonte")) as LeadFonte | undefined) ?? "manual",
     });
   } catch (error) {
-    redirectWithError("/dashboard/leads", error);
+    return { ok: false, message: actionError(error, "Erro ao adicionar o lead.") };
   }
 
   revalidatePath("/dashboard/leads");
-  redirectWithMessage("/dashboard/leads", "Lead adicionado à triagem");
+  return { ok: true };
 }
 
 export async function approveOneLeadAction(formData: FormData) {
@@ -120,5 +135,22 @@ export async function rescoreLeadsAction(): Promise<ActionResult<{ updated: numb
     return { ok: true, data: result };
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao recalcular os scores.") };
+  }
+}
+
+// Importação em massa por planilha (CSV/XLSX do crawler) — client
+// component manda o File direto (mesmo padrão de bulkApprove/rescore:
+// RPC via Server Action, não <form action>, porque precisa mostrar o
+// resultado — quantos importaram, quais linhas falharam — sem navegar).
+export async function importLeadsSpreadsheetAction(
+  file: File,
+): Promise<ActionResult<ImportResult>> {
+  const token = await getServerAccessToken();
+  try {
+    const result = await importRawLeadsSpreadsheet(token, file);
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao importar a planilha.") };
   }
 }

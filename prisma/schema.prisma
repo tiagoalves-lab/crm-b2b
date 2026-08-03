@@ -112,6 +112,7 @@ model Workspace {
   tasks         Task[]
   activities    Activity[]
   rawLeads      RawLead[]
+  salesHistory  SalesHistory[]
 
   @@map("workspaces")
 }
@@ -198,9 +199,37 @@ model Company {
   // unicidade: nada impede reprocessar/reimportar o mesmo CNPJ como lead
   // de novo depois de já ter virado empresa.
   originLeads   RawLead[]
+  salesHistory  SalesHistory[]
 
   @@index([workspaceId])
   @@map("companies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SalesHistory — histórico de vendas importado de sistema externo (eGestor),
+// separado de Opportunity de propósito: alimenta só o LTV/última compra/selo
+// Cliente na tela Empresas, não é negócio do pipeline (não tem dono, não
+// aparece no Kanban) — oportunidades "de verdade" continuam vindo só do
+// funil de vendas em Opportunity.
+// ─────────────────────────────────────────────────────────────────────────
+
+model SalesHistory {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  codVenda    String?   @map("cod_venda")
+  dtVenda     DateTime  @map("dt_venda") @db.Date
+  valorTotal  Decimal   @map("valor_total") @db.Decimal(14, 2)
+  situacaoOs  String?   @map("situacao_os")
+  fonte       String    @default("egestor")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  company   Company   @relation(fields: [companyId], references: [id])
+
+  @@index([workspaceId])
+  @@index([companyId])
+  @@map("sales_history")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -305,11 +334,48 @@ model Opportunity {
   stage          Stage      @relation(fields: [stageId], references: [id])
   tasks          Task[]
   activities     Activity[]
+  comments       OpportunityComment[]
+  attachments    OpportunityAttachment[]
 
   @@index([workspaceId])
   @@index([companyId])
   @@index([stageId])
   @@map("opportunities")
+}
+
+// Chat de comentários e anexos do card de Oportunidade (Pipeline) — mirror
+// direto de TaskComment/TaskAttachment (feature nova, fora do
+// SPEC-CRM-GAMA.md original, pedida à parte). Mesmo bucket de Storage
+// (`task-attachments`) reaproveitado com prefixo `opportunities/` — não
+// precisa de bucket novo, a fronteira de segurança é o backend, não uma
+// policy de storage.objects por bucket (ver SupabaseStorageService).
+model OpportunityComment {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId String   @map("opportunity_id") @db.Uuid
+  authorUserId  String   @map("author_user_id") @db.Uuid
+  body          String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@map("opportunity_comments")
+}
+
+model OpportunityAttachment {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId String   @map("opportunity_id") @db.Uuid
+  storagePath   String   @map("storage_path")
+  fileName      String   @map("file_name")
+  mimeType      String?  @map("mime_type")
+  sizeBytes     BigInt?  @map("size_bytes")
+  uploadedBy    String   @map("uploaded_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@map("opportunity_attachments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import { PipelineModule } from './pipelines/pipeline.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RawLeadModule } from './raw-leads/raw-lead.module';
+import { SalesHistoryModule } from './sales-history/sales-history.module';
 import { SearchModule } from './search/search.module';
 import { TaskModule } from './tasks/task.module';
 import { TenancyModule } from './tenancy/tenancy.module';
@@ -45,6 +46,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     TaskModule,
     MembershipModule,
     RawLeadModule,
+    SalesHistoryModule,
     SearchModule,
   ],
   controllers: [AppController, MeController],

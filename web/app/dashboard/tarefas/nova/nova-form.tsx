@@ -16,10 +16,17 @@ export default function NovaForm({
   taskLists,
   companies,
   opportunities,
+  lockedOpportunityId,
+  lockedLabel,
 }: {
   taskLists: TaskList[];
   companies: Company[];
   opportunities: Opportunity[];
+  // Preenchidos quando o form é aberto de dentro de um card do Pipeline
+  // ("+ Gerar tarefa") — trava o vínculo na oportunidade de origem em vez
+  // de deixar o usuário escolher de novo nos <select>.
+  lockedOpportunityId?: string;
+  lockedLabel?: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(createTaskModalAction, null);
@@ -57,37 +64,48 @@ export default function NovaForm({
             ))}
         </select>
       </label>
-      <label>
-        Empresa
-        <select name="companyId" defaultValue="">
-          <option value="">—</option>
-          {companies.map((company) => (
-            <option key={company.id} value={company.id}>
-              {companyDisplayName(company)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Oportunidade
-        <select name="opportunityId" defaultValue="">
-          <option value="">—</option>
-          {opportunities
-            .filter((opp) => !opp.deletedAt)
-            .map((opp) => {
-              const oppCompany = companies.find((c) => c.id === opp.companyId);
-              return (
-                <option key={opp.id} value={opp.id}>
-                  {oppCompany ? companyDisplayName(oppCompany) : opp.id} — {opp.currency}{" "}
-                  {Number(opp.amount).toLocaleString("pt-BR")}
+      {lockedOpportunityId ? (
+        <>
+          <input type="hidden" name="opportunityId" value={lockedOpportunityId} />
+          <div style={{ gridColumn: "1 / -1" }} className="field-hint">
+            {lockedLabel}
+          </div>
+        </>
+      ) : (
+        <>
+          <label>
+            Empresa
+            <select name="companyId" defaultValue="">
+              <option value="">—</option>
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {companyDisplayName(company)}
                 </option>
-              );
-            })}
-        </select>
-      </label>
-      <div style={{ gridColumn: "1 / -1" }} className="field-hint">
-        Escolha exatamente um vínculo (empresa OU oportunidade).
-      </div>
+              ))}
+            </select>
+          </label>
+          <label>
+            Oportunidade
+            <select name="opportunityId" defaultValue="">
+              <option value="">—</option>
+              {opportunities
+                .filter((opp) => !opp.deletedAt)
+                .map((opp) => {
+                  const oppCompany = companies.find((c) => c.id === opp.companyId);
+                  return (
+                    <option key={opp.id} value={opp.id}>
+                      {oppCompany ? companyDisplayName(oppCompany) : opp.id} — {opp.currency}{" "}
+                      {Number(opp.amount).toLocaleString("pt-BR")}
+                    </option>
+                  );
+                })}
+            </select>
+          </label>
+          <div style={{ gridColumn: "1 / -1" }} className="field-hint">
+            Escolha exatamente um vínculo (empresa OU oportunidade).
+          </div>
+        </>
+      )}
       <button type="submit" className="btn btn-primary">
         Criar tarefa
       </button>

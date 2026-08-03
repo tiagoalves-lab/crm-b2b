@@ -12,10 +12,17 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateRawLeadDto } from './dto/create-raw-lead.dto';
 import type { ListRawLeadsQueryDto } from './dto/list-raw-leads-query.dto';
 import { LeadScoringService } from './lead-scoring.service';
+import { parseLeadsSpreadsheet, type RowError } from './spreadsheet-import.util';
 
 export interface BulkResult {
   ok: string[];
   failed: Array<{ id: string; reason: string }>;
+}
+
+export interface ImportResult {
+  total: number;
+  imported: number;
+  errors: RowError[];
 }
 
 // Módulo de Leads/Triagem (SPEC-CRM-GAMA.md §4.4). Decisão de modelagem
@@ -54,6 +61,11 @@ export class RawLeadService {
       cidade: dto.municipio,
       uf: dto.uf,
       tags: ['lead-triagem'],
+      fantasia: dto.fantasia,
+      emails: dto.emails,
+      fones: dto.fones,
+      dtCad: dto.dtAbertura,
+      customFields: dto.socios?.length ? { socios: dto.socios } : undefined,
     };
     const company = await this.companies.create(tx, membership, companyDto);
 
@@ -74,6 +86,39 @@ export class RawLeadService {
         promotedCompanyId: company.id,
       },
     });
+  }
+
+  // Importação em massa via planilha (CSV/XLSX) — SPEC-CRM-GAMA.md §9
+  // (ingestão automática do crawler), fora de escopo da rodada original
+  // das 9 fatias, implementada agora a pedido direto do usuário. Reusa
+  // create() linha a linha (mesmo caminho do form manual e da mesma
+  // regra "company nasce junto com o raw_lead") — uma linha ruim não
+  // derruba as outras, erro fica reportado por número de linha.
+  async importSpreadsheet(
+    tx: TenantTx,
+    membership: MembershipContext,
+    file: { buffer: Buffer; originalname: string },
+  ): Promise<ImportResult> {
+    const { rows, errors } = await parseLeadsSpreadsheet(
+      file.buffer,
+      file.originalname,
+    );
+    const total = rows.length + errors.length;
+
+    let imported = 0;
+    for (const { row, dto } of rows) {
+      try {
+        await this.create(tx, membership, dto);
+        imported++;
+      } catch (error) {
+        errors.push({
+          row,
+          reason: error instanceof Error ? error.message : 'Erro desconhecido.',
+        });
+      }
+    }
+
+    return { total, imported, errors };
   }
 
   async findAll(
