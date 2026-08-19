@@ -19,6 +19,17 @@ export function companyDisplayName(
   );
 }
 
+// Prioriza razão social (igual ao protótipo, clienteRows() usa c.razao) —
+// usado onde a coluna precisa mostrar a razão social em vez da fantasia,
+// caindo pra companyDisplayName só se a empresa não tiver razão social
+// cadastrada (ex.: criada só com fantasia). Extraído de empresas-table.tsx
+// em 2026-08-11 pra ser reusado no Painel comercial (Ações da semana).
+export function companyRazaoSocialName(
+  company: Pick<Company, "fantasia" | "razaoSocial" | "nomeParaContato">,
+): string {
+  return company.razaoSocial?.trim() || companyDisplayName(company);
+}
+
 // Telefone chega do banco só com dígitos (import antigo não normalizou
 // pontuação). Formata só quando bate DDD+número (10 ou 11 dígitos) — pra
 // entrada fora desse padrão (dado sujo de importação), devolve como veio em
@@ -35,15 +46,80 @@ export function formatPhoneBR(phone: string | null | undefined): string | null {
   return phone;
 }
 
-export function listCompanies(
+// Busca TODAS as páginas, não só a 1ª — `GET /companies` limita
+// `pageSize` a 100 (ListQueryDto, `@Max(100)`), e esta função sempre
+// pediu só uma página com esse teto. Enquanto o total de empresas ficou
+// abaixo de 100, nunca deu pra notar — passou a truncar de verdade a
+// partir da promoção de 213 clientes do eGestor (2026-08-07,
+// docs/roadmap.md), escondendo empresa real da tela
+// sem nenhum aviso (a contagem "X de Y" também vinha errada, calculada
+// em cima da mesma lista já truncada). Todo chamador (empresas, sidebar,
+// painel, pipeline, tarefas) depende de ter a lista completa pra
+// contagem/busca/resolução de nome bater — por isso o fix é aqui, uma
+// vez, não em cada tela.
+export async function listCompanies(
   token: string,
   includeDeleted = false,
 ): Promise<PaginatedResult<Company>> {
-  const query = new URLSearchParams({ pageSize: "100" });
-  if (includeDeleted) query.set("includeDeleted", "true");
-  return apiFetch<PaginatedResult<Company>>(`/companies?${query.toString()}`, {
-    token,
-  });
+  const pageSize = 100;
+  let page = 1;
+  let items: Company[] = [];
+  let total = 0;
+
+  for (;;) {
+    const query = new URLSearchParams({ pageSize: String(pageSize), page: String(page) });
+    if (includeDeleted) query.set("includeDeleted", "true");
+    const result = await apiFetch<PaginatedResult<Company>>(`/companies?${query.toString()}`, {
+      token,
+    });
+    items = items.concat(result.items);
+    total = result.total;
+    if (items.length >= total || result.items.length === 0) break;
+    page += 1;
+  }
+
+  return { items, total, page: 1, pageSize: items.length };
+}
+
+// Resolve nome de empresa em telas que listam OUTRA coisa (tarefas,
+// atividades) e só precisam da empresa pra rotular a linha.
+//
+// Existe porque `GET /companies` esconde de propósito as empresas ainda
+// com a tag "lead-triagem" — elas não são "empresa de verdade" até serem
+// aprovadas (company.service.ts#findAll). Só que uma tarefa ou uma
+// atividade PODE apontar pra uma delas, criada antes da aprovação: aí a
+// empresa existe, o vínculo existe, mas ela não vem na lista e a coluna
+// mostra "—" como se não houvesse vínculo nenhum. `GET /companies/:id`
+// não tem esse filtro, então resolve normalmente — daí o preenchimento
+// individual só do que faltou.
+//
+// Extraído de tarefas/page.tsx em 2026-08-13: a lógica existia lá e o
+// Painel nunca recebeu a mesma correção, então "Ações da semana" e
+// "Últimas atividades" continuavam mostrando "—" para tarefa de lead em
+// triagem. Ter isto num lugar só evita a terceira cópia divergir de novo.
+export async function buildCompanyLookup(
+  token: string,
+  companies: Company[],
+  requiredIds: Iterable<string | null | undefined>,
+): Promise<Map<string, Company>> {
+  const map = new Map(companies.map((c) => [c.id, c]));
+
+  const missing = new Set<string>();
+  for (const id of requiredIds) {
+    if (id && !map.has(id)) missing.add(id);
+  }
+  if (missing.size === 0) return map;
+
+  // `.catch(() => null)` por item: uma empresa que o usuário não pode ver
+  // (404/403 pelo escopo do PolicyService) não pode derrubar a tela —
+  // degrada pra "—" naquela linha só, que é o comportamento antigo.
+  const fetched = await Promise.all(
+    [...missing].map((id) => getCompany(token, id).catch(() => null)),
+  );
+  for (const company of fetched) {
+    if (company) map.set(company.id, company);
+  }
+  return map;
 }
 
 export interface CreateCompanyInput {
@@ -51,6 +127,10 @@ export interface CreateCompanyInput {
   industry?: string;
   size?: string;
   razaoSocial?: string;
+  // Advisory — quando já sabido (ex.: veio de CnpjLookupResult), repassa
+  // pro backend confiar direto em vez de redetectar a partir de um texto
+  // que já pode estar limpo (ver CreateCompanyDto#emRecuperacaoJudicial).
+  emRecuperacaoJudicial?: boolean;
   fantasia?: string;
   nomeParaContato?: string;
   cpfCnpj?: string;
@@ -98,6 +178,10 @@ export function updateCompany(
 
 export interface CnpjLookupResult {
   razaoSocial?: string;
+  // Já detectado e removido de razaoSocial pelo backend (ver
+  // src/companies/company.service.ts#lookupCnpj) — repassar direto pra
+  // createCompany/updateCompany em vez de deixar o backend redetectar.
+  emRecuperacaoJudicial: boolean;
   fantasia?: string;
   cpfCnpj: string;
   tipo: "PJ";

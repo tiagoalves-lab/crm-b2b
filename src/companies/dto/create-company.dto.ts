@@ -1,6 +1,7 @@
 import { PessoaTipo } from '@prisma/client';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsObject,
@@ -50,6 +51,17 @@ export class CreateCompanyDto {
   @IsString()
   @MaxLength(255)
   razaoSocial?: string;
+
+  // Advisory: quando quem chama já sabe se a razão social tinha o
+  // indicativo "EM RECUPERAÇÃO JUDICIAL" (ex.: CompanyController#lookupCnpj
+  // já sanitizou o texto antes de devolver pro frontend), manda o valor
+  // aqui pra o service confiar direto em vez de tentar detectar de novo a
+  // partir de um texto que já pode estar limpo (ver
+  // src/common/sanitize-razao-social.ts#resolveRazaoSocial). Omitido: o
+  // service detecta a partir de razaoSocial normalmente.
+  @IsOptional()
+  @IsBoolean()
+  emRecuperacaoJudicial?: boolean;
 
   @IsOptional()
   @IsString()

@@ -13,13 +13,20 @@ export default async function NovoMembroModal({
   const token = await getServerAccessToken();
   const [me, members] = await Promise.all([getMe(token), listMemberships(token)]);
 
+  const canCreate =
+    me.membership.role === "owner" ||
+    me.membership.role === "admin" ||
+    me.membership.role === "manager";
+
   return (
     <OverlayModal title="Novo membro">
       {error && <div className="error-banner">{error}</div>}
-      {me.membership.role === "owner" || me.membership.role === "admin" ? (
-        <MemberForm members={members} />
+      {canCreate ? (
+        <MemberForm members={members} actorRole={me.membership.role} />
       ) : (
-        <div className="error-banner">Só owner/admin podem criar membros.</div>
+        <div className="error-banner">
+          Só owner/admin/gerente podem cadastrar membros.
+        </div>
       )}
     </OverlayModal>
   );

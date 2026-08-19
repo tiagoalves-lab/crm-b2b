@@ -1,4 +1,5 @@
 import { signIn } from "./actions";
+import SubmitButton from "@/app/_components/submit-button";
 
 export default async function LoginPage({
   searchParams,
@@ -35,7 +36,7 @@ export default async function LoginPage({
               autoComplete="current-password"
             />
           </label>
-          <button type="submit">Entrar</button>
+          <SubmitButton pendingLabel="Entrando…">Entrar</SubmitButton>
         </form>
       </div>
     </main>

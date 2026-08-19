@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,7 +9,6 @@ import type {
   Task,
   TaskChecklistItem,
   TaskComment,
-  TaskList,
 } from '@prisma/client';
 import { ActivityService } from '../activities/activity.service';
 import { assertActiveMembership } from '../common/assert-active-membership';
@@ -17,10 +17,10 @@ import { PolicyService } from '../policy/policy.service';
 import type { OwnerScopeFilter } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
-import { TaskListService } from './task-list.service';
 import type { CreateTaskDto } from './dto/create-task.dto';
 import type { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import type { UpdateTaskDto } from './dto/update-task.dto';
+import { CONTACT_REQUIRED_TASK_TYPES } from './task-type.constants';
 
 const NO_MATCH_SENTINEL = '__none__';
 
@@ -41,7 +41,6 @@ export class TaskService {
   constructor(
     private readonly policy: PolicyService,
     private readonly activities: ActivityService,
-    private readonly taskLists: TaskListService,
   ) {}
 
   async create(
@@ -49,15 +48,37 @@ export class TaskService {
     membership: MembershipContext,
     dto: CreateTaskDto,
   ): Promise<Task> {
+    if (!this.policy.canModule(membership, 'tarefas', 'criar')) {
+      throw new ForbiddenException('Sem permissão para criar tarefas.');
+    }
+
     const assigneeUserId = dto.assigneeUserId ?? membership.userId;
     await assertActiveMembership(tx, membership.workspaceId, assigneeUserId);
     await this.mustTargetExist(tx, membership.workspaceId, dto);
 
-    const listId = dto.listId
-      ? (await this.mustListExist(tx, membership.workspaceId, dto.listId)).id
-      : (await this.taskLists.ensureDefaultLists(tx, membership.workspaceId))[0]
-          .id;
-    const position = await this.nextPosition(tx, listId);
+    if (
+      dto.tipo &&
+      CONTACT_REQUIRED_TASK_TYPES.includes(dto.tipo) &&
+      !dto.contactId
+    ) {
+      throw new BadRequestException(
+        'Contato é obrigatório para tarefas do tipo ligação, reunião, visita ou e-mail.',
+      );
+    }
+    if (dto.contactId) {
+      const companyId = await this.resolveCompanyId(
+        tx,
+        membership.workspaceId,
+        dto.companyId,
+        dto.opportunityId,
+      );
+      await this.mustContactBelongToCompany(
+        tx,
+        membership.workspaceId,
+        dto.contactId,
+        companyId,
+      );
+    }
 
     const task = await tx.task.create({
       data: {
@@ -65,11 +86,11 @@ export class TaskService {
         title: dto.title,
         description: dto.description,
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        tipo: dto.tipo,
+        contactId: dto.contactId,
         assigneeUserId,
         companyId: dto.companyId,
         opportunityId: dto.opportunityId,
-        listId,
-        position,
         createdBy: membership.userId,
       },
     });
@@ -78,7 +99,7 @@ export class TaskService {
       workspaceId: membership.workspaceId,
       actorUserId: membership.userId,
       type: 'field_update',
-      payload: { action: 'created', title: task.title },
+      payload: { action: 'created', title: task.title, taskId: task.id },
       companyId: dto.companyId,
       opportunityId: dto.opportunityId,
     });
@@ -91,6 +112,17 @@ export class TaskService {
     membership: MembershipContext,
     query: ListTasksQueryDto,
   ): Promise<PaginatedResult<TaskWithCounts>> {
+    // Filtrado por empresa (aba "Tarefas" da ficha) usa a permissão
+    // própria empresas_tarefas — separada da tela geral de Tarefas
+    // (2026-08-12, pedido do usuário). Só o 'ver' tem efeito próprio aqui:
+    // criar/editar/excluir uma tarefa específica sempre passam pelo módulo
+    // global 'tarefas' (ver mustBeVisible), não importa de onde a lista
+    // foi aberta — não dá pra saber com segurança "veio da ficha" num
+    // GET/PATCH/DELETE por id.
+    const viewModule = query.companyId ? 'empresas_tarefas' : 'tarefas';
+    if (!this.policy.canModule(membership, viewModule, 'ver')) {
+      throw new ForbiddenException('Sem permissão para ver tarefas.');
+    }
     const scope = await this.policy.scopeFilter(tx, membership);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
@@ -123,7 +155,9 @@ export class TaskService {
         take: pageSize,
         orderBy: { createdAt: 'desc' },
         include: {
-          _count: { select: { checklistItems: true, comments: true, attachments: true } },
+          _count: {
+            select: { checklistItems: true, comments: true, attachments: true },
+          },
         },
       }),
       tx.task.count({ where }),
@@ -163,21 +197,32 @@ export class TaskService {
       );
     }
 
-    let targetList: TaskList | undefined;
-    if (dto.listId && dto.listId !== existing.listId) {
-      targetList = await this.mustListExist(
-        tx,
-        membership.workspaceId,
-        dto.listId,
+    const effectiveTipo = dto.tipo !== undefined ? dto.tipo : existing.tipo;
+    const effectiveContactId =
+      dto.contactId !== undefined ? dto.contactId : existing.contactId;
+    if (
+      effectiveTipo &&
+      CONTACT_REQUIRED_TASK_TYPES.includes(effectiveTipo) &&
+      !effectiveContactId
+    ) {
+      throw new BadRequestException(
+        'Contato é obrigatório para tarefas do tipo ligação, reunião, visita ou e-mail.',
       );
     }
-
-    // Mover pra uma coluna is_done_list marca status=done automaticamente;
-    // sair dela pra uma coluna comum volta pra pending. Um status
-    // explícito no mesmo request sempre vence (ex.: reabrir uma tarefa
-    // concluída sem precisar mover ela de coluna ao mesmo tempo).
-    const derivedStatus =
-      dto.status ?? (targetList ? (targetList.isDoneList ? 'done' : 'pending') : undefined);
+    if (dto.contactId) {
+      const companyId = await this.resolveCompanyId(
+        tx,
+        membership.workspaceId,
+        existing.companyId ?? undefined,
+        existing.opportunityId ?? undefined,
+      );
+      await this.mustContactBelongToCompany(
+        tx,
+        membership.workspaceId,
+        dto.contactId,
+        companyId,
+      );
+    }
 
     const updated = await tx.task.update({
       where: { id: existing.id },
@@ -185,21 +230,25 @@ export class TaskService {
         title: dto.title,
         description: dto.description,
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
-        status: derivedStatus,
+        tipo: dto.tipo,
+        contactId: dto.contactId,
+        status: dto.status,
         assigneeUserId: dto.assigneeUserId,
-        listId: dto.listId,
-        position: dto.position,
       },
     });
 
     // Só emite Activity na conclusão — edits triviais de título/data não
     // valem virar entrada no log (poluiria a timeline sem agregar nada).
-    if (derivedStatus === 'done' && existing.status !== 'done') {
+    if (dto.status === 'done' && existing.status !== 'done') {
       await this.activities.emit(tx, {
         workspaceId: membership.workspaceId,
         actorUserId: membership.userId,
         type: 'field_update',
-        payload: { action: 'completed', title: updated.title },
+        payload: {
+          action: 'completed',
+          title: updated.title,
+          taskId: updated.id,
+        },
         companyId: existing.companyId ?? undefined,
         opportunityId: existing.opportunityId ?? undefined,
       });
@@ -213,7 +262,7 @@ export class TaskService {
     membership: MembershipContext,
     id: string,
   ): Promise<void> {
-    const existing = await this.mustBeVisible(tx, membership, id, 'write');
+    const existing = await this.mustBeVisible(tx, membership, id, 'delete');
     // Sem soft delete — Task não tem deletedAt no schema, e
     // docs/arquitetura-dados.md só pede soft delete pra
     // Company/Opportunity. Assimetria intencional, não descuido.
@@ -289,7 +338,7 @@ export class TaskService {
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
-    action: 'read' | 'write' = 'read',
+    action: 'read' | 'write' | 'delete' = 'read',
   ): Promise<Task> {
     const task = await tx.task.findFirst({
       where: { id, workspaceId: membership.workspaceId },
@@ -298,35 +347,53 @@ export class TaskService {
       throw new NotFoundException('Tarefa não encontrada.');
     }
     if (
-      !(await this.policy.can(tx, membership, action, {
-        ownerUserId: task.assigneeUserId,
-      }))
+      !(await this.policy.can(
+        tx,
+        membership,
+        action,
+        { ownerUserId: task.assigneeUserId },
+        'tarefas',
+      ))
     ) {
       throw new NotFoundException('Tarefa não encontrada.');
     }
     return task;
   }
 
-  private async mustListExist(
+  // Contact é escopado por company (companyId obrigatório na tabela
+  // contacts) — uma tarefa vinculada via opportunity precisa resolver a
+  // company por trás pra saber de qual agenda de contatos o contactId
+  // enviado deveria vir.
+  private async resolveCompanyId(
     tx: TenantTx,
     workspaceId: string,
-    listId: string,
-  ): Promise<TaskList> {
-    const list = await tx.taskList.findFirst({
-      where: { id: listId, workspaceId },
+    companyId?: string,
+    opportunityId?: string,
+  ): Promise<string | undefined> {
+    if (companyId) return companyId;
+    if (!opportunityId) return undefined;
+    const opportunity = await tx.opportunity.findFirst({
+      where: { id: opportunityId, workspaceId },
+      select: { companyId: true },
     });
-    if (!list) {
-      throw new BadRequestException(`Coluna "${listId}" não encontrada.`);
-    }
-    return list;
+    return opportunity?.companyId;
   }
 
-  private async nextPosition(tx: TenantTx, listId: string): Promise<number> {
-    const last = await tx.task.findFirst({
-      where: { listId },
-      orderBy: { position: 'desc' },
-      select: { position: true },
-    });
-    return (last?.position ?? -1) + 1;
+  private async mustContactBelongToCompany(
+    tx: TenantTx,
+    workspaceId: string,
+    contactId: string,
+    companyId: string | undefined,
+  ): Promise<void> {
+    const contact = companyId
+      ? await tx.contact.findFirst({
+          where: { id: contactId, workspaceId, companyId },
+        })
+      : null;
+    if (!contact) {
+      throw new BadRequestException(
+        `Contato "${contactId}" não encontrado para a empresa desta tarefa.`,
+      );
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { getServerAccessToken } from "@/lib/api/auth";
 import { companyDisplayName } from "@/lib/api/companies";
-import { listTaskLists } from "@/lib/api/task-lists";
+import { listContacts } from "@/lib/api/contacts";
+import { resolveAssigneeOptions } from "@/lib/api/assignee-options";
 import { loadOpportunityDetail } from "@/app/dashboard/pipeline/_detail/load";
 import NovaForm from "@/app/dashboard/tarefas/nova/nova-form";
 import OverlayModal from "@/app/dashboard/_overlay/overlay-modal";
@@ -15,20 +16,21 @@ export default async function NovaTarefaDoCardModal({
 }) {
   const { id } = await params;
   const token = await getServerAccessToken();
-  const [data, taskLists] = await Promise.all([
+  const [data, assigneeOptions] = await Promise.all([
     loadOpportunityDetail(token, id),
-    listTaskLists(token),
+    resolveAssigneeOptions(token),
   ]);
+  const initialContacts = await listContacts(token, data.company.id);
   const lockedLabel = `Oportunidade: ${companyDisplayName(data.company)} — ${data.opportunity.currency} ${Number(data.opportunity.amount).toLocaleString("pt-BR")}`;
 
   return (
     <OverlayModal title="Gerar tarefa" wide>
       <NovaForm
-        taskLists={taskLists}
-        companies={[]}
-        opportunities={[data.opportunity]}
         lockedOpportunityId={data.opportunity.id}
         lockedLabel={lockedLabel}
+        initialContacts={initialContacts}
+        initialCompanyId={data.company.id}
+        assigneeOptions={assigneeOptions}
       />
     </OverlayModal>
   );

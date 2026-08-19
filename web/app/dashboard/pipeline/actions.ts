@@ -120,20 +120,25 @@ export async function deleteOpportunityAction(formData: FormData) {
 }
 
 // Drag-and-drop no board (SPEC-CRM-GAMA.md §4.2) chama isso direto — não é
-// submit de form, mesmo padrão de moveTaskAction em tarefas/actions.ts.
+// submit de form.
+// Devolve o `version` novo junto do ok. Sem isso, o board só descobria a
+// versão nova pela revalidação (ida ao servidor, ~250-700ms) e um segundo
+// arraste feito antes disso mandava a versão velha, levava 409 e o cartão
+// "voltava" sozinho — bug real observado em produção em 2026-08-12.
 export async function moveOpportunityStageAction(
   opportunityId: string,
   stageId: string,
   version: number,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; version?: number; error?: string }> {
   const token = await getServerAccessToken();
+  let updated;
   try {
-    await updateOpportunity(token, opportunityId, { version, stageId });
+    updated = await updateOpportunity(token, opportunityId, { version, stageId });
   } catch (error) {
     return { ok: false, error: actionError(error, "Erro ao mover a oportunidade.") };
   }
   revalidatePath("/dashboard/pipeline");
-  return { ok: true };
+  return { ok: true, version: updated.version };
 }
 
 // ---------- Seletor de empresa/lead (§3.5/§4.2.1) ----------
@@ -172,6 +177,7 @@ export async function createCompanyFromCnpjAction(
     const data = await lookupCnpj(token, cnpj);
     const company = await createCompany(token, {
       razaoSocial: data.razaoSocial,
+      emRecuperacaoJudicial: data.emRecuperacaoJudicial,
       fantasia: data.fantasia,
       cpfCnpj: data.cpfCnpj,
       tipo: data.tipo,

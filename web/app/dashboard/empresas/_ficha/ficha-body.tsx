@@ -1,21 +1,55 @@
 import { companyDisplayName } from "@/lib/api/companies";
+import { hasPermission } from "@/lib/api/permission-catalog";
 import type { Activity } from "@/lib/api/types";
+import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
 import type { FichaData } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
-import {
-  createNoteAction,
-  refreshCnpjDataAction,
-  updateCustomFieldsAction,
-} from "../actions";
+import { refreshCnpjDataAction, updateCustomFieldsAction } from "../actions";
+import AddNoteForm from "./add-note-form";
+import ContactItem from "./contact-item";
+import AddContactForm from "./add-contact-form";
+import SubmitButton from "@/app/_components/submit-button";
 
 const SUBTIPO_LABEL: Record<string, string> = {
-  nota: "Nota",
+  nota: "Anotação",
   ligacao: "Ligação",
   reuniao: "Reunião",
   visita: "Visita",
   email: "E-mail",
   posvenda: "Pós-venda",
 };
+
+// Cor por tipo de registro (gama-crm-mvp.html, DB.interactionTypes) —
+// mesmas chaves usadas em .note-type-btn/.timeline-item/.pill no
+// globals.css. "posvenda" não existe no protótipo (subtipo próprio deste
+// projeto) — cinza neutro.
+const SUBTIPO_COLOR: Record<string, string> = {
+  nota: "purple",
+  ligacao: "blue",
+  reuniao: "green",
+  visita: "amber",
+  email: "red",
+  posvenda: "gray",
+};
+
+// Enum `indicadorIE` do eGestor (docs/api-egestor-contatos.md: 1 =
+// Contribuinte, 2 = Isento de IE, 9 = Não contribuinte) — substituiu o
+// checkbox booleano "Contribuinte de ICMS" em 2026-08-17 (decisão do
+// usuário). O rótulo é o texto que ele pediu; o valor guardado é só o
+// número, que é o que a API do eGestor aceita.
+const INDICADOR_IE_OPCOES: Array<{ valor: string; label: string }> = [
+  { valor: "1", label: "1 - Contribuinte do ICMS" },
+  { valor: "2", label: "2 - Contribuinte Isento" },
+  { valor: "9", label: "9 - Não Contribuinte" },
+];
+
+// customFields é jsonb — o valor pode voltar como número (o que gravamos)
+// ou string. Só 1/2/9 são aceitos; qualquer outra coisa vira "não
+// informado", nunca um valor inválido indo parar no ERP.
+function indicadorIeSalvo(valor: unknown): string {
+  const texto = valor === null || valor === undefined ? "" : String(valor);
+  return INDICADOR_IE_OPCOES.some((o) => o.valor === texto) ? texto : "";
+}
 
 // Snapshot salvo em customFields.cnpj_lookup por refreshCnpjDataAction —
 // ver comentário lá (web/app/dashboard/empresas/actions.ts) sobre por que
@@ -40,25 +74,43 @@ function brl(value: number): string {
 
 function fmtDate(value?: string | null): string {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("pt-BR");
+  return formatDateBR(value);
 }
 
-function memberLabel(userId: string | null, currentUserId: string): string {
+// Pedido do usuário (2026-08-03): em vez de "Você", mostrar o nome real
+// de quem está logado. `currentUserName` vem do user_metadata.name do JWT
+// (ver web/lib/api/types.ts#AuthenticatedUser) — cai pra "Você" se o
+// usuário não tiver nome cadastrado (contas antigas, ou nunca preenchido).
+function memberLabel(
+  userId: string | null,
+  currentUserId: string,
+  currentUserName?: string | null,
+): string {
   if (!userId) return "Sistema";
-  if (userId === currentUserId) return "Você";
+  if (userId === currentUserId) return currentUserName?.trim() || "Você";
   return `${userId.slice(0, 8)}…`;
 }
 
-function ActivityItem({ activity, currentUserId }: { activity: Activity; currentUserId: string }) {
-  const payload = activity.payload as { texto?: string; subtipo?: string };
+function ActivityItem({
+  activity,
+  currentUserId,
+  currentUserName,
+}: {
+  activity: Activity;
+  currentUserId: string;
+  currentUserName?: string | null;
+}) {
+  const payload = activity.payload as { texto?: string; subtipo?: string; contatoNome?: string };
   const subtipo =
     payload.subtipo ?? (activity.type === "call" ? "ligacao" : activity.type === "email" ? "email" : "nota");
+  const color = SUBTIPO_COLOR[subtipo] ?? "gray";
   return (
-    <div className="timeline-item">
+    <div className={`timeline-item type-${color}`}>
       <div className="timeline-item-head">
-        <strong>{SUBTIPO_LABEL[subtipo] ?? subtipo}</strong>
-        <span>{memberLabel(activity.actorUserId, currentUserId)}</span>
-        <span>{new Date(activity.occurredAt).toLocaleString("pt-BR")}</span>
+        <span className={`pill pill-${color}`}>{SUBTIPO_LABEL[subtipo] ?? subtipo}</span>
+        <span>{memberLabel(activity.actorUserId, currentUserId, currentUserName)}</span>
+        {payload.contatoNome && <span>· {payload.contatoNome}</span>}
+        <span>{formatDateTimeBR(activity.occurredAt)}</span>
       </div>
       {payload.texto && <div className="timeline-item-body">{payload.texto}</div>}
     </div>
@@ -71,9 +123,16 @@ function ActivityItem({ activity, currentUserId }: { activity: Activity; current
 // moldura em volta (ver empresas/[id]/page.tsx e
 // @drawer/(.)empresas/[id]/page.tsx).
 export default function FichaBody({ data, aba }: { data: FichaData; aba?: string }) {
-  const { me, company, activities, tasks, opportunities, salesHistory } = data;
+  const { me, company, activities, tasks, opportunities, salesHistory, contacts } = data;
   const currentAba = currentAbaOf(aba);
   const abaHref = (a: string) => `/dashboard/empresas/${company.id}?aba=${a}`;
+  // Editar/Remover contato: vem da matriz granular de permissões (módulo
+  // "contatos", ver lib/api/permission-catalog.ts), não mais fixo em
+  // owner/admin (regra antiga até 2026-08-12) — ContactService#update/
+  // remove no backend já checa canModule('contatos', 'editar'/'excluir'),
+  // isto aqui só decide se cada botão aparece.
+  const canEditContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "editar");
+  const canRemoveContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "excluir");
 
   const wonOpps = opportunities.filter((o) => o.status === "won" && !o.deletedAt);
   const openOpps = opportunities.filter((o) => o.status === "open" && !o.deletedAt);
@@ -113,7 +172,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
 
         <div className="drawer-section-title">Última atividade</div>
         {ultimaAtividade ? (
-          <ActivityItem activity={ultimaAtividade} currentUserId={me.user.id} />
+          <ActivityItem activity={ultimaAtividade} currentUserId={me.user.id} currentUserName={me.user.name} />
         ) : (
           <p className="sub">Sem interações ainda.</p>
         )}
@@ -142,6 +201,8 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
   if (currentAba === "cadastro") {
     const cad = company.customFields.cnpj_lookup as CnpjLookupSnapshot | undefined;
     const temIE = Boolean(company.customFields.inscricao_estadual);
+    const indicadorIE = indicadorIeSalvo(company.customFields.indicador_ie);
+    const indicadorIELabel = INDICADOR_IE_OPCOES.find((o) => o.valor === indicadorIE)?.label;
 
     return (
       <>
@@ -153,19 +214,29 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
               <label>Consultar CNPJ na Receita</label>
               <input name="cnpj" defaultValue={company.cpfCnpj ?? ""} placeholder="00.000.000/0001-00" />
             </div>
-            <button type="submit" className="btn btn-primary">
+            <SubmitButton className="btn btn-primary" pendingLabel="Buscando…">
               <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="11" cy="11" r="8" />
                 <path d="M21 21l-4.3-4.3" />
               </svg>
               Buscar dados
-            </button>
+            </SubmitButton>
           </form>
           <div className="field-hint" style={{ marginTop: 8 }}>
             Puxa razão social, CNAE, endereço e situação da base da Receita Federal (via BrasilAPI). A
             Inscrição Estadual é dado da SEFAZ e entra à parte, abaixo.
           </div>
         </div>
+
+        {/* Indicativo próprio (não depende de ter buscado a Receita nesta
+            aba — vem de company.emRecuperacaoJudicial, setado no cadastro
+            manual, na importação por planilha ou na busca por CNPJ). */}
+        {company.emRecuperacaoJudicial && (
+          <div className="error-banner" style={{ marginBottom: 16 }}>
+            ⚠ Empresa em recuperação judicial na Receita Federal — indicativo removido da razão
+            social e mantido só aqui.
+          </div>
+        )}
 
         {!cad ? (
           <div className="cad-empty">
@@ -272,18 +343,24 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
           Fonte estadual (SINTEGRA) · {temIE ? "preenchido manualmente" : "preenchimento manual — a Receita não fornece IE"}
         </div>
 
-        {temIE ? (
+        {temIE || indicadorIELabel ? (
           <div className="cad-grid">
             <div className="cad-cell">
               <div className="cad-k">Inscrição Estadual</div>
-              <div className="cad-v mono">{String(company.customFields.inscricao_estadual)}</div>
+              <div className="cad-v mono">
+                {temIE ? String(company.customFields.inscricao_estadual) : "—"}
+              </div>
             </div>
             <div className="cad-cell full">
-              <div className="cad-k">Contribuinte de ICMS</div>
+              <div className="cad-k">Indicador de IE</div>
               <div className="cad-v">
-                <span className={`badge-contrib ${company.customFields.contribuinte_icms ? "sim" : "nao"}`}>
-                  {company.customFields.contribuinte_icms ? "SIM — contribuinte" : "NÃO contribuinte"}
-                </span>
+                {indicadorIELabel ? (
+                  <span className={`badge-contrib ${indicadorIE === "9" ? "nao" : "sim"}`}>
+                    {indicadorIELabel}
+                  </span>
+                ) : (
+                  "Não informado"
+                )}
               </div>
             </div>
           </div>
@@ -306,26 +383,44 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
               defaultValue={String(company.customFields.inscricao_estadual ?? "")}
             />
           </label>
-          <label className="row-form" style={{ alignItems: "center" }}>
-            <input
-              type="checkbox"
-              name="contribuinte_icms"
-              defaultChecked={company.customFields.contribuinte_icms === true}
-              style={{ width: "auto" }}
-            />
-            Contribuinte de ICMS
-          </label>
           <label>
-            Situação cadastral (estadual)
-            <input
-              name="situacao_cadastral"
-              defaultValue={String(company.customFields.situacao_cadastral ?? "")}
-            />
+            Indicador de IE
+            <select name="indicador_ie" defaultValue={indicadorIE}>
+              <option value="">Não informado</option>
+              {INDICADOR_IE_OPCOES.map((o) => (
+                <option key={o.valor} value={o.valor}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </label>
-          <button type="submit" className="btn btn-primary">
+          <SubmitButton className="btn btn-primary" pendingLabel="Salvando…">
             Salvar dados estaduais
-          </button>
+          </SubmitButton>
         </form>
+      </>
+    );
+  }
+
+  if (currentAba === "contatos") {
+    return (
+      <>
+        <div className="drawer-section-title">Novo contato</div>
+        <AddContactForm companyId={company.id} />
+
+        {contacts.length > 0 ? (
+          contacts.map((c) => (
+            <ContactItem
+              key={c.id}
+              contact={c}
+              companyId={company.id}
+              canEdit={canEditContacts}
+              canRemove={canRemoveContacts}
+            />
+          ))
+        ) : (
+          <p className="sub">Nenhum contato cadastrado ainda.</p>
+        )}
       </>
     );
   }
@@ -334,34 +429,16 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
     return (
       <>
         <div className="add-note">
-          <form action={createNoteAction}>
-            <input type="hidden" name="companyId" value={company.id} />
-            <input type="hidden" name="back" value={abaHref("timeline")} />
-            <div className="add-note-types">
-              {Object.entries(SUBTIPO_LABEL).map(([value, label], i) => (
-                <label key={value} className="note-type-btn" style={{ cursor: "pointer" }}>
-                  <input
-                    type="radio"
-                    name="subtipo"
-                    value={value}
-                    defaultChecked={i === 0}
-                    style={{ display: "none" }}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <textarea name="texto" placeholder="O que foi conversado, próximos passos..." required />
-            <div className="add-note-foot">
-              <button type="submit" className="btn btn-primary btn-sm">
-                Registrar
-              </button>
-            </div>
-          </form>
+          <AddNoteForm
+            companyId={company.id}
+            subtipoOptions={Object.entries(SUBTIPO_LABEL).map(([value, label]) => ({ value, label }))}
+            contacts={contacts}
+            placeholder="O que foi conversado, próximos passos..."
+          />
         </div>
         <div className="timeline">
           {activities.length > 0 ? (
-            activities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} />)
+            activities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} currentUserName={me.user.name} />)
           ) : (
             <p className="sub">Nenhuma interação registrada ainda.</p>
           )}
@@ -437,7 +514,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
         </div>
       )}
       {posvendaActivities.length > 0 ? (
-        posvendaActivities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} />)
+        posvendaActivities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} currentUserName={me.user.name} />)
       ) : (
         <div className="posvenda-empty">
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

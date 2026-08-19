@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { companyDisplayName } from "@/lib/api/companies";
 import type { Membership } from "@/lib/api/types";
+import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
 import type { OpportunityDetail } from "./load";
 import {
   createOpportunityCommentAction,
@@ -12,6 +13,7 @@ import {
   reopenAction,
   uploadOpportunityAttachmentAction,
 } from "../actions";
+import SubmitButton from "@/app/_components/submit-button";
 
 function brlFull(value: number, currency: string): string {
   return `${currency} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
@@ -19,11 +21,11 @@ function brlFull(value: number, currency: string): string {
 
 function fmtDate(value?: string | null): string {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("pt-BR");
+  return formatDateBR(value);
 }
 
 function fmtDateTime(value: string): string {
-  return new Date(value).toLocaleString("pt-BR");
+  return formatDateTimeBR(value);
 }
 
 function attachKind(mimeType: string | null): "pdf" | "imagem" | "planilha" | "outro" {
@@ -119,9 +121,9 @@ export function DetailBody({ data, backHref }: { data: OpportunityDetail; backHr
           </div>
           <div className="row-form" style={{ justifyContent: "center" }}>
             <input type="file" name="file" required />
-            <button type="submit" className="btn btn-sm">
+            <SubmitButton className="btn btn-sm" pendingLabel="Enviando…">
               Enviar
-            </button>
+            </SubmitButton>
           </div>
         </form>
         {attachments.map((att) => {
@@ -144,22 +146,22 @@ export function DetailBody({ data, backHref }: { data: OpportunityDetail; backHr
                 <input type="hidden" name="opportunityId" value={o.id} />
                 <input type="hidden" name="attachmentId" value={att.id} />
                 <input type="hidden" name="back" value={backHref} />
-                <button type="submit" className="icon-btn" title="Baixar">
+                <SubmitButton className="icon-btn" title="Baixar">
                   <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                   </svg>
-                </button>
+                </SubmitButton>
               </form>
-              {att.uploadedBy === me.user.id && (
+              {att.uploadedBy === me.user.id && me.membership.role !== "sales_rep" && (
                 <form action={deleteOpportunityAttachmentAction}>
                   <input type="hidden" name="opportunityId" value={o.id} />
                   <input type="hidden" name="attachmentId" value={att.id} />
                   <input type="hidden" name="back" value={backHref} />
-                  <button type="submit" className="icon-btn danger" title="Remover">
+                  <SubmitButton className="icon-btn danger" title="Remover">
                     <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
             </div>
@@ -182,14 +184,18 @@ export function DetailBody({ data, backHref }: { data: OpportunityDetail; backHr
                     <span className="chat-time">{fmtDateTime(c.createdAt)}</span>
                   </div>
                   <div className="chat-text">{c.body}</div>
-                  {c.authorUserId === me.user.id && (
+                  {c.authorUserId === me.user.id && me.membership.role !== "sales_rep" && (
                     <form action={deleteOpportunityCommentAction}>
                       <input type="hidden" name="opportunityId" value={o.id} />
                       <input type="hidden" name="commentId" value={c.id} />
                       <input type="hidden" name="back" value={backHref} />
-                      <button type="submit" className="btn btn-ghost btn-sm" style={{ padding: 0, marginTop: 4 }}>
+                      <SubmitButton
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: 0, marginTop: 4 }}
+                        pendingLabel="Removendo…"
+                      >
                         Remover
-                      </button>
+                      </SubmitButton>
                     </form>
                   )}
                 </div>
@@ -204,9 +210,9 @@ export function DetailBody({ data, backHref }: { data: OpportunityDetail; backHr
           <input type="hidden" name="opportunityId" value={o.id} />
           <input type="hidden" name="back" value={backHref} />
           <textarea name="body" placeholder="Escrever comentário..." required />
-          <button type="submit" className="btn btn-primary btn-sm">
+          <SubmitButton className="btn btn-primary btn-sm" pendingLabel="Enviando…">
             Enviar
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </>
@@ -217,18 +223,24 @@ export function DetailBody({ data, backHref }: { data: OpportunityDetail; backHr
 // Ganhar/Perder só no último estágio, Reabrir se já encerrada). Ganhou
 // "Gerar tarefa" (feature nova) ao lado de "Editar".
 export function DetailFooter({ data }: { data: OpportunityDetail }) {
-  const { opportunity: o, stage, maxOrder } = data;
+  const { opportunity: o, stage, maxOrder, me } = data;
   const closed = o.status !== "open";
   const canClose = o.status === "open" && stage && stage.order === maxOrder;
+  // Representante não exclui nenhum tipo de registro (pedido do usuário,
+  // 2026-08-06, ver PolicyService#can) — botão escondido pra não oferecer
+  // uma ação que o backend vai rejeitar de qualquer forma.
+  const canDelete = me.membership.role !== "sales_rep";
 
   return (
     <>
-      <form action={deleteOpportunityAction}>
-        <input type="hidden" name="id" value={o.id} />
-        <button type="submit" className="btn btn-danger">
-          Excluir
-        </button>
-      </form>
+      {canDelete && (
+        <form action={deleteOpportunityAction}>
+          <input type="hidden" name="id" value={o.id} />
+          <SubmitButton className="btn btn-danger" pendingLabel="Excluindo…">
+            Excluir
+          </SubmitButton>
+        </form>
+      )}
       <Link href="/dashboard/pipeline" className="btn btn-ghost">
         Fechar
       </Link>
@@ -247,9 +259,13 @@ export function DetailFooter({ data }: { data: OpportunityDetail }) {
           <form action={markWonAction}>
             <input type="hidden" name="id" value={o.id} />
             <input type="hidden" name="version" value={o.version} />
-            <button type="submit" className="btn" style={{ borderColor: "var(--blue)", color: "var(--blue)" }}>
+            <SubmitButton
+              className="btn"
+              style={{ borderColor: "var(--blue)", color: "var(--blue)" }}
+              pendingLabel="Fechando…"
+            >
               ✓ Marcar Fechada
-            </button>
+            </SubmitButton>
           </form>
           <Link href={`/dashboard/pipeline/${o.id}/perder`} className="btn btn-danger">
             ✕ Marcar Perdida
@@ -261,9 +277,9 @@ export function DetailFooter({ data }: { data: OpportunityDetail }) {
           <input type="hidden" name="id" value={o.id} />
           <input type="hidden" name="version" value={o.version} />
           <input type="hidden" name="back" value={`/dashboard/pipeline/${o.id}`} />
-          <button type="submit" className="btn">
+          <SubmitButton className="btn" pendingLabel="Reabrindo…">
             ↩ Reabrir
-          </button>
+          </SubmitButton>
         </form>
       )}
     </>

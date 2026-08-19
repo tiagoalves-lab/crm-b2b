@@ -223,12 +223,28 @@ a {
   padding: 18px 20px;
   border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .sidebar-logo {
   flex: none;
+}
+
+/* Nome do SaaS, abaixo da logo (pedido do usuário, 2026-08-06 — "GAMA" é
+   a marca da empresa, "CRM" é o produto em si; ainda não tem nome
+   próprio definitivo). Mesmo tratamento visual de .nav-label (mono,
+   caixa alta, tracking largo) pra ficar no mesmo idioma dos rótulos de
+   seção do menu (COMERCIAL/CADASTROS/...), sem competir visualmente com
+   a logo em si. */
+.sidebar-tagline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 
 .primary-nav {
@@ -512,6 +528,46 @@ a {
   padding: 5px 10px;
 }
 
+/* Estado "enviando" — vale pra todo botão desabilitado, mas na prática
+   quem liga isso é o SubmitButton (app/_components/submit-button.tsx)
+   enquanto a Server Action corre. O `:hover` precisa ser neutralizado
+   explicitamente, senão o botão continua reagindo ao mouse e parece
+   clicável mesmo travado. */
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--surface-sunken);
+  border-color: var(--border-strong);
+}
+
+/* Precisa vir DEPOIS do reset genérico acima: mesma especificidade
+   (0,3,0), então quem ganha é a última regra. Sem isto o botão primário
+   ficaria cinza ao desabilitar, em vez de azul esmaecido. */
+.btn-primary:disabled,
+.btn-primary:disabled:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn-ghost:disabled,
+.btn-ghost:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-danger:disabled,
+.btn-danger:disabled:hover {
+  background: transparent;
+  border-color: var(--danger);
+}
+
+.icon-btn:disabled,
+.icon-btn:disabled:hover {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .error-banner {
   background: var(--danger-soft);
   color: var(--danger);
@@ -519,6 +575,46 @@ a {
   padding: 8px 10px;
   border-radius: 8px;
   margin-bottom: 14px;
+}
+
+/* Faixa de "ação em andamento" — irmã do .error-banner (mesmo formato, cor
+   de acento no lugar da de perigo). Existe pra ação lenta que conversa com
+   sistema de terceiro: na correção do eGestor são vários round-trips até o
+   ERP, e sem sinal visível o intervalo entre o clique e a resposta lê como
+   tela travada (relato do usuário, 2026-08-17). */
+.busy-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.busy-banner::before {
+  content: "";
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: busy-spin 0.7s linear infinite;
+}
+
+@keyframes busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .busy-banner::before {
+    animation: none;
+  }
 }
 
 .data-table {
@@ -556,6 +652,45 @@ a {
 }
 
 .data-table tr:hover td {
+  background: var(--surface-sunken);
+}
+
+/* Mesmo tratamento de linha/espaçamento do .data-table (padding, divisor,
+   hover), sem a moldura própria (borda/fundo/raio) — pensado pra tabelas
+   soltas dentro de um .panel que já tem essa moldura (duplicaria a borda
+   se usasse .data-table aqui). Painel comercial: "Ações da semana" e
+   "Últimas atividades" (2026-08-05). */
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.mini-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  padding: 10px 16px;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.mini-table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.mini-table tr:last-child td {
+  border-bottom: none;
+}
+
+.mini-table tr:hover td {
   background: var(--surface-sunken);
 }
 
@@ -869,6 +1004,25 @@ a {
   border: 2px solid var(--border-strong);
 }
 
+/* Mesma cor por tipo do seletor .note-type-btn acima, aplicada na bolinha
+   do item já registrado (className type-* vem de SUBTIPO_COLOR em
+   ficha-body.tsx, tanto Empresas quanto Leads). */
+.timeline-item.type-purple::before {
+  border-color: var(--purple);
+}
+.timeline-item.type-blue::before {
+  border-color: var(--blue);
+}
+.timeline-item.type-green::before {
+  border-color: var(--green);
+}
+.timeline-item.type-amber::before {
+  border-color: var(--accent-secondary);
+}
+.timeline-item.type-red::before {
+  border-color: var(--danger);
+}
+
 .timeline-item-head {
   display: flex;
   gap: 8px;
@@ -1025,6 +1179,18 @@ a {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-tertiary);
+  margin-top: 5px;
+}
+
+/* Erro embutido logo abaixo de um campo (ex.: PasswordConfirmFields) —
+   diferente de .error-banner (bloco largo, pro topo do form): precisa
+   ser visível SEMPRE em texto normal, sem depender do balão nativo de
+   validação do navegador (setCustomValidity), que fica cortado/invisível
+   dentro de .overlay (overflow-y: auto) e faz o clique em "Salvar"
+   parecer que não fez nada. */
+.field-error {
+  font-size: 11px;
+  color: var(--danger);
   margin-top: 5px;
 }
 
@@ -1643,6 +1809,137 @@ tr:hover .cell-actions {
   color: var(--text-secondary);
 }
 
+/* ---------- Tags livres da Prospecção (2026-08-05) ---------- */
+.tag-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+span.tag-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.tag-chip-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.6;
+}
+
+.tag-chip-remove:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
+.tag-add-input {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: transparent;
+  width: 90px;
+}
+
+.tag-add-input:focus {
+  border-style: solid;
+  border-color: var(--accent);
+  outline: none;
+  width: 140px;
+}
+
+/* Segmento de negócio (valor único, 2026-08-05) — input inline na tabela
+   e na ficha, mesmo tratamento visual de .tag-add-input mas sem o
+   contorno tracejado (não é "adicionar", é "editar o valor atual"). */
+.segmento-input {
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  width: 100%;
+  min-width: 100px;
+}
+
+.segmento-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Filtro por tag na tela de Prospecção — reusa a mesma pílula do editor,
+   mas como link (a href muda a querystring ?tag=), com um estado "active"
+   próprio (o editor nunca precisa disso, chip lá é sempre "neutro"). */
+.tag-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -6px 0 16px;
+}
+
+a.tag-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+a.tag-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+a.tag-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Header dropdown de "Importar planilha" (Prospecção, 2026-08-05)
+   — pedido do usuário: sai do meio do conteúdo e vira ação do cabeçalho,
+   ancorada no próprio botão em vez de navegar pra rota/modal nova. ---------- */
+.import-contacts-toggle {
+  position: relative;
+}
+
+.import-contacts-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 420px;
+  max-width: min(90vw, 420px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  padding: 16px;
+  z-index: 30;
+}
+
 /* ---------- Kanban de tarefas do protótipo (tipo colorido por borda) ---------- */
 .task-card {
   background: var(--surface);
@@ -1903,6 +2200,69 @@ tr:hover .cell-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+/* ---------- Opção de rádio/checkbox dentro de .field ----------
+   `.field label` é o RÓTULO do campo (mono, 10px, CAIXA ALTA). Quando o
+   <label> envolve um rádio/checkbox ele é a OPÇÃO, não o rótulo, e herdar
+   aquilo deixa a frase inteira em caixa alta minúscula. Pior: `.field
+   input { width: 100% }` também pega o rádio e o estica pela linha toda,
+   empurrando o texto pra direita e desalinhando os círculos entre si —
+   os dois bugs que o usuário viu no modal de correção do eGestor
+   (2026-08-17). Grid de 2 colunas (rádio | texto) mantém os círculos
+   alinhados na mesma coluna mesmo com opções de 1 e de 3 linhas. */
+.field .choice {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: start;
+  gap: 10px;
+  margin-bottom: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.field .choice + .choice {
+  margin-top: 10px;
+}
+
+.field .choice input[type="radio"],
+.field .choice input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  /* 2px alinha o círculo com a 1ª linha do texto (13px/1.45). */
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.field .choice.is-disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.field .choice input:disabled {
+  cursor: not-allowed;
+}
+
+.field .choice .choice-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.field .choice.is-disabled .choice-note {
+  color: var(--text-tertiary);
 }
 
 /* ---------- Busca + segmentado (toolbar) ---------- */
@@ -2266,6 +2626,44 @@ tr:hover .cell-actions {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent-secondary);
+}
+
+/* Cor por tipo de registro (gama-crm-mvp.html, DB.interactionTypes:
+   nota=roxo, ligacao=azul, reuniao=verde, visita=âmbar, email=vermelho)
+   — adaptado pras variáveis do tema claro em vez do hex original de cada
+   tipo, mesmo raciocínio de --purple/--blue/--green/--danger no topo do
+   arquivo. Regras mais específicas por value sobrepõem o genérico acima.
+   "posvenda" não existe no protótipo (subtipo adicional deste projeto,
+   ver empresas/actions.ts#createNoteRpcAction) — cinza neutro. */
+.note-type-btn:has(input[value="nota"]:checked) {
+  background: var(--purple-soft);
+  border-color: var(--purple);
+  color: var(--purple);
+}
+.note-type-btn:has(input[value="ligacao"]:checked) {
+  background: var(--blue-soft);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.note-type-btn:has(input[value="reuniao"]:checked) {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--green);
+}
+.note-type-btn:has(input[value="visita"]:checked) {
+  background: var(--accent-soft);
+  border-color: var(--accent-secondary);
+  color: var(--accent-secondary);
+}
+.note-type-btn:has(input[value="email"]:checked) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.note-type-btn:has(input[value="posvenda"]:checked) {
+  background: var(--surface-hover);
+  border-color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .note-type-btn .ic {

@@ -2,7 +2,7 @@
 
 > Documento de contexto de arquitetura. Cobre modelo de dados, relacionamentos,
 > permissões e regras de negócio. Decisões de API/interface ficam para depois
-> (ver `roadmap.md`).
+> (ver o Kanban "Roadmap CRM Gama (completo)" no Miro).
 
 ## 1. Estratégia de multi-tenancy
 
@@ -45,7 +45,7 @@ pessoa pode pertencer a múltiplos workspaces.
 > **Supabase Auth**, não mais uma tabela `User` própria com
 > `password_hash`. Motivo: usuário já tem conta Supabase e preferiu
 > aproveitar Auth + Postgres gerenciado do mesmo provider em vez de manter
-> hash de senha/JWT por conta própria (ver `roadmap.md`, Fase 0).
+> hash de senha/JWT por conta própria.
 
 - **`auth.users`** (gerenciado pelo Supabase, fora do nosso schema): `id`
   (uuid), `email`, MFA, provider de login (e-mail/senha, OAuth, magic link).
@@ -151,6 +151,29 @@ Duas camadas que resolvem problemas diferentes.
 ### a) RBAC por papel (`Membership.role`)
 Papéis: `owner`, `admin`, `manager`, `sales_rep`, `readonly`. Define classes
 de ação (editar pipeline, ver relatório financeiro, remover usuário, etc.).
+
+**Hierarquia de níveis** (fechada com o usuário, 2026-08-13) — usada como
+referência sempre que uma regra precisar falar em "nível" em vez do nome do
+papel:
+
+- Nível 1 — `owner`
+- Nível 2 — `admin`
+- Nível 3 — `manager` (Gerente)
+- Nível 4 — `sales_rep` (Representante)
+
+`readonly` fica fora dessa escala — é uma variante "só leitura" ortogonal
+aos níveis acima (mesmo escopo de visibilidade do nível 4, sem edição),
+não um 5º nível.
+
+Regra específica do menu de Empresas (S9.x, ver `company.service.ts`
+`companyVisibilityFilter()`): níveis 1–3 (owner/admin/manager) enxergam
+**todas** as empresas do workspace sem filtro; a lógica antiga de
+ownership/hierarquia de time (dono direto, oportunidade própria na
+empresa, ou `CompanyAccess` concedido) vale só pro nível 4
+(`sales_rep`/`readonly`). Antes dessa mudança, `manager` via só a própria
+carteira + subordinados, igual a `sales_rep` — o restante dos módulos
+(oportunidades, tarefas, leads, contatos) **não** mudou, `manager`
+continua restrito à própria equipe neles via `PolicyService.scopeFilter()`.
 
 ### b) Record-level / ownership
 RBAC sozinho não resolve "sales_rep só vê os próprios deals, manager vê os

@@ -118,6 +118,8 @@ function fakeTx(options: FakeTxOptions = {}): TenantTx {
         .fn()
         .mockResolvedValue({ count: options.updateManyCount ?? 1 }),
       create: jest.fn().mockResolvedValue(opp),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
     },
     activity: {
       create: jest.fn().mockResolvedValue({}),
@@ -134,6 +136,40 @@ describe('OpportunityService', () => {
     policy = new PolicyService();
     activities = new ActivityService(policy);
     service = new OpportunityService(policy, activities);
+  });
+
+  // 2026-08-12: listar filtrado por companyId (aba "Oportunidades" da
+  // ficha da empresa) usa empresas_oportunidades.ver, separada da tela
+  // geral (Pipeline). Mesmo cuidado de TaskService — trava aqui pra não
+  // regredir se o ternário de findAll() for invertido.
+  describe('findAll — empresas_oportunidades vs. oportunidades (2026-08-12)', () => {
+    it('sem companyId, usa a permissão global "oportunidades"', async () => {
+      const tx = fakeTx();
+      const m = membership({
+        role: 'sales_rep',
+        permissions: {
+          oportunidades: { ver: false },
+          empresas_oportunidades: { ver: true },
+        },
+      });
+      await expect(service.findAll(tx, m, {})).rejects.toThrow(
+        'Sem permissão para ver oportunidades.',
+      );
+    });
+
+    it('com companyId, usa "empresas_oportunidades", não a global', async () => {
+      const tx = fakeTx();
+      const m = membership({
+        role: 'sales_rep',
+        permissions: {
+          oportunidades: { ver: true },
+          empresas_oportunidades: { ver: false },
+        },
+      });
+      await expect(
+        service.findAll(tx, m, { companyId: COMPANY_ID }),
+      ).rejects.toThrow('Sem permissão para ver oportunidades.');
+    });
   });
 
   describe('update — regras de negócio', () => {

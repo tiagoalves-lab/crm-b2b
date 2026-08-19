@@ -1,0 +1,1348 @@
+/**
+ * Integração eGestor - Scrip_AtualizarContatos
+ *
+ * Fluxo principal:
+ * 1. Abrir a planilha Scrip_AtualizarContatos.
+ * 2. Menu "Integração eGestor".
+ * 3. Clicar em "Gerar relatório de comparação".
+ * 4. O script busca contatos da Matriz e Filial no eGestor, compara por CPF/CNPJ
+ *    e grava o relatorio na propria planilha.
+ *
+ * Antes de executar, configure nas Propriedades do Script:
+ * - EGESTOR_PERSONAL_TOKEN_MATRIZ
+ * - EGESTOR_PERSONAL_TOKEN_FILIAL
+ */
+
+var PLANILHA_ID = '17CYniBprCXOm_5Ez7pUn408Vt0oT1mcrUo2z37vEIzU';
+var MENU_NOME = 'Integração eGestor';
+
+var ABA_RELATORIO = 'resultado_comparacao';
+var ABA_RESUMO = 'resumo_comparacao';
+var ABA_LOG = 'log_integracao';
+
+var TOKEN_URL = 'https://api.egestor.com.br/api/oauth/access_token';
+var CONTATOS_URL = 'https://api.egestor.com.br/api/v1/contatos';
+
+var PROP_TOKEN_MATRIZ = 'EGESTOR_PERSONAL_TOKEN_MATRIZ';
+var PROP_TOKEN_FILIAL = 'EGESTOR_PERSONAL_TOKEN_FILIAL';
+var MAX_OPERACOES_ESCRITA_POR_EXECUCAO = 45;
+var MAX_CONTATOS_CRIADOS_POR_EXECUCAO = 40;
+var PAUSA_ENTRE_CRIACOES_MS = 3000;
+var PAUSA_RATE_LIMIT_MS = [5000, 15000, 30000];
+var ATRASO_CONTINUACAO_MS = 2 * 60 * 1000;
+var FUNCAO_CONTINUAR_INTEGRACAO = 'continuarIntegracaoBases';
+
+var CAMPOS_CONTATO = [
+  'codigo',
+  'nome',
+  'fantasia',
+  'nomeParaContato',
+  'cpfcnpj',
+  'tipo',
+  'dtNasc',
+  'dtCad',
+  'emails',
+  'fones',
+  'logradouro',
+  'numero',
+  'complemento',
+  'bairro',
+  'cep',
+  'codIBGE',
+  'cidade',
+  'uf',
+  'clienteFinal',
+  'indicadorIE',
+  'inscricaoMunicipal',
+  'inscricaoEstadual',
+  'obs',
+  'tags'
+];
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu(MENU_NOME)
+    .addItem('Gerar relatÃ³rio de comparaÃ§Ã£o', 'gerarRelatorioComparacao')
+    .addItem('Integrar bases', 'integrarBases')
+    .addItem('Parar integracao automatica', 'pararIntegracaoBases')
+    .addItem('Atualizar diferentes', 'atualizarDiferentes')
+    .addToUi();
+}
+
+function gerarRelatorioComparacao() {
+  var planilha = getPlanilha_();
+  registrarLog_(planilha, 'INICIO', 'Gerando relatorio de comparacao');
+
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var personalTokenMatriz = getRequiredProperty_(props, PROP_TOKEN_MATRIZ);
+    var personalTokenFilial = getRequiredProperty_(props, PROP_TOKEN_FILIAL);
+
+    registrarLog_(planilha, 'CONFIG', 'Tokens carregados das propriedades do script');
+
+    registrarLog_(planilha, 'AUTH', 'Obtendo access token da Matriz');
+    var accessTokenMatriz = obterAccessToken_(personalTokenMatriz);
+
+    registrarLog_(planilha, 'AUTH', 'Obtendo access token da Filial');
+    var accessTokenFilial = obterAccessToken_(personalTokenFilial);
+
+    registrarLog_(planilha, 'GET', 'Buscando contatos da Matriz');
+    var contatosMatriz = buscarTodosContatos_(accessTokenMatriz);
+
+    registrarLog_(planilha, 'GET', 'Buscando contatos da Filial');
+    var contatosFilial = buscarTodosContatos_(accessTokenFilial);
+
+    registrarLog_(planilha, 'COMPARE', 'Comparando contatos por CPF/CNPJ');
+    var resultado = compararContatos_(contatosMatriz, contatosFilial);
+
+    escreverRelatorio_(planilha, resultado, contatosMatriz.length, contatosFilial.length);
+
+    registrarLog_(planilha, 'FIM', 'Relatorio gerado com sucesso');
+    avisarUsuario_(
+      'Relatorio gerado com sucesso.\n\n' +
+        'Matriz: ' + contatosMatriz.length + ' contatos\n' +
+        'Filial: ' + contatosFilial.length + ' contatos\n' +
+        'So na Matriz: ' + resultado.onlyInMatriz.length + '\n' +
+        'So na Filial: ' + resultado.onlyInFilial.length + '\n' +
+        'Com diferencas: ' + resultado.inBothWithDiffs.length
+    );
+  } catch (erro) {
+    registrarLog_(planilha, 'ERRO', erro.message || String(erro));
+    throw erro;
+  }
+}
+
+function integrarBases() {
+  executarIntegracaoBases_(true);
+}
+
+function continuarIntegracaoBases() {
+  executarIntegracaoBases_(false);
+}
+
+function pararIntegracaoBases() {
+  removerGatilhosContinuacaoIntegracao_();
+  avisarUsuario_('Continuacao automatica da integracao cancelada.');
+}
+
+function executarIntegracaoBases_(confirmarExecucao) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    registrarLog_(getPlanilha_(), 'INTEGRACAO_BLOQUEADA', 'Ja existe uma integracao em andamento. Esta execucao foi ignorada para evitar duplicidade.');
+    return;
+  }
+
+  try {
+    executarIntegracaoBasesComLock_(confirmarExecucao);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function executarIntegracaoBasesComLock_(confirmarExecucao) {
+  var planilha = getPlanilha_();
+  var abaRelatorio = planilha.getSheetByName(ABA_RELATORIO);
+
+  if (!abaRelatorio) {
+    throw new Error('A aba "' + ABA_RELATORIO + '" nao existe. Gere o relatorio de comparacao antes de integrar.');
+  }
+
+  var dados = lerRelatorio_(abaRelatorio);
+  var plano = montarPlanoIntegracao_(dados);
+
+  if (confirmarExecucao && !confirmarIntegracao_(plano)) {
+    registrarLog_(planilha, 'INTEGRACAO_CANCELADA', 'Usuario cancelou a integracao');
+    return;
+  }
+
+  registrarLog_(planilha, 'INTEGRACAO_INICIO', 'Iniciando integracao das bases');
+  removerGatilhosContinuacaoIntegracao_();
+
+  var props = PropertiesService.getScriptProperties();
+  var tokens = {
+    MATRIZ: obterAccessToken_(getRequiredProperty_(props, PROP_TOKEN_MATRIZ)),
+    FILIAL: obterAccessToken_(getRequiredProperty_(props, PROP_TOKEN_FILIAL))
+  };
+
+  var indicesDestino = criarIndicesDestinoIntegracao_(tokens, plano);
+  var agora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  var resumo = {
+    criadosMatriz: 0,
+    criadosFilial: 0,
+    revisar: 0,
+    erros: 0,
+    ignorados: plano.ignorar,
+    pendentesRateLimit: 0,
+    pendentesProximaExecucao: 0,
+    jaExistiamDestino: 0
+  };
+  var acoesCriar = [];
+  var resultadosPlanilha = [];
+
+  for (var i = 0; i < plano.acoes.length; i += 1) {
+    var acao = plano.acoes[i];
+
+    try {
+      if (acao.tipo === 'REVISAR') {
+        resumo.revisar += 1;
+        resultadosPlanilha.push({ acao: acao, resultado: 'PENDENTE_DIFERENTE', erro: 'Registro diferente sera tratado por outro script.' });
+        continue;
+      }
+
+      if (acao.tipo === 'CRIAR') {
+        if (contatoJaExisteNoDestino_(indicesDestino[acao.destino], acao.payload)) {
+          resumo.jaExistiamDestino += 1;
+          resultadosPlanilha.push({ acao: acao, resultado: 'OK_JA_EXISTIA_' + acao.destino, erro: 'Contato ja encontrado no destino; criacao ignorada para evitar duplicidade.' });
+          continue;
+        }
+
+        if (acoesCriar.length < MAX_CONTATOS_CRIADOS_POR_EXECUCAO) {
+          acoesCriar.push(acao);
+        } else {
+          resumo.pendentesProximaExecucao += 1;
+          resultadosPlanilha.push({ acao: acao, resultado: 'PENDENTE_PROXIMA_EXECUCAO', erro: 'Limite de contatos por execucao atingido. A continuacao sera agendada.' });
+        }
+      }
+    } catch (erro) {
+      resumo.erros += 1;
+      resultadosPlanilha.push({ acao: acao, resultado: 'ERRO', erro: erro.message || String(erro) });
+      registrarLog_(planilha, 'INTEGRACAO_ERRO', 'Linha ' + acao.rowNumber + ': ' + (erro.message || String(erro)));
+    }
+  }
+
+  var resultadosCriacao = criarContatosEmLote_(tokens, acoesCriar);
+  resultadosCriacao.forEach(function(resultado) {
+    var acao = resultado.acao;
+
+    if (resultado.ok) {
+      adicionarContatoAoIndiceDestino_(indicesDestino[acao.destino], acao.payload);
+
+      if (resultado.jaExistia) {
+        resumo.jaExistiamDestino += 1;
+        resultadosPlanilha.push({ acao: acao, resultado: 'OK_JA_EXISTIA_' + acao.destino, erro: resultado.erro || 'Contato ja encontrado no destino antes do POST.' });
+        return;
+      }
+
+      if (acao.destino === 'MATRIZ') {
+        resumo.criadosMatriz += 1;
+      } else {
+        resumo.criadosFilial += 1;
+      }
+      resultadosPlanilha.push({ acao: acao, resultado: 'OK_CRIADO_' + acao.destino, erro: '' });
+      return;
+    }
+
+    if (resultado.rateLimit) {
+      resumo.pendentesRateLimit += 1;
+      resultadosPlanilha.push({ acao: acao, resultado: 'PENDENTE_RATE_LIMIT', erro: resultado.erro });
+      registrarLog_(planilha, 'INTEGRACAO_RATE_LIMIT', 'Linha ' + acao.rowNumber + ': ' + resultado.erro);
+      return;
+    }
+
+    resumo.erros += 1;
+    resultadosPlanilha.push({ acao: acao, resultado: 'ERRO', erro: resultado.erro });
+    registrarLog_(planilha, 'INTEGRACAO_ERRO', 'Linha ' + acao.rowNumber + ': ' + resultado.erro);
+  });
+
+  escreverResultadosIntegracaoEmLote_(abaRelatorio, resultadosPlanilha, agora);
+
+  var deveContinuar = resumo.pendentesProximaExecucao > 0 || resumo.pendentesRateLimit > 0;
+  if (deveContinuar) {
+    agendarContinuacaoIntegracao_();
+  }
+
+  registrarLog_(planilha, 'INTEGRACAO_FIM', JSON.stringify(resumo));
+
+  if (confirmarExecucao) {
+    avisarUsuario_(
+      'Integracao iniciada.\n\n' +
+        'Criados na Matriz nesta execucao: ' + resumo.criadosMatriz + '\n' +
+        'Criados na Filial nesta execucao: ' + resumo.criadosFilial + '\n' +
+        'Diferentes pendentes para outro script: ' + resumo.revisar + '\n' +
+        'Ja estavam OK: ' + resumo.ignorados + '\n' +
+        'Pendentes por limite da API: ' + resumo.pendentesRateLimit + '\n' +
+        'Ja existiam no destino: ' + resumo.jaExistiamDestino + '\n' +
+        'Pendentes para proxima execucao: ' + resumo.pendentesProximaExecucao + '\n' +
+        'Erros: ' + resumo.erros +
+        (deveContinuar ? '\n\nA continuacao foi agendada automaticamente.' : '')
+    );
+  }
+}
+
+function atualizarDiferentes() {
+  var planilha = getPlanilha_();
+  var abaRelatorio = planilha.getSheetByName(ABA_RELATORIO);
+
+  if (!abaRelatorio) {
+    throw new Error('A aba "' + ABA_RELATORIO + '" nao existe. Gere o relatorio de comparacao antes de atualizar diferentes.');
+  }
+
+  var dados = lerRelatorio_(abaRelatorio);
+  var plano = montarPlanoAtualizarDiferentes_(dados);
+
+  if (plano.linhas.length === 0) {
+    avisarUsuario_(
+      'Nenhuma linha marcada para atualizar.\n\n' +
+        'Para usar esta rotina, edite os JSONs desejados e marque decisao_integracao como ATUALIZAR_DIFERENTES.'
+    );
+    return;
+  }
+
+  if (!confirmarAtualizarDiferentes_(plano)) {
+    registrarLog_(planilha, 'ATUALIZAR_DIFERENTES_CANCELADO', 'Usuario cancelou a atualizacao manual dos diferentes');
+    return;
+  }
+
+  registrarLog_(planilha, 'ATUALIZAR_DIFERENTES_INICIO', 'Aplicando JSONs editados manualmente');
+
+  var props = PropertiesService.getScriptProperties();
+  var tokens = {
+    MATRIZ: obterAccessToken_(getRequiredProperty_(props, PROP_TOKEN_MATRIZ)),
+    FILIAL: obterAccessToken_(getRequiredProperty_(props, PROP_TOKEN_FILIAL))
+  };
+
+  var agora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  var resumo = {
+    linhasAtualizadas: 0,
+    atualizadosMatriz: 0,
+    atualizadosFilial: 0,
+    pendentes: 0,
+    erros: 0,
+    escritasApi: 0
+  };
+
+  plano.linhas.forEach(function(linha) {
+    if (resumo.escritasApi + linha.acoes.length > MAX_OPERACOES_ESCRITA_POR_EXECUCAO) {
+      resumo.pendentes += 1;
+      return;
+    }
+
+    try {
+      linha.acoes.forEach(function(acao) {
+        atualizarContato_(tokens[acao.destino], acao.codigo, acao.payload);
+        resumo.escritasApi += 1;
+        if (acao.destino === 'MATRIZ') {
+          resumo.atualizadosMatriz += 1;
+        } else {
+          resumo.atualizadosFilial += 1;
+        }
+      });
+
+      resumo.linhasAtualizadas += 1;
+      escreverResultadoAtualizarDiferentes_(abaRelatorio, linha, 'OK_ATUALIZADO_DIFERENTES', '', agora);
+    } catch (erro) {
+      resumo.erros += 1;
+      escreverResultadoAtualizarDiferentes_(abaRelatorio, linha, 'ERRO_ATUALIZAR_DIFERENTES', erro.message || String(erro), agora);
+      registrarLog_(planilha, 'ATUALIZAR_DIFERENTES_ERRO', 'Linha ' + linha.rowNumber + ': ' + (erro.message || String(erro)));
+    }
+  });
+
+  registrarLog_(planilha, 'ATUALIZAR_DIFERENTES_FIM', JSON.stringify(resumo));
+  avisarUsuario_(
+    'Atualizacao de diferentes concluida.\n\n' +
+      'Linhas atualizadas: ' + resumo.linhasAtualizadas + '\n' +
+      'PUTs na Matriz: ' + resumo.atualizadosMatriz + '\n' +
+      'PUTs na Filial: ' + resumo.atualizadosFilial + '\n' +
+      'Pendentes para proxima execucao: ' + resumo.pendentes + '\n' +
+      'Erros: ' + resumo.erros
+  );
+}
+
+function montarPlanoAtualizarDiferentes_(dados) {
+  var plano = {
+    linhas: [],
+    atualizacoesMatriz: 0,
+    atualizacoesFilial: 0
+  };
+
+  dados.rows.forEach(function(row) {
+    var item = row.data;
+    var decisao = String(item.decisao_integracao || '').trim().toUpperCase();
+
+    if (item.status !== 'DIFERENTE' || decisao !== 'ATUALIZAR_DIFERENTES') {
+      return;
+    }
+
+    var acoes = [];
+
+    if (item.dados_matriz_json) {
+      var matriz = parseJsonObrigatorio_(item.dados_matriz_json, row.rowNumber, 'dados_matriz_json');
+      acoes.push({
+        destino: 'MATRIZ',
+        codigo: resolverCodigoContato_(item.codigo_matriz, matriz.codigo, row.rowNumber, 'MATRIZ'),
+        payload: prepararPayloadContato_(matriz)
+      });
+      plano.atualizacoesMatriz += 1;
+    }
+
+    if (item.dados_filial_json) {
+      var filial = parseJsonObrigatorio_(item.dados_filial_json, row.rowNumber, 'dados_filial_json');
+      acoes.push({
+        destino: 'FILIAL',
+        codigo: resolverCodigoContato_(item.codigo_filial, filial.codigo, row.rowNumber, 'FILIAL'),
+        payload: prepararPayloadContato_(filial)
+      });
+      plano.atualizacoesFilial += 1;
+    }
+
+    if (acoes.length > 0) {
+      plano.linhas.push({
+        rowNumber: row.rowNumber,
+        item: item,
+        acoes: acoes
+      });
+    }
+  });
+
+  return plano;
+}
+
+function confirmarAtualizarDiferentes_(plano) {
+  var mensagem =
+    'Confirma atualizar os registros DIFERENTE marcados como ATUALIZAR_DIFERENTES?\n\n' +
+    'Linhas marcadas: ' + plano.linhas.length + '\n' +
+    'PUTs na Matriz: ' + plano.atualizacoesMatriz + '\n' +
+    'PUTs na Filial: ' + plano.atualizacoesFilial + '\n\n' +
+    'A rotina usa os JSONs atuais das celulas dados_matriz_json e dados_filial_json.\n' +
+    'Campos codigo, dtCad e cidade sao removidos do payload antes do PUT.';
+
+  try {
+    var ui = SpreadsheetApp.getUi();
+    return ui.alert('Atualizar diferentes', mensagem, ui.ButtonSet.YES_NO) === ui.Button.YES;
+  } catch (erro) {
+    Logger.log(mensagem);
+    return false;
+  }
+}
+
+function escreverResultadoAtualizarDiferentes_(aba, linha, resultado, erro, executadoEm) {
+  var headerMap = mapearHeaders_(aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0]);
+  setCellByHeader_(aba, linha.rowNumber, headerMap, 'resultado_integracao', resultado);
+  setCellByHeader_(aba, linha.rowNumber, headerMap, 'erro_integracao', erro || '');
+  setCellByHeader_(aba, linha.rowNumber, headerMap, 'executado_em', executadoEm);
+  setCellByHeader_(aba, linha.rowNumber, headerMap, 'campos_complementados', 'JSON manual aplicado: ' + linha.acoes.map(function(acao) { return acao.destino; }).join(', '));
+  setCellByHeader_(aba, linha.rowNumber, headerMap, 'campos_conflito', '');
+}
+
+function resolverCodigoContato_(codigoColuna, codigoJson, rowNumber, destino) {
+  var codigoPlanilha = String(codigoColuna || '').trim();
+  var codigoPayload = String(codigoJson || '').trim();
+
+  if (codigoPlanilha && codigoPayload && codigoPlanilha !== codigoPayload) {
+    throw new Error('Linha ' + rowNumber + ': codigo da coluna e do JSON divergem para ' + destino + '.');
+  }
+
+  var codigo = codigoPlanilha || codigoPayload;
+  if (!codigo) {
+    throw new Error('Linha ' + rowNumber + ': codigo ausente para ' + destino + '.');
+  }
+
+  return codigo;
+}
+function lerRelatorio_(aba) {
+  var lastRow = aba.getLastRow();
+  var lastColumn = aba.getLastColumn();
+  if (lastRow < 2) {
+    return { aba: aba, headers: [], headerMap: {}, rows: [] };
+  }
+
+  var values = aba.getRange(1, 1, lastRow, lastColumn).getValues();
+  var headers = values[0].map(function(header) { return String(header || '').trim(); });
+  var headerMap = mapearHeaders_(headers);
+  var controle = garantirColunasControle_(aba, headerMap, headers);
+
+  if (controle.adicionouColuna) {
+    lastColumn = aba.getLastColumn();
+    values = aba.getRange(1, 1, lastRow, lastColumn).getValues();
+    headers = values[0].map(function(header) { return String(header || '').trim(); });
+    headerMap = mapearHeaders_(headers);
+  }
+
+  var rows = [];
+  for (var i = 1; i < values.length; i += 1) {
+    rows.push({
+      rowNumber: i + 1,
+      values: values[i],
+      data: linhaParaObjeto_(headers, values[i])
+    });
+  }
+
+  return { aba: aba, headers: headers, headerMap: headerMap, rows: rows };
+}
+
+function montarPlanoIntegracao_(dados) {
+  var plano = {
+    criarMatriz: 0,
+    criarFilial: 0,
+    revisar: 0,
+    ignorar: 0,
+    acoes: []
+  };
+
+  dados.rows.forEach(function(row) {
+    var item = row.data;
+    var resultadoAtual = String(item.resultado_integracao || '').trim();
+
+    if (resultadoAtual.indexOf('OK_') === 0) {
+      plano.ignorar += 1;
+      plano.acoes.push({ tipo: 'IGNORAR', rowNumber: row.rowNumber, item: item });
+      return;
+    }
+
+    if (item.status === 'SO_MATRIZ') {
+      var contatoMatriz = parseJsonObrigatorio_(item.dados_matriz_json, row.rowNumber, 'dados_matriz_json');
+      plano.criarFilial += 1;
+      plano.acoes.push({
+        tipo: 'CRIAR',
+        destino: 'FILIAL',
+        rowNumber: row.rowNumber,
+        item: item,
+        payload: prepararPayloadContato_(contatoMatriz),
+        camposComplementaveis: []
+      });
+      return;
+    }
+
+    if (item.status === 'SO_FILIAL') {
+      var contatoFilial = parseJsonObrigatorio_(item.dados_filial_json, row.rowNumber, 'dados_filial_json');
+      plano.criarMatriz += 1;
+      plano.acoes.push({
+        tipo: 'CRIAR',
+        destino: 'MATRIZ',
+        rowNumber: row.rowNumber,
+        item: item,
+        payload: prepararPayloadContato_(contatoFilial),
+        camposComplementaveis: []
+      });
+      return;
+    }
+
+    if (item.status === 'DIFERENTE') {
+      plano.revisar += 1;
+      plano.acoes.push({
+        tipo: 'REVISAR',
+        rowNumber: row.rowNumber,
+        item: item,
+        camposComplementaveis: [],
+        camposConflito: String(item.campos_diferentes || '')
+          .split(',')
+          .map(function(campo) { return campo.trim(); })
+          .filter(function(campo) { return campo; })
+      });
+    }
+  });
+
+  return plano;
+}
+
+function montarAtualizacaoIndicadorIEOrigem_(destino, contato) {
+  if (String(contato.indicadorIE) !== '0') {
+    return null;
+  }
+
+  var payload = prepararPayloadContato_(contato);
+  payload.indicadorIE = 9;
+
+  return {
+    destino: destino,
+    codigo: contato.codigo,
+    payload: payload
+  };
+}
+
+function analisarDiferencaParaIntegracao_(matriz, filial, camposDiferentesTexto) {
+  var campos = String(camposDiferentesTexto || '')
+    .split(',')
+    .map(function(campo) { return campo.trim(); })
+    .filter(function(campo) { return campo; });
+  var matrizAtualizada = clonarObjeto_(matriz);
+  var filialAtualizada = clonarObjeto_(filial);
+  var camposMatriz = [];
+  var camposFilial = [];
+  var camposComplementaveis = [];
+  var camposConflito = [];
+
+  campos.forEach(function(campo) {
+    var valorMatriz = matriz[campo];
+    var valorFilial = filial[campo];
+    var matrizVazio = valorVazio_(valorMatriz);
+    var filialVazio = valorVazio_(valorFilial);
+
+    if (matrizVazio && !filialVazio) {
+      matrizAtualizada[campo] = valorFilial;
+      camposMatriz.push(campo);
+      camposComplementaveis.push(campo + '->MATRIZ');
+      return;
+    }
+
+    if (filialVazio && !matrizVazio) {
+      filialAtualizada[campo] = valorMatriz;
+      camposFilial.push(campo);
+      camposComplementaveis.push(campo + '->FILIAL');
+      return;
+    }
+
+    camposConflito.push(campo);
+  });
+
+  var atualizacoes = [];
+  if (camposMatriz.length > 0) {
+    atualizacoes.push({
+      destino: 'MATRIZ',
+      codigo: matriz.codigo,
+      payload: matrizAtualizada,
+      campos: camposMatriz
+    });
+  }
+  if (camposFilial.length > 0) {
+    atualizacoes.push({
+      destino: 'FILIAL',
+      codigo: filial.codigo,
+      payload: filialAtualizada,
+      campos: camposFilial
+    });
+  }
+
+  return {
+    atualizacoes: atualizacoes,
+    camposComplementaveis: camposComplementaveis,
+    camposConflito: camposConflito
+  };
+}
+
+function confirmarIntegracao_(plano) {
+  var mensagem =
+    'Confirma criar todos os contatos ausentes nas bases?\n\n' +
+    'Criar na Matriz: ' + plano.criarMatriz + '\n' +
+    'Criar na Filial: ' + plano.criarFilial + '\n' +
+    'Diferentes para outro script: ' + plano.revisar + '\n' +
+    'Ignorar ja processados: ' + plano.ignorar + '\n\n' +
+    'Esta rotina nao atualiza registros diferentes; ela apenas cria os contatos que existem em uma base e faltam na outra.';
+
+  try {
+    var ui = SpreadsheetApp.getUi();
+    return ui.alert('Integrar bases', mensagem, ui.ButtonSet.YES_NO) === ui.Button.YES;
+  } catch (erro) {
+    Logger.log(mensagem);
+    return false;
+  }
+}
+
+function criarIndicesDestinoIntegracao_(tokens, plano) {
+  var precisaMatriz = plano.acoes.some(function(acao) { return acao.tipo === 'CRIAR' && acao.destino === 'MATRIZ'; });
+  var precisaFilial = plano.acoes.some(function(acao) { return acao.tipo === 'CRIAR' && acao.destino === 'FILIAL'; });
+
+  return {
+    MATRIZ: precisaMatriz ? criarIndiceExistenciaContatos_(buscarTodosContatos_(tokens.MATRIZ)) : criarIndiceExistenciaContatos_([]),
+    FILIAL: precisaFilial ? criarIndiceExistenciaContatos_(buscarTodosContatos_(tokens.FILIAL)) : criarIndiceExistenciaContatos_([])
+  };
+}
+
+function criarIndiceExistenciaContatos_(contatos) {
+  var indice = { documentos: {}, assinaturas: {} };
+  contatos.forEach(function(contato) {
+    adicionarContatoAoIndiceDestino_(indice, contato);
+  });
+  return indice;
+}
+
+function adicionarContatoAoIndiceDestino_(indice, contato) {
+  var documento = limparDocumento_(contato.cpfcnpj);
+  if (documento) {
+    indice.documentos[documento] = true;
+  }
+
+  var assinatura = assinaturaContato_(contato);
+  if (assinatura) {
+    indice.assinaturas[assinatura] = true;
+  }
+}
+
+function contatoJaExisteNoDestino_(indice, contato) {
+  var documento = limparDocumento_(contato.cpfcnpj);
+  if (documento && indice.documentos[documento]) {
+    return true;
+  }
+
+  var assinatura = assinaturaContato_(contato);
+  return Boolean(assinatura && indice.assinaturas[assinatura]);
+}
+
+function assinaturaContato_(contato) {
+  var nome = String(contato.nome || '').trim().toUpperCase().replace(/\\s+/g, ' ');
+  if (!nome) {
+    return '';
+  }
+
+  var fones = Array.isArray(contato.fones) ? contato.fones : [];
+  var primeiroFone = '';
+  for (var i = 0; i < fones.length; i += 1) {
+    primeiroFone = limparDocumento_(fones[i]);
+    if (primeiroFone) {
+      break;
+    }
+  }
+
+  return primeiroFone ? nome + '|' + primeiroFone : '';
+}
+
+function criarContatosEmLote_(tokens, acoes) {
+  var resultados = [];
+
+  for (var i = 0; i < acoes.length; i += 1) {
+    if (i > 0) {
+      Utilities.sleep(PAUSA_ENTRE_CRIACOES_MS);
+    }
+
+    var resultado = criarContatoComRetry_(tokens, acoes[i]);
+    resultados.push(resultado);
+
+    if (resultado.rateLimit) {
+      for (var pendente = i + 1; pendente < acoes.length; pendente += 1) {
+        resultados.push({
+          acao: acoes[pendente],
+          ok: false,
+          erro: 'Limite da API atingido; tentativa adiada para a proxima execucao.',
+          rateLimit: true
+        });
+      }
+      break;
+    }
+  }
+
+  return resultados;
+}
+
+function criarContatoComRetry_(tokens, acao) {
+  var ultimoErro = '';
+
+  for (var tentativa = 0; tentativa <= PAUSA_RATE_LIMIT_MS.length; tentativa += 1) {
+    try {
+      if (contatoExisteNoDestinoApi_(tokens[acao.destino], acao.payload)) {
+        return { acao: acao, ok: true, erro: 'Contato ja encontrado no destino antes do POST.', rateLimit: false, jaExistia: true };
+      }
+
+      criarContato_(tokens[acao.destino], acao.payload);
+      return { acao: acao, ok: true, erro: '', rateLimit: false, jaExistia: false };
+    } catch (erro) {
+      ultimoErro = erro.message || String(erro);
+
+      if (!erroEhRateLimit_(ultimoErro)) {
+        return { acao: acao, ok: false, erro: ultimoErro, rateLimit: false };
+      }
+
+      if (tentativa < PAUSA_RATE_LIMIT_MS.length) {
+        Utilities.sleep(PAUSA_RATE_LIMIT_MS[tentativa]);
+      }
+    }
+  }
+
+  return { acao: acao, ok: false, erro: ultimoErro, rateLimit: true };
+}
+
+function erroEhRateLimit_(mensagem) {
+  var texto = String(mensagem || '');
+  return texto.indexOf('HTTP 429') >= 0 ||
+    texto.indexOf('Too Many Attempts') >= 0 ||
+    texto.indexOf('premium urlfetch') >= 0 ||
+    texto.indexOf('chamado muitas vezes') >= 0 ||
+    texto.indexOf('chamadas') >= 0;
+}
+
+function contatoExisteNoDestinoApi_(accessToken, contato) {
+  var documento = limparDocumento_(contato.cpfcnpj);
+  if (documento) {
+    var porDocumento = buscarContatosPorFiltro_(accessToken, documento);
+    for (var i = 0; i < porDocumento.length; i += 1) {
+      if (limparDocumento_(porDocumento[i].cpfcnpj) === documento) {
+        return true;
+      }
+    }
+  }
+
+  var assinatura = assinaturaContato_(contato);
+  if (!assinatura) {
+    return false;
+  }
+
+  var porNome = buscarContatosPorFiltro_(accessToken, contato.nome || '');
+  for (var j = 0; j < porNome.length; j += 1) {
+    if (assinaturaContato_(porNome[j]) === assinatura) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function buscarContatosPorFiltro_(accessToken, filtro) {
+  var texto = String(filtro || '').trim();
+  if (!texto) {
+    return [];
+  }
+
+  var url = CONTATOS_URL + '?' + montarQueryString_({
+    filtro: texto,
+    fields: CAMPOS_CONTATO.join(',')
+  });
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: {
+      Authorization: 'Bearer ' + accessToken,
+      Accept: 'application/json'
+    },
+    muteHttpExceptions: true
+  });
+
+  var status = response.getResponseCode();
+  var body = response.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error('Falha ao verificar contato existente. HTTP ' + status + ': ' + body);
+  }
+
+  var json = body ? JSON.parse(body) : {};
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+function criarContato_(accessToken, payload) {
+  return chamarApiEgestor_(accessToken, 'post', CONTATOS_URL, payload);
+}
+
+function atualizarContato_(accessToken, codigo, payload) {
+  if (!codigo) {
+    throw new Error('Codigo do contato ausente para atualizacao.');
+  }
+  return chamarApiEgestor_(accessToken, 'put', CONTATOS_URL + '/' + encodeURIComponent(codigo), payload);
+}
+
+function chamarApiEgestor_(accessToken, method, url, payload) {
+  var request = montarRequisicaoApi_(accessToken, method, url, payload);
+  delete request.url;
+  var response = UrlFetchApp.fetch(url, request);
+  return interpretarRespostaApi_(response);
+}
+
+function montarRequisicaoApi_(accessToken, method, url, payload) {
+  return {
+    url: url,
+    method: method,
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + accessToken,
+      Accept: 'application/json'
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+}
+
+function interpretarRespostaApi_(response) {
+  var status = response.getResponseCode();
+  var body = response.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error('HTTP ' + status + ': ' + body);
+  }
+
+  return body ? JSON.parse(body) : {};
+}
+
+function prepararPayloadContato_(contato) {
+  var payload = clonarObjeto_(contato);
+  delete payload.codigo;
+  delete payload.dtCad;
+  delete payload.cidade;
+
+  if (String(payload.indicadorIE) === '0') {
+    payload.indicadorIE = 9;
+  }
+
+  return payload;
+}
+
+function escreverResultadoIntegracao_(aba, acao, resultado, erro, executadoEm) {
+  var headerMap = mapearHeaders_(aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0]);
+  setCellByHeader_(aba, acao.rowNumber, headerMap, 'decisao_integracao', acao.tipo + (acao.destino ? '_' + acao.destino : ''));
+  setCellByHeader_(aba, acao.rowNumber, headerMap, 'resultado_integracao', resultado);
+  setCellByHeader_(aba, acao.rowNumber, headerMap, 'erro_integracao', erro || '');
+  setCellByHeader_(aba, acao.rowNumber, headerMap, 'executado_em', executadoEm);
+  setCellByHeader_(aba, acao.rowNumber, headerMap, 'campos_complementados', (acao.camposComplementaveis || []).join(', '));
+  setCellByHeader_(aba, acao.rowNumber, headerMap, 'campos_conflito', (acao.camposConflito || []).join(', '));
+}
+
+function escreverResultadosIntegracaoEmLote_(aba, resultados, executadoEm) {
+  if (resultados.length === 0) {
+    return;
+  }
+
+  var lastRow = aba.getLastRow();
+  var lastColumn = aba.getLastColumn();
+  var values = aba.getRange(1, 1, lastRow, lastColumn).getValues();
+  var headerMap = mapearHeaders_(values[0]);
+
+  resultados.forEach(function(item) {
+    var acao = item.acao;
+    var rowIndex = acao.rowNumber - 1;
+    setValueByHeaderInValues_(values, rowIndex, headerMap, 'decisao_integracao', acao.tipo + (acao.destino ? '_' + acao.destino : ''));
+    setValueByHeaderInValues_(values, rowIndex, headerMap, 'resultado_integracao', item.resultado);
+    setValueByHeaderInValues_(values, rowIndex, headerMap, 'erro_integracao', item.erro || '');
+    setValueByHeaderInValues_(values, rowIndex, headerMap, 'executado_em', item.executadoEm || executadoEm);
+    setValueByHeaderInValues_(values, rowIndex, headerMap, 'campos_complementados', (acao.camposComplementaveis || []).join(', '));
+    setValueByHeaderInValues_(values, rowIndex, headerMap, 'campos_conflito', (acao.camposConflito || []).join(', '));
+  });
+
+  aba.getRange(1, 1, lastRow, lastColumn).setValues(values);
+}
+
+function setValueByHeaderInValues_(values, rowIndex, headerMap, header, value) {
+  if (!headerMap[header]) {
+    throw new Error('Coluna nao encontrada: ' + header);
+  }
+  values[rowIndex][headerMap[header] - 1] = value;
+}
+
+function agendarContinuacaoIntegracao_() {
+  removerGatilhosContinuacaoIntegracao_();
+  ScriptApp.newTrigger(FUNCAO_CONTINUAR_INTEGRACAO)
+    .timeBased()
+    .after(ATRASO_CONTINUACAO_MS)
+    .create();
+}
+
+function removerGatilhosContinuacaoIntegracao_() {
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === FUNCAO_CONTINUAR_INTEGRACAO) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+}
+
+function garantirColunasControle_(aba, headerMap, headers) {
+  var controle = ['decisao_integracao', 'resultado_integracao', 'erro_integracao', 'executado_em', 'campos_complementados', 'campos_conflito'];
+  var adicionouColuna = false;
+
+  controle.forEach(function(header) {
+    if (!headerMap[header]) {
+      headers.push(header);
+      aba.getRange(1, headers.length).setValue(header);
+      headerMap[header] = headers.length;
+      adicionouColuna = true;
+    }
+  });
+
+  return { adicionouColuna: adicionouColuna };
+}
+
+function mapearHeaders_(headers) {
+  var map = {};
+  headers.forEach(function(header, index) {
+    map[String(header || '').trim()] = index + 1;
+  });
+  return map;
+}
+
+function linhaParaObjeto_(headers, values) {
+  var obj = {};
+  headers.forEach(function(header, index) {
+    obj[header] = values[index];
+  });
+  return obj;
+}
+
+function setCellByHeader_(aba, rowNumber, headerMap, header, value) {
+  if (!headerMap[header]) {
+    throw new Error('Coluna nao encontrada: ' + header);
+  }
+  aba.getRange(rowNumber, headerMap[header]).setValue(value);
+}
+
+function parseJsonObrigatorio_(texto, rowNumber, coluna) {
+  if (!texto) {
+    throw new Error('Linha ' + rowNumber + ': coluna ' + coluna + ' esta vazia.');
+  }
+  return JSON.parse(texto);
+}
+
+function valorVazio_(valor) {
+  if (valor === null || typeof valor === 'undefined') {
+    return true;
+  }
+  if (Array.isArray(valor)) {
+    return valor.length === 0;
+  }
+  if (typeof valor === 'object') {
+    return Object.keys(valor).length === 0;
+  }
+  return String(valor).trim() === '';
+}
+
+function clonarObjeto_(obj) {
+  return JSON.parse(JSON.stringify(obj || {}));
+}
+function obterAccessToken_(personalToken) {
+  var response = UrlFetchApp.fetch(TOKEN_URL, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Accept: 'application/json'
+    },
+    payload: JSON.stringify({
+      grant_type: 'personal',
+      personal_token: personalToken
+    }),
+    muteHttpExceptions: true
+  });
+
+  var status = response.getResponseCode();
+  var body = response.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error('Falha ao autenticar no eGestor. HTTP ' + status + ': ' + body);
+  }
+
+  var json = JSON.parse(body);
+  if (!json.access_token) {
+    throw new Error('Resposta de autenticacao sem access_token: ' + body);
+  }
+
+  return json.access_token;
+}
+
+function buscarTodosContatos_(accessToken) {
+  var contatos = [];
+  var pagina = 1;
+  var ultimaPagina = 1;
+
+  do {
+    var url = CONTATOS_URL + '?' + montarQueryString_({
+      page: pagina,
+      fields: CAMPOS_CONTATO.join(',')
+    });
+
+    var response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: {
+        Authorization: 'Bearer ' + accessToken,
+        Accept: 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+
+    var status = response.getResponseCode();
+    var body = response.getContentText();
+    if (status < 200 || status >= 300) {
+      throw new Error('Falha ao buscar contatos no eGestor. HTTP ' + status + ': ' + body);
+    }
+
+    var json = JSON.parse(body);
+    var dados = Array.isArray(json.data) ? json.data : [];
+    contatos = contatos.concat(dados);
+
+    ultimaPagina = Number(json.last_page || pagina);
+    pagina += 1;
+  } while (pagina <= ultimaPagina);
+
+  return contatos;
+}
+
+function compararContatos_(contatosMatriz, contatosFilial) {
+  var matrizPorDocumento = indexarPorCpfCnpj_(contatosMatriz);
+  var filialPorDocumento = indexarPorCpfCnpj_(contatosFilial);
+
+  var onlyInMatriz = [];
+  var onlyInFilial = [];
+  var inBothWithDiffs = [];
+
+  Object.keys(matrizPorDocumento).forEach(function(cpfcnpj) {
+    var matriz = matrizPorDocumento[cpfcnpj];
+    var filial = filialPorDocumento[cpfcnpj];
+
+    if (!filial) {
+      onlyInMatriz.push(matriz);
+      return;
+    }
+
+    var diferencas = listarDiferencas_(matriz, filial);
+    if (diferencas.length > 0) {
+      inBothWithDiffs.push({
+        cpfcnpj: cpfcnpj,
+        matriz: matriz,
+        filial: filial,
+        diferencas: diferencas
+      });
+    }
+  });
+
+  Object.keys(filialPorDocumento).forEach(function(cpfcnpj) {
+    if (!matrizPorDocumento[cpfcnpj]) {
+      onlyInFilial.push(filialPorDocumento[cpfcnpj]);
+    }
+  });
+
+  return {
+    onlyInMatriz: onlyInMatriz,
+    onlyInFilial: onlyInFilial,
+    inBothWithDiffs: inBothWithDiffs
+  };
+}
+
+function indexarPorCpfCnpj_(contatos) {
+  var indice = {};
+
+  contatos.forEach(function(contato) {
+    var documento = limparDocumento_(contato.cpfcnpj);
+    if (documento && !indice[documento]) {
+      indice[documento] = contato;
+    }
+  });
+
+  return indice;
+}
+
+function listarDiferencas_(matriz, filial) {
+  var ignorar = {
+    codigo: true,
+    dtCad: true,
+    cidade: true
+  };
+
+  return CAMPOS_CONTATO.filter(function(campo) {
+    if (ignorar[campo]) {
+      return false;
+    }
+
+    return normalizarValor_(matriz[campo]) !== normalizarValor_(filial[campo]);
+  });
+}
+
+function escreverRelatorio_(planilha, resultado, totalMatriz, totalFilial) {
+  var linhas = montarLinhasRelatorio_(resultado);
+  var abaRelatorio = getOrCreateSheet_(planilha, ABA_RELATORIO);
+
+  limparAba_(abaRelatorio);
+  abaRelatorio.getRange(1, 1, linhas.length, linhas[0].length).setValues(linhas);
+  formatarRelatorio_(abaRelatorio, linhas.length, linhas[0].length);
+
+  escreverResumo_(planilha, resultado, totalMatriz, totalFilial);
+  planilha.setActiveSheet(abaRelatorio);
+}
+
+function montarLinhasRelatorio_(resultado) {
+  var linhas = [[
+    'status',
+    'acao_sugerida',
+    'cpfcnpj',
+    'codigo_matriz',
+    'codigo_filial',
+    'nome_matriz',
+    'nome_filial',
+    'campos_diferentes',
+    'dados_matriz_json',
+    'dados_filial_json',
+    'decisao_integracao',
+    'resultado_integracao',
+    'erro_integracao',
+    'executado_em',
+    'campos_complementados',
+    'campos_conflito'
+  ]];
+
+  resultado.onlyInMatriz.forEach(function(item) {
+    linhas.push([
+      'SO_MATRIZ',
+      'CRIAR_NA_FILIAL',
+      limparDocumento_(item.cpfcnpj),
+      item.codigo || '',
+      '',
+      item.nome || '',
+      '',
+      '',
+      JSON.stringify(item),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      ''
+    ]);
+  });
+
+  resultado.onlyInFilial.forEach(function(item) {
+    linhas.push([
+      'SO_FILIAL',
+      'CRIAR_NA_MATRIZ',
+      limparDocumento_(item.cpfcnpj),
+      '',
+      item.codigo || '',
+      '',
+      item.nome || '',
+      '',
+      '',
+      JSON.stringify(item),
+      '',
+      '',
+      '',
+      '',
+      '',
+      ''
+    ]);
+  });
+
+  resultado.inBothWithDiffs.forEach(function(item) {
+    linhas.push([
+      'DIFERENTE',
+      'REVISAR',
+      item.cpfcnpj || '',
+      item.matriz.codigo || '',
+      item.filial.codigo || '',
+      item.matriz.nome || '',
+      item.filial.nome || '',
+      item.diferencas.join(', '),
+      JSON.stringify(item.matriz),
+      JSON.stringify(item.filial),
+      '',
+      '',
+      '',
+      '',
+      '',
+      ''
+    ]);
+  });
+
+  return linhas;
+}
+function escreverResumo_(planilha, resultado, totalMatriz, totalFilial) {
+  var abaResumo = getOrCreateSheet_(planilha, ABA_RESUMO);
+  var agora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  var linhas = [
+    ['metrica', 'valor'],
+    ['atualizado_em', agora],
+    ['total_contatos_matriz', totalMatriz],
+    ['total_contatos_filial', totalFilial],
+    ['somente_matriz', resultado.onlyInMatriz.length],
+    ['somente_filial', resultado.onlyInFilial.length],
+    ['com_diferencas', resultado.inBothWithDiffs.length],
+    ['total_pendencias', resultado.onlyInMatriz.length + resultado.onlyInFilial.length + resultado.inBothWithDiffs.length]
+  ];
+
+  limparAba_(abaResumo);
+  abaResumo.getRange(1, 1, linhas.length, linhas[0].length).setValues(linhas);
+  abaResumo.setFrozenRows(1);
+  abaResumo.autoResizeColumns(1, 2);
+}
+
+function registrarLog_(planilha, etapa, mensagem) {
+  var abaLog = getOrCreateSheet_(planilha, ABA_LOG);
+  if (abaLog.getLastRow() === 0) {
+    abaLog.appendRow(['data_hora', 'etapa', 'mensagem']);
+    abaLog.setFrozenRows(1);
+  }
+
+  var agora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  abaLog.appendRow([agora, etapa, mensagem]);
+}
+
+function formatarRelatorio_(aba, totalLinhas, totalColunas) {
+  aba.setFrozenRows(1);
+  aba.getRange(1, 1, 1, totalColunas).setFontWeight('bold');
+  aba.getRange(1, 1, totalLinhas, totalColunas).createFilter();
+  aba.setColumnWidth(1, 120);
+  aba.setColumnWidth(2, 160);
+  aba.setColumnWidth(3, 150);
+  aba.setColumnWidth(4, 120);
+  aba.setColumnWidth(5, 120);
+  aba.setColumnWidth(6, 280);
+  aba.setColumnWidth(7, 280);
+  aba.setColumnWidth(8, 260);
+  aba.setColumnWidth(9, 420);
+  aba.setColumnWidth(10, 420);
+  aba.setColumnWidth(11, 170);
+  aba.setColumnWidth(12, 180);
+  aba.setColumnWidth(13, 320);
+  aba.setColumnWidth(14, 150);
+  aba.setColumnWidth(15, 240);
+  aba.setColumnWidth(16, 240);
+  aba.getRange(1, 1, totalLinhas, totalColunas).setWrap(true);
+}
+
+function getPlanilha_() {
+  var ativa = SpreadsheetApp.getActiveSpreadsheet();
+  if (ativa && ativa.getId() === PLANILHA_ID) {
+    return ativa;
+  }
+
+  return SpreadsheetApp.openById(PLANILHA_ID);
+}
+
+function getRequiredProperty_(props, nome) {
+  var valor = normalizarPersonalToken_(props.getProperty(nome));
+  if (!valor) {
+    throw new Error('Configure a propriedade do script: ' + nome);
+  }
+
+  return valor;
+}
+
+function normalizarPersonalToken_(valor) {
+  var token = String(valor || '').trim();
+
+  token = token.replace(/^['"]|['"]$/g, '');
+
+  if (token.indexOf('EGESTOR_PERSONAL_TOKEN_') === 0 && token.indexOf('=') !== -1) {
+    token = token.substring(token.indexOf('=') + 1).trim();
+  }
+
+  token = token.replace(/^=+/, '');
+  token = token.replace(/^['"]|['"]$/g, '');
+  token = token.replace(/\s/g, '');
+
+  return token;
+}
+
+function getOrCreateSheet_(planilha, nome) {
+  return planilha.getSheetByName(nome) || planilha.insertSheet(nome);
+}
+
+function limparAba_(aba) {
+  var filtro = aba.getFilter();
+  if (filtro) {
+    filtro.remove();
+  }
+  aba.clear();
+}
+
+function montarQueryString_(params) {
+  return Object.keys(params)
+    .map(function(chave) {
+      return encodeURIComponent(chave) + '=' + encodeURIComponent(params[chave]);
+    })
+    .join('&');
+}
+
+function limparDocumento_(valor) {
+  return String(valor || '').replace(/\D/g, '');
+}
+
+function normalizarValor_(valor) {
+  if (valor === null || typeof valor === 'undefined') {
+    return '';
+  }
+
+  if (Array.isArray(valor)) {
+    return JSON.stringify(valor.map(normalizarValor_).sort());
+  }
+
+  if (typeof valor === 'object') {
+    return JSON.stringify(valor);
+  }
+
+  return String(valor).trim().toUpperCase();
+}
+
+function avisarUsuario_(mensagem) {
+  try {
+    SpreadsheetApp.getUi().alert(mensagem);
+  } catch (erro) {
+    Logger.log(mensagem);
+  }
+}

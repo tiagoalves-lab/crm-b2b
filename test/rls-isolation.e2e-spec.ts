@@ -14,7 +14,6 @@ const prisma = new PrismaClient();
 describe('RLS — isolamento entre workspaces', () => {
   let workspaceA: { id: string };
   let workspaceB: { id: string };
-  let taskListA: { id: string };
 
   beforeAll(async () => {
     // Guarda de segurança: se a conexão usa um papel que ignora RLS
@@ -47,14 +46,6 @@ describe('RLS — isolamento entre workspaces', () => {
         slug: `rls-test-b-${Date.now()}`,
       },
     });
-
-    // task.list_id é NOT NULL (Kanban) — precisa de uma coluna válida pra
-    // qualquer teste que crie Task diretamente via Prisma.
-    taskListA = await withWorkspace(workspaceA.id, (tx) =>
-      tx.taskList.create({
-        data: { workspaceId: workspaceA.id, name: 'A fazer', order: 0 },
-      }),
-    );
   }, 15000);
 
   afterAll(async () => {
@@ -72,9 +63,6 @@ describe('RLS — isolamento entre workspaces', () => {
     );
     await withWorkspace(workspaceA.id, (tx) =>
       tx.company.deleteMany({ where: { workspaceId: workspaceA.id } }),
-    );
-    await withWorkspace(workspaceA.id, (tx) =>
-      tx.taskList.deleteMany({ where: { workspaceId: workspaceA.id } }),
     );
     await prisma.workspace.deleteMany({
       where: { id: { in: [workspaceA.id, workspaceB.id] } },
@@ -162,7 +150,10 @@ describe('RLS — isolamento entre workspaces', () => {
     await expect(
       withWorkspace(workspaceA.id, (tx) =>
         tx.company.create({
-          data: { workspaceId: workspaceB.id, razaoSocial: 'Tentativa cruzada' },
+          data: {
+            workspaceId: workspaceB.id,
+            razaoSocial: 'Tentativa cruzada',
+          },
         }),
       ),
     ).rejects.toThrow();
@@ -176,7 +167,6 @@ describe('RLS — isolamento entre workspaces', () => {
             workspaceId: workspaceA.id,
             assigneeUserId: '00000000-0000-0000-0000-000000000001',
             createdBy: '00000000-0000-0000-0000-000000000001',
-            listId: taskListA.id,
             title: 'Task sem nenhuma relação preenchida — deve falhar',
           },
         }),
@@ -184,22 +174,13 @@ describe('RLS — isolamento entre workspaces', () => {
     ).rejects.toThrow();
   });
 
-  it('CRÍTICO: task_lists do workspace A não vaza pro workspace B', async () => {
-    const foundInB = await withWorkspace(workspaceB.id, (tx) =>
-      tx.taskList.findUnique({ where: { id: taskListA.id } }),
-    );
-    expect(foundInB).toBeNull();
-
-    const listInB = await withWorkspace(workspaceB.id, (tx) =>
-      tx.taskList.findMany(),
-    );
-    expect(listInB.find((l) => l.id === taskListA.id)).toBeUndefined();
-  });
-
   it('CRÍTICO: task_checklist_items/task_comments (RLS via subquery em task_id) não vazam pro workspace B', async () => {
     const company = await withWorkspace(workspaceA.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspaceA.id, razaoSocial: 'Empresa pra checklist' },
+        data: {
+          workspaceId: workspaceA.id,
+          razaoSocial: 'Empresa pra checklist',
+        },
       }),
     );
     const task = await withWorkspace(workspaceA.id, (tx) =>
@@ -208,7 +189,6 @@ describe('RLS — isolamento entre workspaces', () => {
           workspaceId: workspaceA.id,
           assigneeUserId: '00000000-0000-0000-0000-000000000001',
           createdBy: '00000000-0000-0000-0000-000000000001',
-          listId: taskListA.id,
           companyId: company.id,
           title: 'Task com checklist e comentário',
         },

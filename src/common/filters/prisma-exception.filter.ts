@@ -6,6 +6,7 @@ import {
   ExceptionFilter,
   HttpException,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -17,7 +18,23 @@ import type { Response } from 'express';
 // Postgres vazar como 500 cru se algum caminho novo esquecer de checar.
 @Catch(Prisma.PrismaClientKnownRequestError)
 export class PrismaExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(PrismaExceptionFilter.name);
+
   catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
+    const request = host
+      .switchToHttp()
+      .getRequest<{ method?: string; url?: string }>();
+    // Registrado sempre (não só no caso default abaixo) — antes disso o
+    // erro real do Postgres era engolido em silêncio, só o "Erro
+    // inesperado no banco de dados" genérico chegava ao cliente e não
+    // havia nenhum jeito de diagnosticar a causa a partir dos logs do
+    // Railway (achado depurando um 500 real em POST /raw-leads/import-contacts,
+    // 2026-08-06).
+    this.logger.error(
+      `${request?.method ?? '?'} ${request?.url ?? '?'} — Prisma ${exception.code}: ${exception.message}` +
+        (exception.meta ? ` | meta=${JSON.stringify(exception.meta)}` : ''),
+    );
+
     const response = host.switchToHttp().getResponse<Response>();
     const httpException = this.toHttpException(exception);
     response

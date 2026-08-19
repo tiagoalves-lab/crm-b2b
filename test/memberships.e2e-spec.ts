@@ -157,7 +157,9 @@ describe('MembershipController (e2e)', () => {
       .expect(200)
       .expect((res) => {
         const body = res.body as MembershipBody[];
-        expect(body.find((m) => m.id === deletableMembership.id)).toBeUndefined();
+        expect(
+          body.find((m) => m.id === deletableMembership.id),
+        ).toBeUndefined();
       });
   });
 

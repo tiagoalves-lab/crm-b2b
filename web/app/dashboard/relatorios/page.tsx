@@ -43,7 +43,10 @@ export default async function RelatoriosPage() {
   const [{ items: pipelines }, { items: opportunities }, { items: leads }] = await Promise.all([
     listPipelines(token),
     listOpportunities(token),
-    listRawLeads(token, { pageSize: 200 }),
+    // Sem status: soma novo+aprovado+descartado pras métricas abaixo — o
+    // pageSize explícito era o mesmo teto de 200 que escondia leads (ver
+    // comentário em listRawLeads), removido pra usar o novo default.
+    listRawLeads(token),
   ]);
 
   const pipeline = pipelines.find((p) => p.isDefault) ?? pipelines[0];

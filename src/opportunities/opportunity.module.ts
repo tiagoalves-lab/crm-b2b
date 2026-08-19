@@ -22,5 +22,7 @@ import { OpportunityService } from './opportunity.service';
     OpportunityCommentService,
     OpportunityAttachmentService,
   ],
+  // Idem TaskModule: exportado pro CountsService (src/counts/).
+  exports: [OpportunityService],
 })
 export class OpportunityModule {}

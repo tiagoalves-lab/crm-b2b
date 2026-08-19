@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { companyDisplayName, formatPhoneBR } from "@/lib/api/companies";
+import { companyRazaoSocialName } from "@/lib/api/companies";
 import type { Company } from "@/lib/api/types";
+import { formatDateBR } from "@/lib/format-date";
 import { deleteCompanyAction, restoreCompanyAction } from "./actions";
+import SubmitButton from "@/app/_components/submit-button";
 
 export type Status = "ativo" | "negociando";
 export type Tipo = "lead" | "cliente";
@@ -31,10 +33,9 @@ function brl(value: number): string {
 }
 
 // Primeira coluna mostra razão social (igual ao protótipo, clienteRows()
-// usa c.razao) — cai pra companyDisplayName só se a empresa não tiver razão
-// social cadastrada (ex.: criada só com fantasia).
+// usa c.razao) — ver companyRazaoSocialName em lib/api/companies.ts.
 function primaryName(company: Company): string {
-  return company.razaoSocial?.trim() || companyDisplayName(company);
+  return companyRazaoSocialName(company);
 }
 
 // Toolbar (seg + busca) e tabela vivem no mesmo client component porque a
@@ -48,11 +49,13 @@ export default function EmpresasTable({
   currentFiltro,
   showDeleted,
   counts,
+  canDelete,
 }: {
   rows: EmpresaRow[];
   currentFiltro: "todas" | "lead" | "cliente";
   showDeleted: boolean;
   counts: { todas: number; lead: number; cliente: number };
+  canDelete: boolean;
 }) {
   const [query, setQuery] = useState("");
 
@@ -103,7 +106,7 @@ export default function EmpresasTable({
           <tr>
             <th>Empresa</th>
             <th>Tipo</th>
-            <th>Contato</th>
+            <th title="Tem vínculo com o eGestor (Matriz e/ou Filial)">eGestor</th>
             <th>Cidade</th>
             <th>Status</th>
             <th style={{ textAlign: "right" }}>LTV</th>
@@ -125,14 +128,15 @@ export default function EmpresasTable({
                   {tipo === "cliente" ? "Cliente" : "Lead"}
                 </span>
               </td>
-              <td>
-                {company.nomeParaContato ? (
-                  <>
-                    {company.nomeParaContato}
-                    <div className="t-sub">{formatPhoneBR(company.fones[0]) ?? "—"}</div>
-                  </>
+              <td style={{ textAlign: "center" }}>
+                {company.egestorContato ? (
+                  <span title="Integrada com o eGestor" style={{ color: "var(--green)" }}>
+                    ✓
+                  </span>
                 ) : (
-                  "—"
+                  <span title="Sem vínculo com o eGestor" style={{ color: "var(--text-tertiary)" }}>
+                    ✗
+                  </span>
                 )}
               </td>
               <td>
@@ -151,7 +155,7 @@ export default function EmpresasTable({
                 {ltv > 0 ? brl(ltv) : "—"}
               </td>
               <td className="t-sub">
-                {ultimaCompra ? new Date(ultimaCompra).toLocaleDateString("pt-BR") : "—"}
+                {ultimaCompra ? formatDateBR(ultimaCompra) : "—"}
               </td>
               <td>
                 <div className="cell-actions">
@@ -170,22 +174,24 @@ export default function EmpresasTable({
                   {company.deletedAt ? (
                     <form action={restoreCompanyAction}>
                       <input type="hidden" name="id" value={company.id} />
-                      <button type="submit" className="icon-btn" title="Restaurar">
+                      <SubmitButton className="icon-btn" title="Restaurar">
                         <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
                           <path d="M3 3v5h5" />
                         </svg>
-                      </button>
+                      </SubmitButton>
                     </form>
                   ) : (
-                    <form action={deleteCompanyAction}>
-                      <input type="hidden" name="id" value={company.id} />
-                      <button type="submit" className="icon-btn danger" title="Excluir">
-                        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" />
-                        </svg>
-                      </button>
-                    </form>
+                    canDelete && (
+                      <form action={deleteCompanyAction}>
+                        <input type="hidden" name="id" value={company.id} />
+                        <SubmitButton className="icon-btn danger" title="Excluir">
+                          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" />
+                          </svg>
+                        </SubmitButton>
+                      </form>
+                    )
                   )}
                 </div>
               </td>

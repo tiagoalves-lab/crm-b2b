@@ -50,7 +50,10 @@ describe('OpportunityController (e2e)', () => {
 
     const company = await withTenant(prisma, userId, workspace.id, (tx) =>
       tx.company.create({
-        data: { workspaceId: workspace.id, razaoSocial: 'Empresa Opportunities' },
+        data: {
+          workspaceId: workspace.id,
+          razaoSocial: 'Empresa Opportunities',
+        },
       }),
     );
     companyId = company.id;
@@ -78,16 +81,20 @@ describe('OpportunityController (e2e)', () => {
     app = await createFakeAuthApp(membership);
 
     const adminUserId = randomUUID();
-    adminMembership = await withTenant(prisma, adminUserId, workspace.id, (tx) =>
-      tx.membership.create({
-        data: {
-          workspaceId: workspace.id,
-          userId: adminUserId,
-          role: 'admin',
-          status: 'active',
-          joinedAt: new Date(),
-        },
-      }),
+    adminMembership = await withTenant(
+      prisma,
+      adminUserId,
+      workspace.id,
+      (tx) =>
+        tx.membership.create({
+          data: {
+            workspaceId: workspace.id,
+            userId: adminUserId,
+            role: 'admin',
+            status: 'active',
+            joinedAt: new Date(),
+          },
+        }),
     );
     adminApp = await createFakeAuthApp(adminMembership);
   }, 30000);
@@ -135,10 +142,17 @@ describe('OpportunityController (e2e)', () => {
   });
 
   it('GET /opportunities?companyId= filtra pela empresa (ficha, SPEC-CRM-GAMA.md §4.1)', async () => {
-    const outraCompany = await withTenant(prisma, membership.userId, workspace.id, (tx) =>
-      tx.company.create({
-        data: { workspaceId: workspace.id, razaoSocial: 'Empresa sem oportunidade' },
-      }),
+    const outraCompany = await withTenant(
+      prisma,
+      membership.userId,
+      workspace.id,
+      (tx) =>
+        tx.company.create({
+          data: {
+            workspaceId: workspace.id,
+            razaoSocial: 'Empresa sem oportunidade',
+          },
+        }),
     );
     const res = await request(app.getHttpServer())
       .get(`/opportunities?companyId=${companyId}`)

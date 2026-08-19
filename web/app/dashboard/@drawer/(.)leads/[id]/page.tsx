@@ -4,6 +4,9 @@ import { loadLeadFicha } from "@/app/dashboard/leads/_ficha/load";
 import FichaTabs from "@/app/dashboard/leads/_ficha/ficha-tabs";
 import FichaBody from "@/app/dashboard/leads/_ficha/ficha-body";
 import OverlayDrawer from "@/app/dashboard/_overlay/overlay-drawer";
+import { discardOneLeadAction } from "@/app/dashboard/leads/actions";
+import ApproveLeadButton from "@/app/dashboard/leads/approve-button";
+import SubmitButton from "@/app/_components/submit-button";
 
 export default async function LeadFichaDrawer({
   params,
@@ -16,7 +19,7 @@ export default async function LeadFichaDrawer({
   const { aba, error } = await searchParams;
   const token = await getServerAccessToken();
   const data = await loadLeadFicha(token, id);
-  const { lead, activities, tasks } = data;
+  const { lead, activities, tasks, contacts } = data;
   const tier = effectiveTier(lead);
 
   return (
@@ -29,15 +32,33 @@ export default async function LeadFichaDrawer({
             {lead.municipio ? ` · ${lead.municipio}${lead.uf ? `/${lead.uf}` : ""}` : ""}
           </div>
           <div className="row-form" style={{ marginTop: 10 }}>
-            <span className="pill pill-blue">lead · triagem</span>
+            <span className="pill pill-blue">Prospecção· triagem</span>
             <span className={`tier-tag tier-${tier}`} style={{ fontSize: 11 }}>
               score {lead.score}
             </span>
             {lead.status !== "novo" && <span className="pill pill-gray">{lead.status}</span>}
+            {lead.status === "novo" && (
+              <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+                <form action={discardOneLeadAction}>
+                  <input type="hidden" name="id" value={lead.id} />
+                  <input type="hidden" name="back" value="/dashboard/leads" />
+                  <SubmitButton className="btn btn-danger btn-sm" style={{ width: 150, justifyContent: "center" }} pendingLabel="Descartando…">
+                    Descartar
+                  </SubmitButton>
+                </form>
+                <ApproveLeadButton leadId={lead.id} />
+              </div>
+            )}
           </div>
         </div>
       }
-      tabs={<FichaTabs leadId={id} aba={aba} counts={{ timeline: activities.length, tarefas: tasks.length }} />}
+      tabs={
+        <FichaTabs
+          leadId={id}
+          aba={aba}
+          counts={{ timeline: activities.length, tarefas: tasks.length, contatos: contacts.length }}
+        />
+      }
     >
       {error && <div className="error-banner">{error}</div>}
       <FichaBody data={data} aba={aba} />

@@ -1,622 +1,140 @@
-# CRM B2B Multi-tenant — Gama Brasil
+# CRM B2B — Gama Brasil
 
-Referência rápida pra qualquer sessão. Documentação completa em `docs/`:
-`roadmap.md` (fases), `arquitetura-dados.md` (modelo de dados),
-`geracao-qualificacao-leads.md` (módulo de leads), `seguranca.md`
-(segurança — leia antes de tocar em `web/` ou em endpoints do backend).
+Você atua como engenheiro de software sênior deste projeto.
 
-## Retomando a sessão (última atualização: 2026-08-03)
+## Como se comunicar com o usuário
 
-**ATUALIZAÇÃO (2026-08-03, sessão seguinte) — tema mudou de escuro pra
-claro, a pedido do usuário.** A decisão anterior ("dark é o único tema,
-sem variante clara — igual ao protótipo", registrada mais abaixo) foi
-revertida por pedido explícito. Fluxo usado (repetível se pedirem prévia
-de novo antes de decidir): editei as variáveis de cor do `:root` em
-`web/app/globals.css` (mesmos nomes de variável, só os valores viraram
-claros — paleta antiga comentada no próprio arquivo pra referência) e
-publiquei como **deploy de preview da Vercel** (`vercel deploy`, sem
-`--prod`) — isso gera uma URL separada sem tocar a produção, dá pra
-aprovar ou descartar sem risco. Só depois do usuário confirmar
-("perfeito, pode fazer o deploy") promovi com `vercel --prod`.
-**Gotcha real**: os deploys de preview desse projeto vinham dando 500
-(`MIDDLEWARE_INVOCATION_FAILED`) porque `NEXT_PUBLIC_SUPABASE_URL`/
-`NEXT_PUBLIC_SUPABASE_ANON_KEY`/`NEXT_PUBLIC_API_URL` só estavam
-configuradas no ambiente **Production** da Vercel, nunca no **Preview**
-— o `middleware.ts` (checa sessão em todo request) recebia essas
-variáveis vazias e quebrava. Ao tentar copiar os valores de Production
-pra Preview via `vercel env pull`, a Vercel devolveu só o placeholder
-`"[SENSITIVE]"` (variáveis marcadas "Sensitive" nunca podem ser lidas de
-volta depois de criadas, nem por mim nem pelo dono do projeto) — isso
-causou uma primeira rodada de correção errada (gravei o placeholder
-literal como valor). Corrigido usando os valores reais do
-`web/.env.local` do próprio projeto (nunca exibidos no chat) pra
-configurar o ambiente Preview corretamente. **Se isso vier a acontecer
-de novo**: `vercel env ls` mostra em quais ambientes cada variável
-existe; se Preview estiver faltando, não dá pra usar `env pull` pra
-copiar de Production (trava em "[SENSITIVE]") — pegar o valor real de
-uma fonte confiável local (`.env.local`) ou pedir pro usuário adicionar
-via dashboard da Vercel (lá dá pra só marcar "Preview" como ambiente
-adicional de uma variável já existente, sem precisar redigitar o valor).
-Também achei e corrigi um `background: rgba(20, 24, 29, 0.85)` fixo no
-`.topbar` (não usava variável, só esse componente ficou escuro depois da
-troca de paleta) e troquei a logo: `logo-gama-dark.svg` (texto branco,
-pro fundo escuro antigo) por `logo-gama.svg` (texto `#020a26`, já
-existia em `web/public/`, nunca tinha sido usada — idêntica ao arquivo
-que o usuário anexou no chat, não precisei salvar nada novo) em
-`web/app/login/page.tsx` e `web/app/dashboard/layout.tsx`. **Publicado
-em produção** (`vercel --prod`) depois da aprovação. **Não commitado**
-— soma ao diff pendente de sempre (regra do projeto: commit só quando
-pedido à parte).
+Instrução explícita do usuário (2026-08-14), depois de reclamar de
+"avalanche de informação":
 
-**ATUALIZAÇÃO (2026-08-03) — todo o diff acumulado das sessões abaixo
-(reconstrução do frontend, importação de leads por planilha, histórico
-de vendas, anexos/comentários no pipeline) foi commitado e enviado pro
-GitHub** (commit `b01256c`, branch `master`, remoto
-`tiagoalves-lab/crm-b2b`). As menções a "não commitado"/"NÃO commitado"
-mais abaixo neste arquivo são histórico de quando cada trabalho foi
-feito — a pendência de commit em si **não existe mais**. O menu
-"Leads" também foi renomeado pra "Prospecção" nessa mesma leva
-(`dashboard-nav.tsx`) e publicado na Vercel.
+- **Ele não é programador.** Nada de jargão, nome de arquivo, nome de
+  função, número de teste ou stack trace na resposta — a menos que ele
+  peça. A analogia dele: um médico não narra o passo a passo da cirurgia
+  pro paciente, só trata a doença.
+- **Resposta curta.** O que mudou, o que ele precisa fazer (se precisar),
+  e pronto. Detalhe técnico só se ele perguntar.
+- **Uma decisão por vez.** Nunca despejar várias perguntas ou várias
+  frentes simultâneas — ele fica em conflito sobre o que fazer primeiro.
+  Se houver várias pendências, escolher a que destrava as outras e
+  apresentar só ela, com recomendação.
+- **Recomendar, não terceirizar.** Ele é o usuário, você é o engenheiro.
+  Levantamento de trade-off longo é ruído; dizer "recomendo X porque Y"
+  em duas linhas é o formato certo.
+- **Sempre em português do Brasil**, qualquer que seja o idioma da
+  pergunta.
 
-**HANDOFF — as 9 fatias do `SPEC-CRM-GAMA.md` estão implementadas,
-commitadas, testadas (70 unit + 111 e2e, tudo verde) e publicadas** nas
-URLs de teste (seção abaixo). A sessão que fechou isso foi interrompida
-duas vezes por queda de energia (evento climático) e retomada sem perda
-de trabalho — migrations e commits já estavam persistidos a cada
-interrupção. **Ainda falta**: testar no navegador com credencial real
-(nunca foi feito em nenhuma fatia, ver seção própria abaixo) e configurar
-`SUPABASE_SERVICE_ROLE_KEY` no Railway pra Fatia 8 (anexos) funcionar em
-produção — sem essa env var, upload de anexo devolve erro claro (o resto
-do app funciona normal).
+Vale também pra documentação: item substituído por outro é **apagado**,
+não arquivado. Histórico que não muda decisão nenhuma é lixo.
 
-**ATUALIZAÇÃO (mesmo dia, sessão seguinte) — o resultado visual das 9
-fatias divergia do protótipo** (usuário reportou vendo o app publicado:
-sidebar sem os grupos certos, formulário de empresa cravado na lista em
-vez de modal). Auditoria confirmou: não era só CSS, faltavam subsistemas
-inteiros (modal/drawer/toast/topbar). Rodada de reconstrução fatia por
-fatia fechada — ver "Trabalho pós-spec" abaixo, entrada "Reconstrução do
-frontend pra fidelidade 1:1". **Publicada em produção incrementalmente,
-mas ainda não commitada no git** — ver pendência específica lá.
+**O roadmap vive só no Miro** (decisão do usuário, 2026-08-17). Não
+existe mais versão `.md` — manter as duas em paralelo deixou o board pra
+trás. Item entregue é marcado `Concluído` no Kanban **no mesmo momento da
+entrega**, sem esperar ele pedir; item novo que surgir vira card na raia
+correspondente.
 
-### Estado da execução do SPEC-CRM-GAMA.md (seção 6 — 9 fatias)
+**Quando ele responde uma `❓ DÚVIDA`** (instrução dele, 2026-08-14):
+substituir o **bloco inteiro** — pergunta, opções e recomendação — pela
+diretriz que ficou valendo. Não deixar registro de qual opção foi
+descartada nem por quê. O documento mostra o que vale hoje; se precisar
+mudar depois, muda-se a diretriz.
 
-- [x] **Fatia 1** — Migrations `raw_leads`, `task_attachments`, view
-      `v_busca_empresa_lead` (§3.1/§3.2/§3.5). RLS confirmada.
-- [x] **Fatia 2** — Seed das 4 stages do pipeline + limpeza de 3 stages
-      sujas ("Tiago Alves", dado de teste) que existiam no banco real
-      (§5). Validação de `name` no DTO de Stage corrigida (2-60 chars).
-- [x] **Fatia 3** — Tela Empresas ganhou filtro Todas/Leads/Clientes +
-      ficha (`?empresa=<id>&aba=`, 6 abas). Endpoint novo
-      `POST /activities` (só existia leitura — gap real achado na tabela
-      de reconciliação do spec, §2).
-- [x] **Fatia 4** — Pipeline: seletor de empresa/lead (`CompanyPicker`,
-      3 caminhos: empresa direta / aprovar lead na hora / cadastrar por
-      CNPJ), drag-and-drop real (`@dnd-kit`, substituindo o
-      `<select>+botão` antigo), previsão ponderada + taxa de fechamento,
-      subform de encerradas com filtro de mês. Endpoints novos:
-      `GET /busca-empresa-lead`, `POST /raw-leads/:id/approve`.
-- [x] **Fatia 5** — Tarefas: ícones de contagem (comentários/checklist) na
-      Lista e no Kanban (`_count` novo em `GET /tasks`). **Decisão**: spec
-      pede "sem Kanban", mas o Kanban já existia e funcionava (sessão
-      anterior) — mantido, não apaguei feature funcionando sem confirmação
-      explícita. Comentários/checklist já estavam prontos (não eram gap).
-- [x] **Fatia 6** — Leads/Triagem (§4.4). Módulo `raw_leads` completo:
-      `LeadScoringService` (fórmula 1:1 com `scoreRaw()`/`scoreTier()` do
-      protótipo), `POST/GET /raw-leads`, `GET /raw-leads/:id`,
-      `POST /raw-leads/:id/discard`, `POST /raw-leads/bulk-approve`,
-      `POST /raw-leads/bulk-discard`, `POST /raw-leads/rescore`. **Decisão
-      de modelagem**: a company-lead nasce junto com o raw_lead (tag
-      `lead-triagem`), não só na aprovação — reusa `CompanyService.create`
-      (agora exportado por `CompanyModule`). **Decisão do usuário
-      (2026-07-31)**: descartar um lead NÃO apaga nem soft-deleta a
-      company-lead, só marca `raw_leads.status='descartado'` — a company
-      fica intacta e invisível (segue com a tag). Tela `/dashboard/leads`
-      nova (lista com filtro quente/morno/frio, seleção em lote,
-      "selecionar quentes", recalcular scores, importar lead manual,
-      ficha com abas Histórico/Tarefas/Dados reusando `createNoteAction`/
-      `createTaskAction` de Empresas/Tarefas). Empresas (`/dashboard/
-      empresas`) agora filtra fora as companies com tag `lead-triagem`
-      (senão a triagem poluiria a lista de empresas de verdade). Menu
-      "Leads" religado no sidebar (grupo "Aquisição"). `prisma/seed.ts`
-      ganhou 6 leads fictícios (2 quente/2 morno/2 frio, fontes
-      variadas) pra popular a triagem em dev — **não rodei o seed contra
-      o Supabase real** porque não tenho `DEV_USER_ID` disponível nesta
-      sessão (mesma limitação de sempre, ver seção "não testado no
-      navegador" abaixo). 64 unit + 107 e2e passando (12 novos: 8 no CRUD
-      de raw-leads + reaproveitei os 4 de approve já existentes). Bug de
-      teste achado e corrigido no processo (não é bug de produto): cleanup
-      de e2e que faz hard-delete de company criada via `CompanyService`
-      precisa apagar a `Activity` associada antes, senão bate no mesmo
-      CHECK constraint latente já documentado na memória de Tarefas/Kanban.
-      Detalhe completo em memória (`project_spec_crm_gama_execucao`).
-- [x] **Fatia 7** — Dashboard (`/dashboard`) + Relatórios
-      (`/dashboard/relatorios`, §4.5). KPIs, funil resumido, ações de
-      hoje, taxa de fechamento/ciclo médio/ticket médio/origem dos leads.
-      100% CONECTAR — nenhum endpoint novo, tudo derivado de
-      `GET /opportunities`/`/tasks`/`/raw-leads`/`/pipelines` que já
-      existiam. "Pipeline por produto" do protótipo ficou de fora de
-      propósito — não existe campo "produto" em `Opportunity` neste
-      schema (o protótipo simula algo que o backend real nunca teve).
-- [x] **Fatia 8** — Anexos. Bucket privado `task-attachments` criado no
-      Storage do Supabase (25MB/arquivo, sem policy em
-      `storage.objects` — só `service_role` acessa, nenhuma outra role
-      consegue ler/escrever, nem `anon` nem `authenticated`).
-      `SupabaseStorageService` (`src/storage/`) assina URLs de
-      upload/download; o binário nunca passa pelo NestJS — o Server
-      Action do Next.js recebe o arquivo via FormData e faz o PUT
-      direto pra signed URL, depois do backend confirmar que a tarefa
-      pertence ao workspace. UI: seção "Anexos" na ficha da tarefa
-      (enviar/baixar/remover — só quem enviou remove) + badge 📎 na
-      Lista e no Kanban. **Pendência de infra**: `SUPABASE_SERVICE_ROLE_KEY`
-      não está configurada no Railway (nem localmente) — eu não tenho
-      esse segredo e não crio/exponho ele (regra de segurança do
-      projeto). Sem ela, upload devolve 500 com mensagem clara; o resto
-      do app funciona normal. **Ação humana pendente**: pegar a key em
-      Supabase → Project Settings → API → service_role, colocar como
-      env var no serviço `backend` do Railway (nunca em `web/`).
-- [x] **Fatia 9** — Papéis Admin/Operador (§7.5). `TenantContextService`
-      passa a injetar `app.current_role` (além de `user_id`/`workspace_id`
-      que já injetava) em toda transação. RLS por papel aplicada em
-      `companies`/`opportunities`/`tasks` (leitura restrita por
-      papel+posse; escrita continua workspace-scoped, igual antes).
-      `raw_leads` fica sem policy de papel — área comum, por decisão
-      explícita do spec. **Dois bugs reais achados e corrigidos rodando
-      a suíte inteira antes de fechar a fatia** (nenhum dos dois
-      existia antes desta mudança):
-      1. `current_role` é palavra reservada do SQL — `SET LOCAL
-         app.current_role` quebra o parser mesmo com o namespace
-         `app.` na frente ("syntax error at or near current_role").
-         Corrigido com identificador quotado: `SET LOCAL
-         "app.current_role" = '...'`.
-      2. Toda escrita via Prisma usa `RETURNING`, e o Postgres exige
-         que a linha devolvida também satisfaça a policy de SELECT da
-         tabela — não só o `WITH CHECK` do INSERT/UPDATE. A policy de
-         SELECT de `companies` (só "vinculada a uma oportunidade minha")
-         fazia o próprio cadastro de empresa nova por um operador falhar
-         (empresa recém-criada ainda não tem oportunidade nenhuma).
-         Corrigido alargando a condição pra também aceitar
-         `owner_user_id` direto (campo que já existe em `Company` desde
-         a Fase 2) — e o mesmo padrão pra `tasks` com `created_by`.
-      Três migrations (`20260731200000`/`210000`/`220000` — a segunda e
-      terceira são correções encontradas testando, não features novas).
-      `test/rls-role-isolation.e2e-spec.ts` prova a restrição com dois
-      operadores + um admin, direto contra o Postgres real (o
-      "retestar com dois usuários" do spec, feito via e2e automatizado
-      já que não há credencial de navegador disponível). 111 e2e + 70
-      unit verdes depois de aplicar tudo.
-      **Nota**: o papel `manager` já tinha lógica própria funcionando na
-      camada de app (`PolicyService`, hierarquia de subordinados) desde
-      a Fase 2, mas o spec pede pra não implementar RLS pra ele nesta
-      rodada — resolvido incluindo `manager` no mesmo bypass de
-      admin/owner na RLS (RLS vira no-op pra esse papel, comportamento
-      idêntico a antes desta fatia; `PolicyService` continua sendo o
-      único ponto de decisão pra `manager`, como já documentado que
-      deveria ficar).
+## Documentação — ordem de leitura
 
-## Trabalho pós-spec (fora das 9 fatias, pedido direto do usuário)
+1. **`docs/regras-de-negocio.md`** — documento raiz. Regras consolidadas e
+   a pergunta em aberto. **Não implementar nada que dependa de uma
+   `❓ DÚVIDA` sem o usuário responder antes.**
+2. **Kanban "Roadmap CRM Gama (completo)"** no Miro (board "Plano de
+   Trabalho") — o que fazer agora, **fonte única**, sem cópia no repo.
+   O usuário prioriza direto lá; o agente lê antes de começar qualquer
+   frente e marca `Concluído` conforme entrega. Mudar a **ordem** ou o
+   texto de um card só com autorização explícita. Receita de acesso via
+   API na skill global `tiago-projeto`.
+3. **`docs/seguranca.md`** — obrigatório antes de mexer em `web/` ou em
+   qualquer endpoint. Checklists por tipo de mudança na seção 11.
 
-- **2026-08-01 — Tema escuro + fidelidade visual ao protótipo.** O
-  frontend estava no tema claro por padrão (só ativava dark via
-  `prefers-color-scheme`) e vários componentes reais do protótipo nunca
-  tinham sido portados (cards de KPI sem borda colorida, sidebar sem
-  ícones/badges, layout com `max-width` limitando a largura). Corrigido:
-  `web/app/globals.css` reescrito mapeando a paleta e os componentes do
-  `gama-crm-mvp.html` 1:1 (dark era o único tema nessa época, sem
-  variante clara — igual ao protótipo; **revertido em 2026-08-03, ver
-  atualização no topo deste arquivo** — o site foi pro tema claro por
-  pedido do usuário). Sidebar ganhou ícones SVG (copiados do
-  protótipo) + badges de contagem ao vivo (leads novos, oportunidades
-  abertas, tarefas pendentes, empresas) + papel do membro no rodapé.
-  Fora de escopo deliberado: topbar fixo com blur do protótipo — exigiria
-  lift de estado de título pro layout compartilhado, arquitetura
-  diferente da atual (cada página já tem seu próprio cabeçalho).
-- **2026-08-01 — CRUD de membros com login/senha.** `/dashboard/membros`
-  só permitia editar papel/gerente/status de quem já tinha logado uma
-  vez (membership criado automaticamente no primeiro login). Não existia
-  jeito de criar um membro novo direto no cadastro. Adicionado
-  `POST /memberships`: cria o usuário no Supabase Auth via Admin API
-  (`SupabaseUserService`, `src/memberships/`, mesmo padrão de isolamento
-  da service role key do `SupabaseStorageService` da Fatia 8) e o
-  Membership do workspace numa chamada só. `email_confirm: true` — sem
-  fluxo de convite por e-mail (continua fora de escopo), o admin que
-  cria já define a senha. Só owner/admin criam.
+Referência sob demanda: `arquitetura-dados.md` (modelo de dados),
+`geracao-qualificacao-leads.md`, `memorial-do-projeto.md` (histórico),
+`api-egestor-*.md`, `webhook-egestor.md`, `webhook-meta-leads.md` (docs
+técnicos das integrações).
 
-- **2026-08-01 — Reconstrução do frontend pra fidelidade 1:1 com
-  `gama-crm-mvp.html`.** As 9 fatias tinham conectado o backend, mas o
-  resultado visual era uma mistura da v1 com a migração — não batia com
-  o protótipo. Auditoria (agente Explore, comparação arquivo-a-arquivo)
-  achou a causa real: não era só CSS reskin, faltavam subsistemas
-  inteiros. Grep confirmou **zero ocorrência** de `modal`/`drawer`/
-  `toast`/`topbar` em `web/app` — ficha/formulário eram navegação de
-  página cheia, não overlay; cards do pipeline sem cor por stage;
-  Ganhar/Perder aparecia em todo cartão em vez de só na última etapa;
-  Leads sem barra de score; e existia um Kanban de Tarefas + checklist
-  que não estão no protótipo (sobra da v1). Plano completo salvo em
-  `C:\Users\Pichau\.claude\plans\humble-inventing-bunny.md` (máquina
-  local, não vai no git — só este resumo persiste).
+**Regra**: arquivo `.md` novo entra nesta lista no mesmo commit que o
+cria. Se não está aqui, não existe pro agente.
 
-  **Decisões travadas com o usuário antes de começar:**
-  1. Modal/drawer como **overlay real**, via **Parallel + Intercepting
-     Routes do Next.js** (`@modal`/`@drawer` em `web/app/dashboard/`,
-     pastas `(.)segmento` interceptam navegação soft e mantêm a lista
-     visível atrás, fundo escurecido, ESC/click-fora fecha; acesso
-     direto/refresh cai na rota cheia normal como fallback) — recurso
-     nativo do Next, não é lib nova, respeita a regra de "sem libs de
-     estado novas" do projeto.
-  2. Kanban de Tarefas e checklist **saíram da UI** (não existem no
-     protótipo). Endpoint de checklist continua no backend, só não é
-     mais exposto na tela — `kanban-board.tsx`/`task-detail.tsx` antigos
-     foram apagados, não só desligados.
-  3. Execução fatia por fatia, reportando e parando pra confirmação
-     entre cada uma; a partir da Fatia 2, a pedido do usuário, deploy no
-     Vercel **automático** ao fechar cada fatia (antes disso, só quando
-     pedido explicitamente — regra que não mudou pro Railway nem pra
-     commit, ver memória `feedback_auto_deploy_vercel`).
+### Formato dos docs de decisão
 
-  **Fatias fechadas** (build limpo + checklist de segurança §8 do SPEC
-  revalidado a cada uma):
-  - **Fatia 0** (fundação) — `web/app/globals.css` ganhou ~50 famílias
-    de classe do protótipo que faltavam (aditivo, nada removido — cada
-    tela migra na própria fatia); infra de overlay
-    (`web/app/dashboard/_overlay/{overlay-modal,overlay-drawer,toast}.tsx`)
-    plugada no `layout.tsx` via slots `@modal`/`@drawer`; agrupamento do
-    menu corrigido (Comercial/Cadastros/Análise, igual ao protótipo).
-  - **Fatia 1** (Empresas) — ficha virou drawer, "Nova"/"Editar" viraram
-    modal (`.modal.wide` — cadastro real tem ~20 campos herdados do
-    antigo Contact, não cabe nos 520px do protótipo). Aba "Dados
-    cadastrais" ganhou o card rico da Receita (situação/CNAE/porte/
-    natureza jurídica) — exigiu **estender `src/companies/
-    company.service.ts`**: `lookupCnpj` já buscava esses campos na
-    BrasilAPI mas descartava a maioria antes de chegar no frontend.
-    Bug real corrigido de passagem: `updateCustomFieldsAction`
-    substituía `customFields` inteiro em vez de mesclar (Prisma não faz
-    merge de campo JSON no `update`), apagando silenciosamente dado de
-    outra aba a cada save — corrigido lendo o estado atual antes de
-    salvar.
-  - **Fatia 2** (Pipeline) — board com a cor exata de cada stage do
-    protótipo (roxo/azul/verde-água/âmbar por ordem, `stage-colors.ts`).
-    Ganhar/Perder saiu do cartão: só aparece no modal de detalhe, e só
-    na última etapa ("Negociação e Fechamento"), como o protótipo
-    define — antes aparecia em todo cartão de toda coluna. Subform de
-    encerradas virou grade de cards azul/vermelho com filtro de período
-    completo (navegação por mês + range customizado).
-  - **Fatia 3** (Tarefas) — Kanban e checklist fora da UI (ver decisão
-    2 acima). Detalhe da tarefa virou modal com anexos reais
-    (`.attach-*`, upload via signed URL do Supabase Storage) e chat de
-    comentários (`.chat-*`).
-  - **Fatia 4** (Leads) — ficha virou drawer, score com barra de
-    progresso real (`.score-mini`) + tooltip do cálculo completo.
-    `scoreReasons()` novo em `web/lib/api/raw-leads.ts` espelha
-    `LeadScoringService#score` do backend só pra exibição (o backend
-    calcula `reasons` mas só persiste o `score` final) — mesmo padrão
-    que `scoreTier()` já usava, zero mudança de backend.
-  - **Fatia 5** (Dashboard + Relatórios) — ícones SVG nos títulos de
-    painel, `kpi-delta`/`.up`/`.down` nos KPIs do painel comercial.
+- **`docs/regras-de-negocio.md`** segue a skill `doc-decisoes`
+  (`.claude/skills/doc-decisoes/SKILL.md`): decisões fechadas
+  **numeradas** (`1.1`, `1.2`) com `Decisão →`/`Fonte →`, nunca tabela.
+  A numeração existe pra poder citar "decisão 1.7" sem ambiguidade — só
+  vale onde a lista é estável. Dúvidas marcadas `❓ DÚVIDA` dentro da
+  seção que afetam; nunca HTML pra indentação. Não se aplica a doc
+  técnico de API de terceiro (`api-egestor-*.md`, `webhook-*.md`), que
+  não leva decisão numerada.
+- **Card do Kanban no Miro** é **só ação e status**, sem numeração —
+  prioridade muda toda semana e número desalinha a cada reordenação.
+  Decisão fechada não mora no card; mora no doc do assunto
+  (`regras-de-negocio.md` ou o doc técnico da integração).
 
-  **Verificação desta rodada**: `npm run build` limpo a cada fatia,
-  74/74 unit tests do backend passando (rodados de novo no fim, depois
-  da extensão do `company.service.ts`), checklist de segurança (grep
-  `NEXT_PUBLIC_`) limpo em toda fatia, nenhuma migration/policy de
-  RLS/schema tocada (só a extensão aditiva do `lookupCnpj`). **e2e não
-  fechou limpo no fim da rodada**: o pool do Supabase (`pool_size: 15`,
-  modo *session*) estourou (`EMAXCONNSESSION`) mesmo depois de derrubar
-  os dev servers locais e rodar em série (`--runInBand`) — o backend de
-  produção no Railway mantém conexões abertas nesse mesmo pool
-  compartilhado o tempo todo, então isso não indica regressão desta
-  sessão, só que não deu pra reconfirmar os 111 e2e de novo sem
-  contenção de conexão. Reexecutar `npm run test:e2e` numa janela sem
-  tráfego de produção antes de considerar 100% revalidado.
+## Segurança — não negociável
 
-  **Pendência real, não resolvida nesta rodada**: tudo acima está
-  **publicado em produção** (Vercel a cada fatia; Railway também na
-  Fatia 1, por causa da extensão do `company.service.ts`) **mas ainda
-  NÃO commitado no git** — o usuário pediu deploy incremental
-  explicitamente, mas commit continua exigindo pedido à parte (regra do
-  projeto, não mudou). O working tree local tem o diff inteiro das 6
-  fatias. Se uma sessão nova retomar isso, rodar `git status`/`git
-  diff` antes de supor que o repo local ou o GitHub remoto refletem o
-  que está em produção — hoje eles **não** refletem.
+Premissa antes de qualquer integração frontend↔backend, não passo
+posterior (instrução do usuário, 2026-07-24). Detalhe em
+`docs/seguranca.md`; a skill global `seguranca-web` dispara sozinha nos
+gatilhos.
 
-**Pendência de infra compartilhada por duas features** (Fatia 8 e CRUD de
-membros): `SUPABASE_SERVICE_ROLE_KEY` não está configurada no Railway —
-eu não tenho esse segredo e não posso gerá-lo (regra de segurança do
-projeto). Sem ela: upload de anexo e criação de membro devolvem erro
-claro (500), resto do app funciona normal. Pegar em Supabase → Project
-Settings → API → `service_role` e colocar como env var do serviço
-`backend` no Railway.
-
-**NÃO testado no navegador em nenhuma fatia** (sem credencial real
-disponível nas sessões que construíram isso) — só build + testes
-automatizados (unit/e2e) a cada fatia, todos passando. **Prioridade de
-teste manual quando alguém logar:**
-1. Pipeline: arrastar um cartão entre colunas (drag-and-drop novo,
-   Fatia 4) — os cartões têm botões reais (Ganhar/Perder) dentro, usei
-   um padrão de "punho de arrasto" pra não conflitar, mas nunca cliquei
-   de verdade.
-2. Seletor de empresa no "Nova oportunidade" — buscar por nome/CNPJ,
-   cadastrar empresa nova pelo CNPJ direto do seletor.
-3. Ficha da empresa (`/dashboard/empresas`, clicar numa linha) — 6 abas,
-   registrar uma nota na Timeline.
-4. Tela Empresas — form expandido + botão "Buscar CNPJ".
-5. **Tela Leads (Fatia 6, nova)** — precisa rodar `DEV_USER_ID=<uuid>
-   npm run prisma:seed` primeiro (não rodei nesta sessão, sem o uuid do
-   usuário de dev) pra popular os 6 leads fictícios. Depois: seleção em
-   lote + "Selecionar quentes" + "Recalcular scores" (única parte
-   client-side da tela, `leads-table.tsx`) e aprovar um lead pelo botão
-   da ficha (`?lead=<id>&aba=dados`) — confirmar que ele some da lista e
-   aparece em Empresas.
-6. **Painel (`/dashboard`) e Relatórios (Fatia 7, novas)** — conferir que
-   os KPIs batem com o que está em Pipeline/Tarefas/Leads (é o mesmo
-   dado, só agregado diferente) e que o gráfico de origem dos leads
-   (SVG donut gerado server-side) renderiza certo.
-7. **Anexos em tarefa (Fatia 8, nova)** — **só funciona depois de
-   configurar `SUPABASE_SERVICE_ROLE_KEY` no Railway** (ver Fatia 8
-   acima). Testar: enviar um arquivo na ficha de uma tarefa, baixar de
-   volta, confirmar que outro usuário não consegue remover (só quem
-   enviou vê o botão de remover, mas vale confirmar que o backend
-   também barra por API direta).
-8. **Papéis Admin/Operador (Fatia 9, nova)** — precisa de dois usuários
-   reais logados (um com `role='admin'`, outro `role='sales_rep'` — mudar
-   em `/dashboard/membros`) pra testar de verdade no navegador; a
-   restrição já está provada via e2e contra o Postgres real
-   (`test/rls-role-isolation.e2e-spec.ts`), mas nunca foi clicada. Testar:
-   operador só vê as próprias oportunidades/tarefas/empresas vinculadas;
-   admin vê tudo; um operador não consegue promover a si mesmo pra admin
-   (só admin/owner mexe em papel de outro membro).
-
-**Adendo à lista acima, pós-reconstrução (2026-08-01, sessão seguinte)**:
-toda a navegação por overlay (modal/drawer via Intercepting Routes) é
-nova e nunca foi clicada de verdade — só validada por build + leitura de
-código. Testar especificamente: abrir "Nova empresa"/"Nova oportunidade"/
-"Nova tarefa" e confirmar que aparece como modal centralizado (não
-navega pra página cheia); clicar numa empresa/lead na lista e confirmar
-que abre como drawer lateral com a lista ainda visível atrás, escurecida;
-apertar ESC ou clicar fora fecha; dar refresh direto numa URL de
-ficha/modal (ex. colar `/dashboard/pipeline/<id>` na barra de endereço)
-e confirmar que cai na versão de página cheia (fallback), não quebra.
-
-Cada fatia tem os detalhes de decisão/gotcha registrados na memória do
-Claude Code (`project_spec_crm_gama_execucao` — mas isso é local da
-máquina/conta que rodou, **não vai junto no git**; se outra pessoa/conta
-retomar sem acesso a essa memória, este arquivo + o `SPEC-CRM-GAMA.md`
-são a fonte de verdade completa).
-
-URLs de teste publicadas (mesmo Supabase real, sem banco de teste
-separado): frontend `https://web-gamma-olive-80.vercel.app`, backend
-`https://backend-production-bc44.up.railway.app` (rodando em **US
-East**). **Ambos redeployados em 2026-08-01 com as 9 fatias completas**
-(commits `2a903aa`/`6aaa680`/`7173574`).
-Redeploy: `railway up` (raiz) / `vercel --prod` (dentro de `web/`) — não
-é automático por push.
-
-**Redeploys adicionais no mesmo dia (sessão da reconstrução do
-frontend, ver "Trabalho pós-spec")**: Vercel redeployado a cada fatia
-(0 a 5), Railway redeployado uma vez (Fatia 1, extensão do
-`company.service.ts`). **Nenhum desses redeploys corresponde a um commit
-novo** — o que está em produção agora é mais recente que o que está no
-git. Não assumir que `git log`/GitHub refletem o estado publicado até
-que alguém peça o commit explicitamente.
-
-Servidores locais de dev podem ou não continuar rodando dependendo de
-como a sessão anterior foi encerrada — backend em `:3001`, frontend
-tipicamente em `:3002` (não `:3000`, que costuma já estar ocupado por
-processo antigo; checar com `netstat` antes de assumir a porta).
-
-- **2026-08-01 — Importação de leads por planilha (CSV/Excel) + carga
-  real do crawler.** Pedido direto do usuário, fora do SPEC original
-  (§9 já previa "ingestão automática" como fase seguinte). `RawLeadService`
-  ganhou `importSpreadsheet()` + `POST /raw-leads/import` (multipart,
-  `FileInterceptor`, limite 10MB) reaproveitando o mesmo `create()` do
-  form manual linha a linha — erro em uma linha não derruba as outras,
-  volta `{ total, imported, errors: [{row, reason}] }`. Parsing/DE-PARA
-  isolado em `src/raw-leads/spreadsheet-import.util.ts` (testado,
-  `spreadsheet-import.util.spec.ts`, dados fictícios): aceita headers
-  "Empresa/Razão Social", "Fantasia", "Cidade/Município", "UF",
-  "Telefone"/"Telefone 2" (descarta placeholder só-zero), "Email
-  (Receita)" (valida formato), "Porte" (EPP→PEQUENO, Demais→MÉDIO —
-  decisão do usuário, já que o score só distingue GRANDE/MÉDIO
-  explicitamente), "Socios (QSA)" (vira `Company.customFields.socios`,
-  split por `|`), "CNAE", "Abertura" (`YYYYMMDD`→`Company.dtCad`). Sem
-  coluna de situação cadastral na planilha, assume `ATIVA` (decisão do
-  usuário: crawler já filtra só ativas antes de gerar a planilha, não
-  faz sentido penalizar todo mundo em -20 no score por falta do dado).
-  Fonte fica no default `manual` do DTO — usuário decidiu não criar
-  enum novo pra "crawler CNPJ" (`LeadFonte` seguiu com
-  econodata/apify/comexstat/manual, sem migration). `CreateRawLeadDto`
-  ganhou campos opcionais `fantasia/emails/fones/socios/dtAbertura` que
-  só alimentam a `Company` criada junto (não existem em `RawLead`) — o
-  form manual de "Importar lead manualmente" continua funcionando igual,
-  esses campos são opcionais. Parser usa `exceljs` (não `xlsx`/SheetJS —
-  tem CVE de prototype pollution + ReDoS não corrigido no pacote do npm;
-  `exceljs` foi a escolha por não ter vulnerabilidade direta no caminho
-  de parsing, mesmo pesando mais em node_modules). UI: novo
-  `+ Importar planilha` em `/dashboard/leads` (`import-spreadsheet-form.tsx`,
-  client component — mostra quantas linhas importaram e a lista de erros
-  por linha depois do upload). **Carga real executada**: 149 empresas do
-  arquivo "Crawler CNPJ Gama" (`Downloads/`, nunca commitado nem colado
-  em chat/doc — só os totais ficam aqui) foram injetadas direto via
-  script Node ad-hoc (fora do repo, `scratchpad` da sessão, descartável)
-  que reusa o `dist/` compilado do mesmo parser+scoring, porque ainda
-  não existe nenhum `Membership` real no workspace (ninguém logou —
-  mesma limitação de sempre) — o script abre uma transação Prisma e seta
-  manualmente as mesmas variáveis de sessão que `TenantContextService`
-  injetaria (`app.current_workspace_id`/`app.current_user_id`/
-  `"app.current_role"='owner'`), sem bypassar RLS de verdade, só sem o
-  Nest no meio. `Company.ownerUserId` ficou `NULL` nas 149 (sem usuário
-  real pra atribuir ainda) — a policy de papel aceita porque a sessão
-  usou `role='owner'`. Resultado: 149/149 `RawLead` + `Company` (tag
-  `lead-triagem`) criadas, confirmado por query pós-import. Build +
-  74+8=82 unit tests verdes (backend) e build limpo (frontend) antes do
-  deploy. Publicado: `railway up` + `vercel --prod` (mesmo par sempre
-  junto, contrato DTO mudou). **Não commitado** — pedido à parte, como
-  sempre; soma-se ao diff já pendente da reconstrução do frontend
-  (seção acima).
-
-- **2026-08-02 — Anexos + chat nos cards do Pipeline, e "gerar tarefa" a
-  partir do card.** Feature nova, fora do SPEC-CRM-GAMA.md original
-  (confirmado com o usuário: "isso não está no projeto original"). Mirror
-  1:1 do que já existia pra Tarefas (Fatia 3/8): `OpportunityComment` e
-  `OpportunityAttachment` novos no schema (migration
-  `20260802000000_opportunity_attachments_comments`, RLS por subquery via
-  `opportunities.workspace_id`, mesmo padrão de `task_comments`/
-  `task_attachments` — não replica a policy por papel de `opportunities`,
-  visibilidade continua garantida em `OpportunityService.mustBeVisible`).
-  **Decisão de infra**: reaproveitado o bucket `task-attachments` já
-  existente no Supabase Storage, com prefixo de path `opportunities/` em
-  vez de criar bucket novo — a segurança nunca esteve numa policy de
-  `storage.objects` por bucket (só `service_role` acessa), então não
-  precisou de nenhuma ação manual no painel do Supabase.
-  `OpportunityService.mustBeVisible` virou público (era `private`) pros
-  novos `OpportunityAttachmentService`/`OpportunityCommentService`
-  chamarem, mesmo padrão de `TaskService`. `GET /opportunities/:id`
-  passou a embutir `comments` (anexos continuam em endpoint próprio,
-  igual Task). Novos módulos:
-  `src/opportunities/opportunity-{attachment,comment}.{service,controller}.ts`.
-  Frontend: `pipeline/_detail/detail-body.tsx` ganhou `DetailBody`
-  (`DetailKv` + seção Anexos + seção Comentários, cópia direta da seção
-  equivalente de `tarefas/_detail/detail-body.tsx`, mesmas classes CSS
-  `.attach-*`/`.chat-*` — já eram genéricas); modal do card ganhou `wide`.
-  **"Gerar tarefa" a partir do card**: `tarefas/nova/nova-form.tsx` ganhou
-  props opcionais `lockedOpportunityId`/`lockedLabel` (esconde os
-  `<select>` de Empresa/Oportunidade e trava o vínculo) — reusado em duas
-  rotas novas, `pipeline/[id]/nova-tarefa` (fallback) e
-  `@modal/(.)pipeline/[id]/nova-tarefa` (modal, botão "+ Gerar tarefa" no
-  rodapé do card). Tarefa criada por esse caminho aparece no board de
-  Tarefas automaticamente — não foi preciso nenhuma sincronização nova,
-  todo `Task` com `dueAt` já lista lá (confirmado com o usuário via
-  pergunta direta antes de implementar, pra não inventar uma feature de
-  "prazo de oportunidade aparece em Tarefas" que não foi pedida).
-  **Fora de escopo deliberado**: não criei UI de "tarefas vinculadas a
-  esta oportunidade" dentro do card (só a ação de gerar) nem badge de
-  contagem de anexo/comentário no board (Kanban) — só no modal de
-  detalhe. **Verificação**: 92 unit + 116 e2e passando (backend, 3 specs
-  novos: `opportunity-attachment.service.spec.ts`,
-  `opportunity-comment.service.spec.ts`, bloco novo em
-  `test/opportunities.e2e-spec.ts`), migration aplicada contra o
-  Supabase real, build limpo (frontend e backend), checklist de
-  segurança limpo. Publicado: `railway up` + `vercel --prod`. **Não
-  testado no navegador** (mesma limitação de sempre, sem credencial
-  disponível) — prioridade de teste manual quando alguém logar: abrir um
-  card do Pipeline, anexar um arquivo, comentar, e clicar "+ Gerar
-  tarefa" confirmando que a tarefa nova aparece em `/dashboard/tarefas`
-  com o vínculo certo. **Não commitado** — soma-se ao diff já pendente
-  da reconstrução do frontend e da importação de leads por planilha
-  (pedido de commit continua sendo à parte, regra do projeto).
-
-## Comunicação
-
-Instrução explícita do usuário (2026-07-27): **responder sempre em
-português do Brasil**, em qualquer sessão, independente do idioma da
-mensagem de entrada.
-Sempre ao concluir uma tarefa de ajuste no código faça o deploy na Vercel.
-
-## Segurança — não negociável, ler antes de qualquer coisa em `web/`
-
-Instrução explícita do usuário (2026-07-24): segurança é premissa antes de
-qualquer integração frontend↔backend, não um passo posterior. Detalhe
-completo em `docs/seguranca.md` — resumo do que nunca pode acontecer:
-
-- **Nenhuma variável de ambiente sem prefixo `NEXT_PUBLIC_` pode ser usada
-  em código de `web/`.** Tudo em `web/` roda no navegador = é público.
-  Antes de commitar qualquer mudança em `web/`, rodar:
-  `grep -rn "process\.env\." web --include="*.ts" --include="*.tsx" | grep -v node_modules`
-  — toda linha tem que começar com `NEXT_PUBLIC_`.
+- **Nenhuma variável de ambiente sem prefixo `NEXT_PUBLIC_` em `web/`** —
+  tudo ali roda no navegador. Antes de commitar mudança em `web/`:
+  `grep -rn "process\.env\|process\[" web --include="*.ts" --include="*.tsx" | grep -v node_modules`
+- **Endpoint que recebe `:id` sempre checa ownership no backend**
+  (`mustBeVisible`/`PolicyService`), 404 antes de 403. RLS isola workspace
+  contra workspace, **não** usuário contra usuário dentro do mesmo
+  workspace.
 - **Nunca** colocar `DATABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-  `JWT_SECRET`, `ANTHROPIC_API_KEY` ou qualquer segredo em `web/`, em
-  docs, em commit, ou em texto de chat.
-- **A anon key do Supabase é pública por design** — quem protege dado é
-  RLS no Postgres, não a key. Nenhuma tabela nova sem policy de RLS no
-  mesmo commit que a cria. Antes de conectar tela real a dado real,
-  confirmar que RLS foi testado (teste de vazamento entre workspaces).
-- **Nenhum dado real de empresa/pessoa** (CNPJ, telefone, e-mail, nome)
-  em código, commit, doc ou artifact — sempre fictício, como já é o
-  padrão nos mockups e nos leads de amostra.
-- Antes de integrar `web/` a um endpoint real do NestJS pela primeira vez,
-  rodar o checklist completo da seção 6 de `docs/seguranca.md`.
+  `JWT_SECRET`, `ANTHROPIC_API_KEY`, token de terceiro (`EGESTOR_*`,
+  `META_*`) ou qualquer segredo em `web/`, em doc, em commit ou no chat.
+- **Nenhuma tabela nova sem policy de RLS no mesmo commit que a cria.** A
+  anon key do Supabase é pública por design — quem protege é o RLS.
+- **Nenhum dado real de empresa/pessoa** (CNPJ, telefone, e-mail, nome) em
+  código, commit, doc ou artifact. Planilha com dado real vai pro
+  `.gitignore`, nunca versionada.
 
-## Estado do projeto (ver `docs/roadmap.md` pra detalhe)
+## Estado do sistema
 
-- **Fase 0** (setup, stack, auth, migrations): concluída.
-- **Auth**: Supabase Auth (não JWT próprio — decisão revista em
-  2026-07-24). `User` não existe como tabela nossa; identidade vive em
-  `auth.users` do Supabase, `Membership` referencia por FK lógica.
-- **Fase 1** (DDL + RLS): **fechada (2026-07-24)** — migration aplicada
-  contra o Supabase real (`rrhcibsutyralogpwkxe`), `app_runtime` sem
-  BYPASSRLS configurado, `test/rls-isolation.e2e-spec.ts` passando. Bug de
-  RLS fail-closed (`''::uuid` sob pooler) corrigido em
-  `20260724170000_fix_rls_empty_string_guc`. Ver `docs/seguranca.md`, seção
-  3.1, sobre por que o papel de conexão importa tanto quanto o RLS em si.
-- **Fases 2/3/4** (auth+policy, API core CRUD, Activity/tarefas/alertas):
-  **fechadas (2026-07-24/27)**. RBAC+ownership+hierarquia (`Membership.role`
-  + `ownerUserId` + `managerId`) via `PolicyService`, guards JWT do
-  Supabase sem `jose`/`jwks-rsa` (ESM quebra sob Jest — implementação
-  própria em `src/auth/supabase-jwks.ts`).
-- **Conector Supabase**: usuário ativou o conector oficial em claude.ai
-  (2026-07-24), mas não estava disponível na sessão em que foi ativado —
-  precisa de sessão nova. **No início de qualquer sessão a partir de
-  agora, rodar `ToolSearch` com `"supabase"`** pra ver se já carregou. Se
-  sim: inspecionar o schema/escopo de permissão das ferramentas antes de
-  usar qualquer uma pra rodar SQL/migration contra dado real — não supor o
-  nível de acesso. Ver `docs/seguranca.md` antes de escrever nada real por
-  esse caminho.
-- **Fase 6** (frontend) foi adiantada fora de ordem, a pedido do usuário.
-  Login real via Supabase Auth funciona desde 2026-07-24. **Desde
-  2026-07-27, telas com dado real** via Server Components/Server Actions
-  — `Leads` segue placeholder (depende de módulo separado, fora de
-  escopo), menu de "Aquisição > Leads" removido do sidebar em 2026-07-28
-  (rota ainda existe no disco, só não linkada). Backend roda em
-  `PORT=3001` (Next dev usa `:3000` por padrão, colidiam).
-  **Pendência real:** fluxo autenticado completo ainda não foi confirmado
-  pelo usuário no navegador — próxima sessão, perguntar primeiro se isso
-  já foi testado antes de construir mais telas. Detalhe completo em
-  memória (`project_fase6_frontend_integrado`).
-- **Contact removido (2026-07-28)**: a pedido explícito do usuário,
-  `Contact` deixou de existir como tabela — virou campos dentro de
-  `Company` (`razaoSocial`, `fantasia`, `nomeParaContato`, `cpfCnpj`,
-  `tipo` PF/PJ, endereço completo, `emails`/`fones`/`tags` como arrays).
-  `Task`/`Opportunity`/`Activity` perderam o vínculo com uma pessoa
-  específica do cliente (só ligam a Company/Opportunity agora — decisão
-  de produto, não bug). Tela "Contatos" e o menu correspondente foram
-  removidos. Nova funcionalidade: busca de dados por CNPJ via BrasilAPI
-  (`GET /companies/cnpj/:cnpj` no backend, proxied por
-  `web/app/api/cnpj/route.ts` no frontend pra nunca expor o
-  access_token do Supabase ao navegador). Detalhe completo — inclusive
-  por que não é SEFAZ e a migration que dropou a tabela — em memória
-  (`project_contact_removido_empresa_expandida`).
-- **`leads/`**: módulo de geração/qualificação de leads, staging separado
-  do CRM (DuckDB local, nunca commitado — ver `.gitignore`).
-- **Tarefas (2026-07-28)**: virou Kanban configurável (colunas
-  criadas/removidas por owner/admin) com drag-and-drop real + visão
-  Calendário + cartão completo (descrição/checklist/comentários). Schema
-  novo: `TaskList`, `TaskChecklistItem`, `TaskComment`. Primeira UI
-  client-side interativa do projeto (`@dnd-kit`, em
-  `web/app/dashboard/tarefas/kanban-board.tsx`) — todo o resto continua
-  Server Components/Server Actions. Detalhe completo, inclusive um
-  gotcha real de migration (baseline necessário via `prisma migrate
-  resolve --applied`) e um bug latente de CHECK constraint documentado
-  (não corrigido), em memória (`project_tarefas_kanban_trello`).
-- **Deploy de teste (2026-07-27)**: MVP publicado pra validação — backend
-  (NestJS) no Railway (`https://backend-production-bc44.up.railway.app`,
-  projeto `crm-b2b-api`, serviço `backend`), frontend (Next.js) na Vercel
-  (`https://web-gamma-olive-80.vercel.app`, projeto `gamabrasil/web`).
-  CORS do backend (`FRONTEND_ORIGIN`) restrito a essa URL da Vercel — ver
-  `docs/seguranca.md`, seção 5. Ambos apontam pro Supabase real
-  (`rrhcibsutyralogpwkxe`), não há banco de "teste" separado — dado
-  criado nessa URL é dado real do workspace `gama`. CLIs instaladas como
-  devDependency (`@railway/cli` na raiz, `vercel` em `web/`) — **não usar
-  `npx` pra essas ferramentas neste ambiente** (ver
-  `feedback_npx_lock_quirk` na memória — trava com `ECOMPROMISED`), usar
-  o bin local (`node_modules/.bin/railway`, `web/node_modules/.bin/vercel`).
-  Bug real corrigido nesse deploy: `start:prod` apontava pra
-  `dist/main` mas o `tsconfig` compila `src/` e `prisma/*.ts` juntos, então
-  o `outDir` replica como `dist/src/main.js` — nunca tinha sido testado
-  antes (só `start:dev`, que roda direto de `src/` via `ts-node`/`nest
-  start`). Redeploy: `railway up` (raiz) / `vercel --prod` (`web/`).
+- Ferramenta **interna** da Gama Brasil, workspace único (`gama`);
+  qualquer login válido no Supabase Auth entra nele.
+- Em produção desde 2026-08-06. Todas as áreas do CRM estão no ar
+  (Empresas, Pipeline, Tarefas, Prospecção, Painel, Relatórios, Membros).
+  Frente atual: integração com o eGestor + Central de Leads do Meta.
+- **Auth**: Supabase Auth, sem tabela `User` própria. `Membership`
+  referencia `auth.users` por `user_id`; permissões via `PolicyService`.
 
-## Stack
+## Stack e ambiente
 
-- **Backend**: NestJS + TypeScript, raiz do repo. Prisma Migrate.
-  Postgres hospedado no Supabase.
-- **Frontend**: Next.js (App Router) + TypeScript, em `web/` (projeto
+- **Backend**: NestJS + TypeScript na raiz, Prisma Migrate, Postgres no
+  Supabase.
+- **Frontend**: Next.js (App Router) + TypeScript em `web/` (projeto
   separado, `npm install`/`npm run build` próprios).
-- **Leads**: scripts Python (Colab), em `leads/`.
+- **Integrações**: `src/integrations/egestor/` (ERP, contas Matriz e
+  Filial) e `src/integrations/meta-leads/` (Lead Ads).
+- **Leads**: scripts Python em `leads/`.
+
+### Deploy
+
+Sempre manual, nunca por push. Backend → `node_modules/.bin/railway up`
+na raiz. Frontend → `web/node_modules/.bin/vercel --prod` dentro de
+`web/`. **Não usar `npx`** neste ambiente (trava com `ECOMPROMISED`).
+
+Publique ao concluir qualquer ajuste de código, sem perguntar — é a única
+forma do usuário conferir. Entrega só de backend vai pro Railway; só de
+frontend, pra Vercel; se tocou nos dois, os dois.
+
+### Cuidados
+
+- **Não existe banco de teste.** Backend (Railway), frontend (Vercel) e
+  dev local usam o mesmo Supabase real — qualquer dado criado é dado de
+  produção do workspace `gama`.
+- **Commit só quando pedido**, nunca automático. Produção costuma estar à
+  frente do que está commitado. Repo: `github.com/tiagoalves-lab/crm-b2b`
+  (privado), branch `master`.
+- **Dev local**: backend `:3001`, frontend `:3002` (a `:3000` costuma
+  estar ocupada — checar com `netstat`).

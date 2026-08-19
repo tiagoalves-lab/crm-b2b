@@ -41,3 +41,11 @@ leads/*.duckdb
 leads/*.duckdb.wal
 leads/*.parquet
 leads/*.zip
+
+# integração eGestor — planilhas/exports de trabalho com dado real de
+# cliente (CNPJ, nome, endereço, e-mail, telefone), coladas em docs/ pra
+# eu ler o contexto, nunca pra versionar (regra do projeto: nenhum dado
+# real de empresa/pessoa em commit). Scripts (.txt/.md) continuam
+# versionados normalmente — só planilha/export com dado real entra aqui.
+docs/*.csv
+docs/*.xlsx

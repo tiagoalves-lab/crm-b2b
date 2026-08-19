@@ -33,7 +33,11 @@ export class PipelineController {
     @Body() dto: CreatePipelineDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.pipelines.create(tx, membership, dto),
     );
   }
@@ -44,7 +48,11 @@ export class PipelineController {
     @Query() query: ListQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.pipelines.findAll(tx, membership, query),
     );
   }
@@ -55,7 +63,11 @@ export class PipelineController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.pipelines.findOne(tx, membership, id),
     );
   }
@@ -67,7 +79,11 @@ export class PipelineController {
     @Body() dto: UpdatePipelineDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.pipelines.update(tx, membership, id, dto),
     );
   }
@@ -79,7 +95,11 @@ export class PipelineController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.pipelines.remove(tx, membership, id),
     );
   }
@@ -91,7 +111,11 @@ export class PipelineController {
     @Body() dto: CreateStageDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.pipelines.createStage(tx, membership, pipelineId, dto),
     );
   }
@@ -104,7 +128,11 @@ export class PipelineController {
     @Body() dto: UpdateStageDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) =>
         this.pipelines.updateStage(tx, membership, pipelineId, stageId, dto),
     );
@@ -118,7 +146,11 @@ export class PipelineController {
     @Param('stageId', ParseUUIDPipe) stageId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.pipelines.removeStage(tx, membership, pipelineId, stageId),
     );
   }

@@ -30,7 +30,11 @@ export class CompanyController {
     @Body() dto: CreateCompanyDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.companies.create(tx, membership, dto),
     );
   }
@@ -41,7 +45,11 @@ export class CompanyController {
     @Query() query: ListQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.companies.findAll(tx, membership, query),
     );
   }
@@ -60,7 +68,11 @@ export class CompanyController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.companies.findOne(tx, membership, id),
     );
   }
@@ -72,7 +84,11 @@ export class CompanyController {
     @Body() dto: UpdateCompanyDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.companies.update(tx, membership, id, dto),
     );
   }
@@ -83,7 +99,11 @@ export class CompanyController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.companies.remove(tx, membership, id),
     );
   }
@@ -94,7 +114,11 @@ export class CompanyController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.companies.restore(tx, membership, id),
     );
   }

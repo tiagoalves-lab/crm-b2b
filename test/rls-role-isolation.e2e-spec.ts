@@ -29,7 +29,12 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
     fn: (
       tx: Omit<
         PrismaClient,
-        '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+        | '$connect'
+        | '$disconnect'
+        | '$on'
+        | '$transaction'
+        | '$use'
+        | '$extends'
       >,
     ) => Promise<unknown>,
   ) {
@@ -47,7 +52,10 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
 
   beforeAll(async () => {
     workspace = await prisma.workspace.create({
-      data: { name: 'Workspace papéis (teste)', slug: `role-rls-test-${Date.now()}` },
+      data: {
+        name: 'Workspace papéis (teste)',
+        slug: `role-rls-test-${Date.now()}`,
+      },
     });
 
     const adminUserId = randomUUID();
@@ -79,39 +87,51 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
         },
       }),
     )) as { id: string; userId: string };
-    outroOperador = (await asMember({ userId: outroOperadorUserId }, 'owner', (tx) =>
-      tx.membership.create({
-        data: {
-          workspaceId: workspace.id,
-          userId: outroOperadorUserId,
-          role: 'sales_rep',
-          status: 'active',
-          joinedAt: new Date(),
-        },
-      }),
+    outroOperador = (await asMember(
+      { userId: outroOperadorUserId },
+      'owner',
+      (tx) =>
+        tx.membership.create({
+          data: {
+            workspaceId: workspace.id,
+            userId: outroOperadorUserId,
+            role: 'sales_rep',
+            status: 'active',
+            joinedAt: new Date(),
+          },
+        }),
     )) as { id: string; userId: string };
 
     pipeline = (await asMember(admin, 'admin', (tx) =>
       tx.pipeline.create({
-        data: { workspaceId: workspace.id, name: 'Funil (teste papéis)', isDefault: false },
+        data: {
+          workspaceId: workspace.id,
+          name: 'Funil (teste papéis)',
+          isDefault: false,
+        },
       }),
     )) as { id: string };
     stage = (await asMember(admin, 'admin', (tx) =>
       tx.stage.create({
-        data: { pipelineId: pipeline.id, name: 'Etapa única', order: 1, probability: 50 },
+        data: {
+          pipelineId: pipeline.id,
+          name: 'Etapa única',
+          order: 1,
+          probability: 50,
+        },
       }),
     )) as { id: string };
   }, 30000);
 
   afterAll(async () => {
     await asMember(admin, 'admin', (tx) =>
+      tx.rawLead.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
+    await asMember(admin, 'admin', (tx) =>
       tx.opportunity.deleteMany({ where: { workspaceId: workspace.id } }),
     );
     await asMember(admin, 'admin', (tx) =>
       tx.task.deleteMany({ where: { workspaceId: workspace.id } }),
-    );
-    await asMember(admin, 'admin', (tx) =>
-      tx.taskList.deleteMany({ where: { workspaceId: workspace.id } }),
     );
     await asMember(admin, 'admin', (tx) =>
       tx.company.deleteMany({ where: { workspaceId: workspace.id } }),
@@ -131,7 +151,9 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
 
   it('CRÍTICO: sales_rep só enxerga as próprias oportunidades, não as de outro operador', async () => {
     const company = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa papéis' } }),
+      tx.company.create({
+        data: { workspaceId: workspace.id, razaoSocial: 'Empresa papéis' },
+      }),
     )) as { id: string };
 
     const oppDoOperador = (await asMember(admin, 'admin', (tx) =>
@@ -176,11 +198,10 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
   }, 15000);
 
   it('CRÍTICO: sales_rep só enxerga as próprias tarefas, não as de outro operador', async () => {
-    const list = (await asMember(admin, 'admin', (tx) =>
-      tx.taskList.create({ data: { workspaceId: workspace.id, name: 'Coluna (teste)', order: 0 } }),
-    )) as { id: string };
     const company = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa tarefas' } }),
+      tx.company.create({
+        data: { workspaceId: workspace.id, razaoSocial: 'Empresa tarefas' },
+      }),
     )) as { id: string };
 
     const taskDoOperador = (await asMember(admin, 'admin', (tx) =>
@@ -190,7 +211,6 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
           title: 'Tarefa do operador',
           assigneeUserId: operador.userId,
           createdBy: admin.userId,
-          listId: list.id,
           companyId: company.id,
         },
       }),
@@ -202,7 +222,6 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
           title: 'Tarefa de outro operador',
           assigneeUserId: outroOperador.userId,
           createdBy: admin.userId,
-          listId: list.id,
           companyId: company.id,
         },
       }),
@@ -217,10 +236,14 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
 
   it('CRÍTICO: sales_rep só enxerga company ligada a uma oportunidade sua', async () => {
     const companyDoOperador = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa do operador' } }),
+      tx.company.create({
+        data: { workspaceId: workspace.id, razaoSocial: 'Empresa do operador' },
+      }),
     )) as { id: string };
     const companySemVinculo = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa sem vínculo' } }),
+      tx.company.create({
+        data: { workspaceId: workspace.id, razaoSocial: 'Empresa sem vínculo' },
+      }),
     )) as { id: string };
 
     await asMember(admin, 'admin', (tx) =>
@@ -251,9 +274,51 @@ describe('RLS — isolamento por papel dentro do mesmo workspace (SPEC-CRM-GAMA.
     );
   }, 15000);
 
+  // Carteira por representante na Prospecção — pedido direto do usuário,
+  // 2026-08-06 (bug real: um sales_rep enxergava lead importado por outro
+  // membro). Mesmo padrão dos testes de oportunidade/tarefa acima.
+  it('CRÍTICO: sales_rep só enxerga os próprios raw_leads, não os de outro operador', async () => {
+    const leadDoOperador = (await asMember(admin, 'admin', (tx) =>
+      tx.rawLead.create({
+        data: {
+          workspaceId: workspace.id,
+          razaoSocial: 'Lead do operador',
+          ownerUserId: operador.userId,
+        },
+      }),
+    )) as { id: string };
+    const leadDoOutro = (await asMember(admin, 'admin', (tx) =>
+      tx.rawLead.create({
+        data: {
+          workspaceId: workspace.id,
+          razaoSocial: 'Lead de outro operador',
+          ownerUserId: outroOperador.userId,
+        },
+      }),
+    )) as { id: string };
+
+    const vistasOperador = (await asMember(operador, 'sales_rep', (tx) =>
+      tx.rawLead.findMany({ where: { workspaceId: workspace.id } }),
+    )) as Array<{ id: string }>;
+    expect(vistasOperador.map((l) => l.id)).toContain(leadDoOperador.id);
+    expect(vistasOperador.map((l) => l.id)).not.toContain(leadDoOutro.id);
+
+    const vistasAdmin = (await asMember(admin, 'admin', (tx) =>
+      tx.rawLead.findMany({ where: { workspaceId: workspace.id } }),
+    )) as Array<{ id: string }>;
+    expect(vistasAdmin.map((l) => l.id)).toEqual(
+      expect.arrayContaining([leadDoOperador.id, leadDoOutro.id]),
+    );
+  }, 15000);
+
   it('escrita continua workspace-scoped (não owner-scoped) — RLS de INSERT não bloqueia operador criando pra si', async () => {
     const company = (await asMember(admin, 'admin', (tx) =>
-      tx.company.create({ data: { workspaceId: workspace.id, razaoSocial: 'Empresa insert operador' } }),
+      tx.company.create({
+        data: {
+          workspaceId: workspace.id,
+          razaoSocial: 'Empresa insert operador',
+        },
+      }),
     )) as { id: string };
 
     const created = (await asMember(operador, 'sales_rep', (tx) =>

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { TaskAttachment } from '@prisma/client';
+import { PolicyService } from '../policy/policy.service';
 import { SupabaseStorageService } from '../storage/supabase-storage.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
@@ -51,6 +52,7 @@ export class TaskAttachmentService {
   constructor(
     private readonly tasks: TaskService,
     private readonly storage: SupabaseStorageService,
+    private readonly policy: PolicyService,
   ) {}
 
   async findAll(
@@ -126,6 +128,9 @@ export class TaskAttachmentService {
     taskId: string,
     attachmentId: string,
   ): Promise<void> {
+    // Nega cedo por papel — representante não remove nem o próprio anexo,
+    // mais restrito que "só quem enviou remove" abaixo.
+    this.policy.assertCanDelete(membership, 'tarefas');
     const attachment = await this.mustExist(
       tx,
       membership,

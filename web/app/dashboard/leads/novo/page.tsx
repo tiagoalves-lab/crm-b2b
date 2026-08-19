@@ -9,7 +9,7 @@ export default function NovoLeadPage() {
     <>
       <div className="topbar">
         <div>
-          <div className="page-title">Novo lead</div>
+          <div className="page-title">Nova empresa</div>
           <div className="page-sub">Adicionar à triagem</div>
         </div>
         <Link href="/dashboard/leads" className="btn btn-ghost btn-sm">

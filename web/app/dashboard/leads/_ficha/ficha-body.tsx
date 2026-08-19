@@ -1,78 +1,100 @@
+import Link from "next/link";
+import { hasPermission } from "@/lib/api/permission-catalog";
 import type { Activity } from "@/lib/api/types";
 import { effectiveTier, scoreReasons } from "@/lib/api/raw-leads";
+import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
 import type { LeadFicha } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
-import { createNoteAction } from "../../empresas/actions";
-import { createTaskAction } from "../../tarefas/actions";
-import { approveOneLeadAction, discardOneLeadAction } from "../actions";
+import AddNoteForm from "../../empresas/_ficha/add-note-form";
+import ContactItem from "../../empresas/_ficha/contact-item";
+import AddContactForm from "../../empresas/_ficha/add-contact-form";
+import LeadSegmentoEditor from "../lead-segmento-editor";
+import LeadTagsEditor from "../lead-tags-editor";
 
 const SUBTIPO_LABEL: Record<string, string> = {
-  nota: "Nota",
+  nota: "Anotação",
   ligacao: "Ligação",
   reuniao: "Reunião",
   visita: "Visita",
   email: "E-mail",
 };
 
-function memberLabel(userId: string | null, currentUserId: string): string {
+// Cor por tipo de registro — mesmas chaves de empresas/_ficha/ficha-body.tsx
+// (gama-crm-mvp.html, DB.interactionTypes), reusadas nas classes
+// .note-type-btn/.timeline-item/.pill do globals.css.
+const SUBTIPO_COLOR: Record<string, string> = {
+  nota: "purple",
+  ligacao: "blue",
+  reuniao: "green",
+  visita: "amber",
+  email: "red",
+};
+
+// Pedido do usuário (2026-08-03): em vez de "Você", mostrar o nome real
+// de quem está logado — mesmo critério de empresas/_ficha/ficha-body.tsx.
+function memberLabel(
+  userId: string | null,
+  currentUserId: string,
+  currentUserName?: string | null,
+): string {
   if (!userId) return "Sistema";
-  if (userId === currentUserId) return "Você";
+  if (userId === currentUserId) return currentUserName?.trim() || "Você";
   return `${userId.slice(0, 8)}…`;
 }
 
-function ActivityItem({ activity, currentUserId }: { activity: Activity; currentUserId: string }) {
-  const payload = activity.payload as { texto?: string; subtipo?: string };
+function ActivityItem({
+  activity,
+  currentUserId,
+  currentUserName,
+}: {
+  activity: Activity;
+  currentUserId: string;
+  currentUserName?: string | null;
+}) {
+  const payload = activity.payload as { texto?: string; subtipo?: string; contatoNome?: string };
   const subtipo =
     payload.subtipo ?? (activity.type === "call" ? "ligacao" : activity.type === "email" ? "email" : "nota");
+  const color = SUBTIPO_COLOR[subtipo] ?? "gray";
   return (
-    <div className="timeline-item">
+    <div className={`timeline-item type-${color}`}>
       <div className="timeline-item-head">
-        <strong>{SUBTIPO_LABEL[subtipo] ?? subtipo}</strong>
-        <span>{memberLabel(activity.actorUserId, currentUserId)}</span>
-        <span>{new Date(activity.occurredAt).toLocaleString("pt-BR")}</span>
+        <span className={`pill pill-${color}`}>{SUBTIPO_LABEL[subtipo] ?? subtipo}</span>
+        <span>{memberLabel(activity.actorUserId, currentUserId, currentUserName)}</span>
+        {payload.contatoNome && <span>· {payload.contatoNome}</span>}
+        <span>{formatDateTimeBR(activity.occurredAt)}</span>
       </div>
       {payload.texto && <div className="timeline-item-body">{payload.texto}</div>}
     </div>
   );
 }
 
-// Conteúdo das 3 abas da ficha do lead (protótipo: renderLeadFicha em
-// gama-crm-mvp.html) — compartilhado entre a versão drawer e a versão
-// full-page.
+// Conteúdo das 4 abas da ficha do lead (protótipo: renderLeadFicha em
+// gama-crm-mvp.html, "Contatos" é adição fora do protótipo) —
+// compartilhado entre a versão drawer e a versão full-page. Aprovar/
+// Descartar saíram daqui (viviam só na aba "dados") e foram pro cabeçalho
+// da ficha (leads/[id]/page.tsx e @drawer/(.)leads/[id]/page.tsx), visível
+// não importa qual aba esteja aberta.
 export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string }) {
-  const { me, lead, companyId, activities, tasks, accessRestricted } = data;
+  const { me, lead, companyId, activities, tasks, contacts, accessRestricted } = data;
   const currentAba = currentAbaOf(aba);
-  const abaHref = (a: string) => `/dashboard/leads/${lead.id}?aba=${a}`;
   const tier = effectiveTier(lead);
-  const isNovo = lead.status === "novo";
+  // Mesmo critério de empresas/_ficha/ficha-body.tsx: vem da matriz
+  // granular de permissões (módulo "contatos"), não mais fixo em
+  // owner/admin.
+  const canEditContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "editar");
+  const canRemoveContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "excluir");
 
   if (currentAba === "timeline") {
     return (
       <>
         {companyId && !accessRestricted && (
           <div className="add-note">
-            <form action={createNoteAction}>
-              <input type="hidden" name="companyId" value={companyId} />
-              <input type="hidden" name="back" value={abaHref("timeline")} />
-              <div className="add-note-types">
-                {Object.entries(SUBTIPO_LABEL).map(([value, label], i) => (
-                  <label key={value} className="note-type-btn" style={{ cursor: "pointer" }}>
-                    <input type="radio" name="subtipo" value={value} defaultChecked={i === 0} style={{ display: "none" }} />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              <textarea
-                name="texto"
-                placeholder="Registrar contato com este lead... (mesmo antes de aprovar, o histórico fica guardado)"
-                required
-              />
-              <div className="add-note-foot">
-                <button type="submit" className="btn btn-primary btn-sm">
-                  Registrar
-                </button>
-              </div>
-            </form>
+            <AddNoteForm
+              companyId={companyId}
+              subtipoOptions={Object.entries(SUBTIPO_LABEL).map(([value, label]) => ({ value, label }))}
+              contacts={contacts}
+              placeholder="Registrar contato com este lead... (mesmo antes de aprovar, o histórico fica guardado)"
+            />
           </div>
         )}
         {accessRestricted ? (
@@ -80,7 +102,9 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
         ) : (
           <div className="timeline">
             {activities.length > 0 ? (
-              activities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} />)
+              activities.map((a) => (
+                <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} currentUserName={me.user.name} />
+              ))
             ) : (
               <p className="empty">Nenhum contato registrado ainda. Use o campo acima para anotar a primeira conversa.</p>
             )}
@@ -94,21 +118,14 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
     return (
       <>
         {companyId && !accessRestricted && (
-          <form action={createTaskAction} className="form-grid" style={{ marginBottom: 14 }}>
-            <input type="hidden" name="companyId" value={companyId} />
-            <input type="hidden" name="back" value={abaHref("tarefas")} />
-            <label style={{ gridColumn: "1 / -1" }}>
-              Nova tarefa para este lead
-              <input name="title" required />
-            </label>
-            <label>
-              Prazo
-              <input name="dueAt" type="date" />
-            </label>
-            <button type="submit" className="btn btn-primary btn-sm">
+          <div style={{ marginBottom: 14 }}>
+            <Link href={`/dashboard/leads/${lead.id}/nova-tarefa`} className="btn btn-primary btn-sm">
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
               Criar tarefa
-            </button>
-          </form>
+            </Link>
+          </div>
         )}
         {accessRestricted ? (
           <p className="empty">Sem acesso às tarefas desta empresa (ainda não tem responsável atribuído).</p>
@@ -117,7 +134,7 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
             <div key={t.id} className="drawer-list-item">
               <div>
                 <div className="dli-title">{t.title}</div>
-                <div className="dli-sub">{t.dueAt ? `vence ${new Date(t.dueAt).toLocaleDateString("pt-BR")}` : "sem prazo"}</div>
+                <div className="dli-sub">{t.dueAt ? `vence ${formatDateBR(t.dueAt)}` : "sem prazo"}</div>
               </div>
               <span className={t.status === "done" ? "pill pill-green" : "pill pill-gray"}>
                 {t.status === "done" ? "Concluída" : "Pendente"}
@@ -126,6 +143,31 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
           ))
         ) : (
           <p className="empty">Nenhuma tarefa. Crie uma para não esquecer de dar sequência neste lead.</p>
+        )}
+      </>
+    );
+  }
+
+  if (currentAba === "contatos") {
+    return (
+      <>
+        {companyId && !accessRestricted && (
+          <AddContactForm companyId={companyId} />
+        )}
+        {accessRestricted ? (
+          <p className="empty">Sem acesso aos contatos desta empresa (ainda não tem responsável atribuído).</p>
+        ) : companyId && contacts.length > 0 ? (
+          contacts.map((c) => (
+            <ContactItem
+              key={c.id}
+              contact={c}
+              companyId={companyId}
+              canEdit={canEditContacts}
+              canRemove={canRemoveContacts}
+            />
+          ))
+        ) : (
+          <p className="empty">Nenhum contato cadastrado ainda.</p>
         )}
       </>
     );
@@ -148,12 +190,24 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
         </dd>
         <dt>Porte</dt>
         <dd>{lead.porte ?? "—"}</dd>
+        <dt>Segmento</dt>
+        <dd>
+          <LeadSegmentoEditor leadId={lead.id} segmento={lead.segmento} />
+        </dd>
         <dt>Situação</dt>
         <dd>{lead.situacao ?? "—"}</dd>
+        <dt>Recuperação judicial</dt>
+        <dd>
+          {lead.emRecuperacaoJudicial ? (
+            <span className="pill pill-red" title="Indicativo da Receita Federal, removido da razão social">
+              ⚠ Em recuperação
+            </span>
+          ) : (
+            "Não"
+          )}
+        </dd>
         <dt>Importador</dt>
         <dd>{lead.importador ? <span style={{ color: "var(--green)" }}>Sim (Comex Stat)</span> : "Não"}</dd>
-        <dt>Origem</dt>
-        <dd style={{ textTransform: "uppercase" }}>{lead.fonte}</dd>
         <dt>Score</dt>
         <dd>
           <span className={`tier-tag tier-${tier}`}>
@@ -162,29 +216,11 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
         </dd>
         <dt>Cálculo</dt>
         <dd style={{ fontSize: 12, color: "var(--text-secondary)" }}>{scoreReasons(lead).join(" · ")}</dd>
+        <dt>Tags</dt>
+        <dd>
+          <LeadTagsEditor leadId={lead.id} tags={lead.tags} />
+        </dd>
       </dl>
-
-      {isNovo && (
-        <div className="row-form" style={{ marginTop: 20 }}>
-          <form action={approveOneLeadAction}>
-            <input type="hidden" name="id" value={lead.id} />
-            <input type="hidden" name="back" value="/dashboard/leads" />
-            <button type="submit" className="btn btn-primary">
-              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M20 6L9 17l-5-5" />
-              </svg>
-              Aprovar (vira empresa)
-            </button>
-          </form>
-          <form action={discardOneLeadAction}>
-            <input type="hidden" name="id" value={lead.id} />
-            <input type="hidden" name="back" value="/dashboard/leads" />
-            <button type="submit" className="btn btn-danger">
-              Descartar
-            </button>
-          </form>
-        </div>
-      )}
     </>
   );
 }

@@ -27,7 +27,11 @@ export class OpportunityAttachmentController {
     @Param('opportunityId', ParseUUIDPipe) opportunityId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.attachments.findAll(tx, membership, opportunityId),
     );
   }
@@ -39,8 +43,13 @@ export class OpportunityAttachmentController {
     @Body() dto: CreateAttachmentDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
-      (tx) => this.attachments.createUploadUrl(tx, membership, opportunityId, dto),
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) =>
+        this.attachments.createUploadUrl(tx, membership, opportunityId, dto),
     );
   }
 
@@ -51,7 +60,11 @@ export class OpportunityAttachmentController {
     @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) =>
         this.attachments.createDownloadUrl(
           tx,
@@ -70,8 +83,13 @@ export class OpportunityAttachmentController {
     @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
-      (tx) => this.attachments.remove(tx, membership, opportunityId, attachmentId),
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) =>
+        this.attachments.remove(tx, membership, opportunityId, attachmentId),
     );
   }
 }

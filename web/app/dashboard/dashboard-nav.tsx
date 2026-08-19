@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { MembershipRole } from "@/lib/api/types";
 
 // Ícones (feather-style, 24x24 viewBox) copiados 1:1 do sidebar de
 // gama-crm-mvp.html — mesmo path data, só trocando a tag <svg> pra JSX.
@@ -49,6 +50,15 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M1 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" />
     </>
   ),
+  // "link-2" (feather-icons) — não existe no protótipo, tela nova
+  // (Integração eGestor, docs/roadmap.md itens 9.3/9.6).
+  egestor: (
+    <>
+      <path d="M15 7h3a5 5 0 0 1 0 10h-3" />
+      <path d="M9 17H6a5 5 0 0 1 0-10h3" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+    </>
+  ),
 };
 
 function Icon({ name }: { name: string }) {
@@ -70,23 +80,43 @@ interface NavCounts {
 // Cadastros / Análise). Membros não existe no protótipo — vai num grupo
 // próprio ("Administração") em vez de forçar dentro de um dos três grupos
 // originais, mesmo padrão do protótipo de grupo com um item só (Análise).
-const items = [
-  { href: "/dashboard", label: "Painel", group: "Comercial", icon: "painel", count: undefined },
-  { href: "/dashboard/leads", label: "Prospecção", group: "Comercial", icon: "leads", count: "leads" as const },
-  { href: "/dashboard/pipeline", label: "Pipeline", group: "Comercial", icon: "pipeline", count: "pipeline" as const },
-  { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" as const },
-  { href: "/dashboard/empresas", label: "Empresas", group: "Cadastros", icon: "empresas", count: "empresas" as const },
-  { href: "/dashboard/relatorios", label: "Relatórios", group: "Análise", icon: "relatorios", count: undefined },
-  { href: "/dashboard/membros", label: "Membros", group: "Administração", icon: "membros", count: undefined },
+// `roles` ausente = visível pra qualquer papel (padrão de Membros, cuja
+// listagem todo mundo vê — só ações dentro da tela são restritas). Item
+// com `roles` só aparece pra quem estiver na lista — "Integração eGestor"
+// é o primeiro caso disso no nav (pedido direto do usuário, 2026-08-10):
+// dispara chamada pro eGestor de produção, não é ação de representante.
+const items: Array<{
+  href: string;
+  label: string;
+  group: string;
+  icon: string;
+  count?: "leads" | "pipeline" | "tarefas" | "empresas";
+  roles?: MembershipRole[];
+}> = [
+  { href: "/dashboard", label: "Painel", group: "Comercial", icon: "painel" },
+  { href: "/dashboard/leads", label: "Prospecção", group: "Comercial", icon: "leads", count: "leads" },
+  { href: "/dashboard/pipeline", label: "Pipeline", group: "Comercial", icon: "pipeline", count: "pipeline" },
+  { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" },
+  { href: "/dashboard/empresas", label: "Empresas", group: "Cadastros", icon: "empresas", count: "empresas" },
+  { href: "/dashboard/relatorios", label: "Relatórios", group: "Análise", icon: "relatorios" },
+  { href: "/dashboard/membros", label: "Membros", group: "Administração", icon: "membros" },
+  {
+    href: "/dashboard/integracao-egestor",
+    label: "Integração eGestor",
+    group: "Administração",
+    icon: "egestor",
+    roles: ["owner", "admin"],
+  },
 ];
 
-export default function DashboardNav({ counts }: { counts: NavCounts }) {
+export default function DashboardNav({ counts, role }: { counts: NavCounts; role: MembershipRole }) {
   const pathname = usePathname();
+  const visibleItems = items.filter((item) => !item.roles || item.roles.includes(role));
   let lastGroup = "";
 
   return (
     <nav className="primary-nav" aria-label="Navegação principal">
-      {items.map((item) => {
+      {visibleItems.map((item) => {
         const showGroup = item.group !== lastGroup;
         lastGroup = item.group;
         const count = item.count ? counts[item.count] : undefined;

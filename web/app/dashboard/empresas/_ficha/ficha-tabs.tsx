@@ -1,10 +1,11 @@
 import Link from "next/link";
 
-export type Aba = "overview" | "cadastro" | "timeline" | "tarefas" | "negocios" | "posvenda";
+export type Aba = "overview" | "cadastro" | "contatos" | "timeline" | "tarefas" | "negocios" | "posvenda";
 
 export const ABAS: Array<{ id: Aba; label: string }> = [
   { id: "overview", label: "Visão geral" },
   { id: "cadastro", label: "Dados cadastrais" },
+  { id: "contatos", label: "Contatos" },
   { id: "timeline", label: "Timeline" },
   { id: "tarefas", label: "Tarefas" },
   { id: "negocios", label: "Oportunidades" },
@@ -25,7 +26,7 @@ export default function FichaTabs({
 }: {
   companyId: string;
   aba?: string;
-  counts: { timeline: number; tarefas: number; negocios: number };
+  counts: { timeline: number; tarefas: number; negocios: number; contatos: number };
 }) {
   const current = currentAbaOf(aba);
   const href = (a: Aba) => `/dashboard/empresas/${companyId}?aba=${a}`;
@@ -38,7 +39,15 @@ export default function FichaTabs({
     <>
       {ABAS.map((a) => {
         const count =
-          a.id === "timeline" ? counts.timeline : a.id === "tarefas" ? counts.tarefas : a.id === "negocios" ? counts.negocios : undefined;
+          a.id === "timeline"
+            ? counts.timeline
+            : a.id === "tarefas"
+              ? counts.tarefas
+              : a.id === "negocios"
+                ? counts.negocios
+                : a.id === "contatos"
+                  ? counts.contatos
+                  : undefined;
         return (
           <Link
             key={a.id}

@@ -27,7 +27,11 @@ export class TaskAttachmentController {
     @Param('taskId', ParseUUIDPipe) taskId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.attachments.findAll(tx, membership, taskId),
     );
   }
@@ -39,7 +43,11 @@ export class TaskAttachmentController {
     @Body() dto: CreateAttachmentDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.attachments.createUploadUrl(tx, membership, taskId, dto),
     );
   }
@@ -51,7 +59,11 @@ export class TaskAttachmentController {
     @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) =>
         this.attachments.createDownloadUrl(
           tx,
@@ -70,7 +82,11 @@ export class TaskAttachmentController {
     @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.attachments.remove(tx, membership, taskId, attachmentId),
     );
   }

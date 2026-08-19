@@ -51,7 +51,7 @@ export class TaskChecklistService {
     taskId: string,
     itemId: string,
   ): Promise<void> {
-    await this.tasks.mustBeVisible(tx, membership, taskId, 'write');
+    await this.tasks.mustBeVisible(tx, membership, taskId, 'delete');
     await this.mustExist(tx, taskId, itemId);
     await tx.taskChecklistItem.delete({ where: { id: itemId } });
   }

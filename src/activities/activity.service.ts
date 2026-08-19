@@ -7,6 +7,7 @@ import type { Activity, ActivityType, Prisma } from '@prisma/client';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
+import { CONTACT_REQUIRED_ACTIVITY_SUBTIPOS } from './activity-subtipo.constants';
 import type { CreateActivityDto } from './dto/create-activity.dto';
 
 export interface EmitActivityInput {
@@ -16,6 +17,7 @@ export interface EmitActivityInput {
   payload?: Record<string, unknown>;
   companyId?: string | null;
   opportunityId?: string | null;
+  contactId?: string | null;
 }
 
 // Ponto único de escrita em Activity — todo resource service chama isso em
@@ -52,6 +54,8 @@ export class ActivityService {
       );
     }
 
+    let companyIdForContact: string | undefined;
+
     if (dto.companyId) {
       const company = await tx.company.findFirst({
         where: { id: dto.companyId, workspaceId: membership.workspaceId },
@@ -59,10 +63,17 @@ export class ActivityService {
       if (
         !company ||
         company.deletedAt ||
-        !(await this.policy.can(tx, membership, 'read', company))
+        !(await this.policy.can(
+          tx,
+          membership,
+          'read',
+          company,
+          'empresas_cadastro',
+        ))
       ) {
         throw new NotFoundException('Empresa não encontrada.');
       }
+      companyIdForContact = company.id;
     } else if (dto.opportunityId) {
       const opportunity = await tx.opportunity.findFirst({
         where: { id: dto.opportunityId, workspaceId: membership.workspaceId },
@@ -70,20 +81,79 @@ export class ActivityService {
       if (
         !opportunity ||
         opportunity.deletedAt ||
-        !(await this.policy.can(tx, membership, 'read', opportunity))
+        !(await this.policy.can(
+          tx,
+          membership,
+          'read',
+          opportunity,
+          'oportunidades',
+        ))
       ) {
         throw new NotFoundException('Oportunidade não encontrada.');
       }
+      companyIdForContact = opportunity.companyId ?? undefined;
+    }
+
+    // Contato obrigatório pra ligação/reunião/visita/e-mail (pedido direto
+    // do usuário, 2026-08-05) — mesma regra de Task.contactId, replicada
+    // aqui porque Activity não compartilha o enum de Task.
+    if (
+      dto.subtipo &&
+      CONTACT_REQUIRED_ACTIVITY_SUBTIPOS.includes(dto.subtipo) &&
+      !dto.contactId
+    ) {
+      throw new BadRequestException(
+        'Contato é obrigatório para registros do tipo ligação, reunião, visita ou e-mail.',
+      );
+    }
+
+    // payload.contatoNome denormalizado a partir do nome atual do contato
+    // (não do que o cliente mandaria) — mesmo padrão já usado em outros
+    // emits deste projeto (ex.: RawLeadService#approve com razaoSocial):
+    // exibir na Timeline sem precisar de JOIN em todo GET /activities.
+    let contatoNome: string | undefined;
+    if (dto.contactId) {
+      const contact = await this.mustContactBelongToCompany(
+        tx,
+        membership.workspaceId,
+        dto.contactId,
+        companyIdForContact,
+      );
+      contatoNome = contact.nome;
     }
 
     return this.emit(tx, {
       workspaceId: membership.workspaceId,
       actorUserId: membership.userId,
       type: dto.type,
-      payload: dto.subtipo ? { texto: dto.texto, subtipo: dto.subtipo } : { texto: dto.texto },
+      payload: {
+        texto: dto.texto,
+        ...(dto.subtipo ? { subtipo: dto.subtipo } : {}),
+        ...(contatoNome ? { contatoNome } : {}),
+      },
       companyId: dto.companyId,
       opportunityId: dto.opportunityId,
+      contactId: dto.contactId,
     });
+  }
+
+  private async mustContactBelongToCompany(
+    tx: TenantTx,
+    workspaceId: string,
+    contactId: string,
+    companyId: string | undefined,
+  ) {
+    const contact = companyId
+      ? await tx.contact.findFirst({
+          where: { id: contactId, workspaceId, companyId },
+        })
+      : null;
+    if (!contact) {
+      throw new BadRequestException(
+        `Contato "${contactId}" não encontrado para a empresa deste registro.`,
+      );
+    }
+    return contact;
   }
 
   emit(tx: TenantTx, input: EmitActivityInput): Promise<Activity> {
@@ -104,6 +174,7 @@ export class ActivityService {
         payload: (input.payload ?? {}) as Prisma.InputJsonValue,
         companyId: input.companyId ?? undefined,
         opportunityId: input.opportunityId ?? undefined,
+        contactId: input.contactId ?? undefined,
       },
     });
   }

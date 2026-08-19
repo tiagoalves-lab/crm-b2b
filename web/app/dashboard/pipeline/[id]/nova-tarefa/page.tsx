@@ -1,6 +1,7 @@
 import { getServerAccessToken } from "@/lib/api/auth";
 import { companyDisplayName } from "@/lib/api/companies";
-import { listTaskLists } from "@/lib/api/task-lists";
+import { listContacts } from "@/lib/api/contacts";
+import { resolveAssigneeOptions } from "@/lib/api/assignee-options";
 import { loadOpportunityDetail } from "../../_detail/load";
 import NovaForm from "../../../tarefas/nova/nova-form";
 
@@ -15,10 +16,11 @@ export default async function NovaTarefaDoCardPage({
 }) {
   const { id } = await params;
   const token = await getServerAccessToken();
-  const [data, taskLists] = await Promise.all([
+  const [data, assigneeOptions] = await Promise.all([
     loadOpportunityDetail(token, id),
-    listTaskLists(token),
+    resolveAssigneeOptions(token),
   ]);
+  const initialContacts = await listContacts(token, data.company.id);
   const lockedLabel = `Oportunidade: ${companyDisplayName(data.company)} — ${data.opportunity.currency} ${Number(data.opportunity.amount).toLocaleString("pt-BR")}`;
 
   return (
@@ -31,11 +33,11 @@ export default async function NovaTarefaDoCardPage({
       <div className="content">
         <div className="form-panel">
           <NovaForm
-            taskLists={taskLists}
-            companies={[]}
-            opportunities={[data.opportunity]}
             lockedOpportunityId={data.opportunity.id}
             lockedLabel={lockedLabel}
+            initialContacts={initialContacts}
+            initialCompanyId={data.company.id}
+            assigneeOptions={assigneeOptions}
           />
         </div>
       </div>

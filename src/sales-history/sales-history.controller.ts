@@ -18,8 +18,12 @@ export class SalesHistoryController {
     @Query() query: ListSalesHistoryQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
-      (tx) => this.salesHistory.findAll(tx, query.companyId),
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.salesHistory.findAll(tx, membership, query.companyId),
     );
   }
 }

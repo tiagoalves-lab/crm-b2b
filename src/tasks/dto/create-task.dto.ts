@@ -1,11 +1,14 @@
+import type { TaskType } from '@prisma/client';
 import {
   IsDateString,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
 } from 'class-validator';
 import { ExactlyOneOf } from '../../common/validators/exactly-one-of.decorator';
+import { TASK_TYPES } from '../task-type.constants';
 
 export class CreateTaskDto {
   @IsString()
@@ -21,12 +24,15 @@ export class CreateTaskDto {
   @IsDateString()
   dueAt?: string;
 
-  // Coluna do Kanban — se não informada, cai na primeira coluna do
-  // workspace (bootstrap preguiçoso via TaskListService se ainda não
-  // existir nenhuma).
+  @IsOptional()
+  @IsIn(TASK_TYPES)
+  tipo?: TaskType;
+
+  // Obrigatório quando tipo é ligação/reunião/visita/e-mail — checado no
+  // service (junto com "pertence à mesma company da tarefa"), não aqui.
   @IsOptional()
   @IsUUID()
-  listId?: string;
+  contactId?: string;
 
   // Default (não informado): quem está criando. Se informado, precisa ser
   // Membership ativo do mesmo workspace (checado no service).

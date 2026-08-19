@@ -1,5 +1,27 @@
 import { apiFetch } from "./client";
-import type { PaginatedResult, Task, TaskStatus, TaskWithDetails } from "./types";
+import type { PaginatedResult, Task, TaskStatus, TaskType, TaskWithDetails } from "./types";
+
+// 5 tipos de openTaskForm() no protótipo (gama-crm-mvp.html) + "reuniao"
+// adicionado depois (pedido do usuário, 2026-08-04).
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  ligacao: "Ligação",
+  email: "E-mail",
+  visita: "Visita",
+  proposta: "Proposta",
+  followup: "Follow-up",
+  reuniao: "Reunião",
+};
+
+export function taskTypeLabel(tipo: TaskType | null): string {
+  return tipo ? TASK_TYPE_LABELS[tipo] : "—";
+}
+
+// Tarefas desses tipos exigem selecionar um contato da empresa vinculada
+// (pedido do usuário, 2026-08-04; "email" incluído depois, mesmo dia) —
+// mesma lista de src/tasks/task-type.constants.ts no backend (mantido à
+// mão, sem tipos compartilhados entre os dois projetos npm, ver
+// CLAUDE.md).
+export const CONTACT_REQUIRED_TASK_TYPES: TaskType[] = ["ligacao", "reuniao", "visita", "email"];
 
 export function listTasks(
   token: string,
@@ -22,9 +44,11 @@ export interface CreateTaskInput {
   title: string;
   description?: string;
   dueAt?: string;
+  tipo?: TaskType;
+  contactId?: string;
   companyId?: string;
   opportunityId?: string;
-  listId?: string;
+  assigneeUserId?: string;
 }
 
 export function createTask(token: string, input: CreateTaskInput): Promise<Task> {
@@ -35,10 +59,10 @@ export interface UpdateTaskInput {
   title?: string;
   description?: string;
   dueAt?: string;
+  tipo?: TaskType;
+  contactId?: string;
   status?: TaskStatus;
   assigneeUserId?: string;
-  listId?: string;
-  position?: number;
 }
 
 export function updateTask(

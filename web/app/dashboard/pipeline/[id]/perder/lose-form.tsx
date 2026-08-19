@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { OpportunityDetail } from "../../_detail/load";
 import { markLostAction } from "../../actions";
+import SubmitButton from "@/app/_components/submit-button";
 
 const MOTIVOS = [
   "Preço / concorrente",
@@ -37,9 +38,9 @@ export default function LoseForm({ data }: { data: OpportunityDetail }) {
         <Link href={`/dashboard/pipeline/${o.id}`} className="btn btn-ghost">
           Voltar
         </Link>
-        <button type="submit" className="btn btn-danger">
+        <SubmitButton className="btn btn-danger" pendingLabel="Confirmando…">
           Confirmar perda
-        </button>
+        </SubmitButton>
       </div>
     </form>
   );

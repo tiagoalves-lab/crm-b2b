@@ -1,14 +1,12 @@
 import { Suspense } from "react";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
-import { listCompanies } from "@/lib/api/companies";
-import { listOpportunities } from "@/lib/api/opportunities";
-import { listRawLeads } from "@/lib/api/raw-leads";
-import { listTasks } from "@/lib/api/tasks";
+import { getSidebarCounts } from "@/lib/api/counts";
 import type { MembershipRole } from "@/lib/api/types";
 import { signOut } from "../login/actions";
 import DashboardNav from "./dashboard-nav";
 import Toast from "./_overlay/toast";
+import SubmitButton from "@/app/_components/submit-button";
 
 const ROLE_LABELS: Record<MembershipRole, string> = {
   owner: "Owner",
@@ -30,24 +28,12 @@ export default async function DashboardLayout({
   const token = await getServerAccessToken();
 
   // Contadores do sidebar (SPEC-CRM-GAMA.md, badges de nav-item no
-  // protótipo) — mesmos filtros já usados nas telas próprias de cada
-  // recurso (Leads: status=novo; Pipeline: abertas; Tarefas: pendentes;
-  // Empresas: exclui tag lead-triagem, igual à tela Empresas).
-  const [me, { items: leadsNovos }, { items: opportunities }, { items: tasks }, { items: companies }] =
-    await Promise.all([
-      getMe(token),
-      listRawLeads(token, { status: "novo" }),
-      listOpportunities(token),
-      listTasks(token, { status: "pending" }),
-      listCompanies(token),
-    ]);
-
-  const counts = {
-    leads: leadsNovos.length,
-    pipeline: opportunities.filter((o) => o.status === "open" && !o.deletedAt).length,
-    tarefas: tasks.length,
-    empresas: companies.filter((c) => !c.tags.includes("lead-triagem") && !c.deletedAt).length,
-  };
+  // protótipo). Vinham de 4 listagens completas contadas em JS aqui —
+  // o que fazia toda navegação do CRM baixar a base inteira de empresas
+  // (1.165 registros, 12 requisições sequenciais) só pra exibir 4
+  // números. Agora é um COUNT por recurso, numa requisição só:
+  // GET /counts (src/counts/ no backend, mesmos filtros das telas).
+  const [me, counts] = await Promise.all([getMe(token), getSidebarCounts(token)]);
 
   return (
     <div className="app-shell">
@@ -60,24 +46,25 @@ export default async function DashboardLayout({
             width={97}
             height={24}
           />
+          <span className="sidebar-tagline">CRM</span>
         </div>
 
-        <DashboardNav counts={counts} />
+        <DashboardNav counts={counts} role={me.membership.role} />
 
         <div className="sidebar-footer">
-          <div className="avatar">{initials(me.user.email)}</div>
+          <div className="avatar">{initials(me.user.name ?? me.user.email)}</div>
           <div className="who-wrap">
-            <div className="who">{me.user.email}</div>
+            <div className="who">{me.user.name ?? me.user.email}</div>
             <div className="who-sub">{ROLE_LABELS[me.membership.role] ?? me.membership.role}</div>
           </div>
           <form action={signOut}>
-            <button type="submit" className="logout-link" title="Sair" aria-label="Sair" style={{ marginLeft: 8 }}>
+            <SubmitButton className="logout-link" title="Sair" aria-label="Sair" style={{ marginLeft: 8 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
                 <path d="M16 17l5-5-5-5" />
                 <path d="M21 12H9" />
               </svg>
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </aside>
@@ -93,7 +80,7 @@ export default async function DashboardLayout({
   );
 }
 
-function initials(email?: string | null) {
-  if (!email) return "?";
-  return email.slice(0, 2).toUpperCase();
+function initials(label?: string | null) {
+  if (!label) return "?";
+  return label.slice(0, 2).toUpperCase();
 }

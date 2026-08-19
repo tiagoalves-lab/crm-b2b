@@ -10,14 +10,16 @@ import {
   bulkDiscardLeads,
   createRawLead,
   discardLead,
-  importRawLeadsSpreadsheet,
+  importRawLeadsWithContactsSpreadsheet,
   rescoreLeads,
+  updateLeadSegmento,
+  updateLeadTags,
   updateLeadTier,
   type BulkResult,
   type ImportResult,
   type ScoreTier,
 } from "@/lib/api/raw-leads";
-import type { LeadFonte, RawLead } from "@/lib/api/types";
+import type { Company, LeadFonte, RawLead } from "@/lib/api/types";
 
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   const str = value ? String(value).trim() : "";
@@ -41,9 +43,12 @@ export async function createRawLeadAction(
     return { ok: false, message: "Preencha a razão social." };
   }
 
+  const rjHint = formData.get("emRecuperacaoJudicial");
+
   try {
     await createRawLead(token, {
       razaoSocial,
+      emRecuperacaoJudicial: rjHint === "" || rjHint === null ? undefined : rjHint === "true",
       cnpj: emptyToUndefined(formData.get("cnpj")),
       cnaePrincipal: emptyToUndefined(formData.get("cnaePrincipal")),
       cnaeDescricao: emptyToUndefined(formData.get("cnaeDescricao")),
@@ -76,6 +81,25 @@ export async function approveOneLeadAction(formData: FormData) {
   revalidatePath("/dashboard/leads");
   revalidatePath("/dashboard/empresas");
   redirectWithMessage("/dashboard/leads", "✓ Lead aprovado — virou empresa, com histórico e tarefas preservados");
+}
+
+// Chamada via onClick (approve-button.tsx), não <form action=...> — devolve
+// a company recém-criada em vez de redirecionar, pro botão poder abrir o
+// modal "Deseja cadastrar uma oportunidade?" sem sair da ficha do lead
+// (mesmo motivo de createOpportunityAction: redirect() daqui de dentro não
+// derruba o slot @modal/@drawer da rota interceptada).
+export async function approveLeadForOpportunityAction(
+  id: string,
+): Promise<ActionResult<Company>> {
+  const token = await getServerAccessToken();
+  try {
+    const company = await approveLead(token, id);
+    revalidatePath("/dashboard/leads");
+    revalidatePath("/dashboard/empresas");
+    return { ok: true, data: company };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao aprovar o lead.") };
+  }
 }
 
 export async function discardOneLeadAction(formData: FormData) {
@@ -146,6 +170,39 @@ export async function setLeadTierAction(
   }
 }
 
+// Tags livres editadas direto na linha da tabela ou na ficha do lead — RPC
+// via Server Action (mesmo padrão de setLeadTierAction): manda o array
+// completo desejado, não navega, devolve o lead atualizado.
+export async function setLeadTagsAction(
+  id: string,
+  tags: string[],
+): Promise<ActionResult<RawLead>> {
+  const token = await getServerAccessToken();
+  try {
+    const result = await updateLeadTags(token, id, tags);
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao salvar as tags do lead.") };
+  }
+}
+
+// Segmento de negócio — mesmo padrão de setLeadTagsAction, mas valor
+// único (null limpa, em vez de array vazio).
+export async function setLeadSegmentoAction(
+  id: string,
+  segmento: string | null,
+): Promise<ActionResult<RawLead>> {
+  const token = await getServerAccessToken();
+  try {
+    const result = await updateLeadSegmento(token, id, segmento);
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao salvar o segmento do lead.") };
+  }
+}
+
 export async function rescoreLeadsAction(): Promise<ActionResult<{ updated: number }>> {
   const token = await getServerAccessToken();
   try {
@@ -157,19 +214,21 @@ export async function rescoreLeadsAction(): Promise<ActionResult<{ updated: numb
   }
 }
 
-// Importação em massa por planilha (CSV/XLSX do crawler) — client
-// component manda o File direto (mesmo padrão de bulkApprove/rescore:
-// RPC via Server Action, não <form action>, porque precisa mostrar o
-// resultado — quantos importaram, quais linhas falharam — sem navegar).
-export async function importLeadsSpreadsheetAction(
+// Importação em massa por planilha, modelo padrão com múltiplos contatos
+// por empresa (2026-08-03) — client component manda o File direto (mesmo
+// padrão de bulkApprove/rescore: RPC via Server Action, não <form action>,
+// porque precisa mostrar o resultado — quantos importaram, quais linhas
+// falharam — sem navegar). Endpoint /raw-leads/import-contacts, layout de
+// cabeçalho fixo no backend.
+export async function importLeadsContactsSpreadsheetAction(
   file: File,
 ): Promise<ActionResult<ImportResult>> {
   const token = await getServerAccessToken();
   try {
-    const result = await importRawLeadsSpreadsheet(token, file);
+    const result = await importRawLeadsWithContactsSpreadsheet(token, file);
     revalidatePath("/dashboard/leads");
     return { ok: true, data: result };
   } catch (error) {
-    return { ok: false, message: actionError(error, "Erro ao importar a planilha.") };
+    return { ok: false, message: actionError(error, "Erro ao importar a planilha de contatos.") };
   }
 }

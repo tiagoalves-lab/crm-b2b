@@ -1,5 +1,10 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import type { Membership } from '@prisma/client';
+import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { MembershipService } from './membership.service';
@@ -16,6 +21,7 @@ function callerMembership(
     userId: 'user-owner',
     role: 'owner',
     status: 'active',
+    permissions: null,
     ...overrides,
   };
 }
@@ -31,6 +37,7 @@ function targetRow(overrides: Partial<Membership> = {}): Membership {
     invitedBy: null,
     joinedAt: new Date(),
     createdAt: new Date(),
+    permissions: null,
     ...overrides,
   };
 }
@@ -75,11 +82,14 @@ describe('MembershipService', () => {
 
   beforeEach(() => {
     supabaseUser = fakeSupabaseUser();
-    service = new MembershipService(supabaseUser);
+    // PolicyService de verdade (não mock) — é lógica pura síncrona
+    // (canModule), sem I/O, mais simples testar contra o real do que
+    // stubar caso a caso.
+    service = new MembershipService(supabaseUser, new PolicyService());
   });
 
   describe('create', () => {
-    it('rejeita quem não é owner/admin', async () => {
+    it('rejeita quem não é owner/admin/gerente', async () => {
       const tx = fakeTx();
       await expect(
         service.create(tx, callerMembership({ role: 'sales_rep' }), {
@@ -87,6 +97,72 @@ describe('MembershipService', () => {
           login: 'novo.membro',
           password: 'senha1234',
         }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(supabaseUser.createUser).not.toHaveBeenCalled();
+    });
+
+    // Gerente cadastrando membros — pedido direto do usuário, 2026-08-06
+    // ("o responsável pode inserir outros membros"), restrito a
+    // gerente/representante (owner/admin continuam exclusivos).
+    it('gerente pode cadastrar sales_rep, forçando managerId pro próprio gerente (ignora managerId enviado)', async () => {
+      // O lookup de "managerId é membro ativo" busca o PRÓPRIO gerente
+      // (é pra ele mesmo que o managerId é forçado) — fixture precisa
+      // resolver esse id como ativo.
+      const caller = targetRow({ id: 'membership-gerente', role: 'manager' });
+      const tx = fakeTx({ target: caller });
+      await service.create(
+        tx,
+        callerMembership({ id: caller.id, role: 'manager' }),
+        {
+          name: 'Novo Rep',
+          login: 'novo.rep',
+          password: 'senha1234',
+          role: 'sales_rep',
+          managerId: 'membership-outro-gerente', // ignorado — ver assert abaixo
+        },
+      );
+      expect(
+        (tx.membership.create as jest.Mock).mock.calls[0][0].data,
+      ).toMatchObject({
+        role: 'sales_rep',
+        managerId: 'membership-gerente',
+      });
+    });
+
+    it('gerente pode cadastrar outro gerente (manager)', async () => {
+      const caller = targetRow({ id: 'membership-gerente', role: 'manager' });
+      const tx = fakeTx({ target: caller });
+      await service.create(
+        tx,
+        callerMembership({ id: caller.id, role: 'manager' }),
+        {
+          name: 'Outro Gerente',
+          login: 'outro.gerente',
+          password: 'senha1234',
+          role: 'manager',
+        },
+      );
+      expect(
+        (tx.membership.create as jest.Mock).mock.calls[0][0].data,
+      ).toMatchObject({
+        role: 'manager',
+        managerId: 'membership-gerente',
+      });
+    });
+
+    it('gerente não pode cadastrar admin/owner', async () => {
+      const tx = fakeTx();
+      await expect(
+        service.create(
+          tx,
+          callerMembership({ id: 'membership-gerente', role: 'manager' }),
+          {
+            name: 'Tentativa Admin',
+            login: 'tentativa.admin',
+            password: 'senha1234',
+            role: 'admin',
+          },
+        ),
       ).rejects.toThrow(ForbiddenException);
       expect(supabaseUser.createUser).not.toHaveBeenCalled();
     });
@@ -115,14 +191,35 @@ describe('MembershipService', () => {
         'novo.membro',
         'senha1234',
         'Novo Membro',
+        undefined,
       );
-      expect((tx.membership.create as jest.Mock).mock.calls[0][0].data).toMatchObject({
+      expect(
+        (tx.membership.create as jest.Mock).mock.calls[0][0].data,
+      ).toMatchObject({
         workspaceId: WORKSPACE_ID,
         userId: 'auth-user-1',
         role: 'sales_rep',
         status: 'active',
       });
       expect(created.userId).toBe('auth-user-1');
+    });
+
+    // E-mail de contato (2026-08-06) — separado do login, repassado direto
+    // pro Supabase Auth via createUser (ver SupabaseUserService).
+    it('repassa o e-mail de contato pro Supabase Auth quando informado', async () => {
+      const tx = fakeTx();
+      await service.create(tx, callerMembership(), {
+        name: 'Novo Membro',
+        login: 'novo.membro',
+        password: 'senha1234',
+        email: 'novo.membro@gamabrasil.com.br',
+      });
+      expect(supabaseUser.createUser).toHaveBeenCalledWith(
+        'novo.membro',
+        'senha1234',
+        'Novo Membro',
+        'novo.membro@gamabrasil.com.br',
+      );
     });
 
     it('propaga ConflictException quando o login já existe', async () => {

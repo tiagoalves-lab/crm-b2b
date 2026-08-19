@@ -1,6 +1,6 @@
 # Geração e Qualificação de Leads
 
-> Complementa `roadmap.md` e `arquitetura-dados.md`. Cobre o processo entre
+> Complementa `arquitetura-dados.md`. Cobre o processo entre
 > "lista bruta de empresas" (fora do CRM, via crawler) e "oportunidade
 > qualificada no funil de vendas" (dentro do CRM). Decisões de código deste
 > módulo ficam para depois — este documento fecha o processo primeiro.
@@ -52,9 +52,9 @@ da anterior, sem histórico e sem forma de saber o que já foi visto.
 
 **Decisão de arquitetura:** staging separado do CRM, não o banco do CRM
 diretamente. O schema do CRM (`Company`, `Workspace`) ainda não existe —
-Fase 1 do `roadmap.md` não começou. Import direto pro CRM teria que
-adiantar essa fase só pra desbloquear o módulo de leads, o que inverteria
-a ordem de dependência que o roadmap definiu por um motivo (RLS testado
+a etapa de modelo de dados + RLS não começou. Import direto pro CRM teria
+que adiantar essa etapa só pra desbloquear o módulo de leads, o que
+inverteria a ordem de dependência que o roadmap definiu por um motivo (RLS testado
 antes de qualquer dado real trafegar). Fica pra quando a Fase 1 estiver
 pronta — ver seção 9.
 

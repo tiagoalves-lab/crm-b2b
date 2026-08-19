@@ -18,8 +18,11 @@ interface Picked {
 // em triagem (aprova na hora, sem confirmação) ou cadastrar nova pelo
 // CNPJ. Renderiza um <input type="hidden" name="companyId"> dentro do
 // <form> pai (não tem form próprio) pra o valor viajar junto no submit de
-// createOpportunityAction.
-export default function CompanyPicker() {
+// createOpportunityAction. Reusado também em tarefas/nova/nova-form.tsx
+// (pedido do usuário, 2026-08-04: trocar o <select> de Empresa por busca
+// com autocomplete + cadastro inline) — onPick é opcional, só quem
+// precisa reagir à escolha (ex.: recarregar a lista de Contatos) passa.
+export default function CompanyPicker({ onPick }: { onPick?: (companyId: string) => void } = {}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<BuscaEmpresaLeadResult[]>([]);
   const [picked, setPicked] = useState<Picked | null>(null);
@@ -37,11 +40,21 @@ export default function CompanyPicker() {
     setResults(items);
   }
 
+  function pick(next: Picked) {
+    setPicked(next);
+    setResults([]);
+    setQuery("");
+    onPick?.(next.id);
+  }
+
+  function clear() {
+    setPicked(null);
+    onPick?.("");
+  }
+
   async function handlePickResult(item: BuscaEmpresaLeadResult) {
     if (item.origem === "empresa") {
-      setPicked({ id: item.id, name: item.nome });
-      setResults([]);
-      setQuery("");
+      pick({ id: item.id, name: item.nome });
       return;
     }
 
@@ -53,9 +66,7 @@ export default function CompanyPicker() {
       setError(res.message);
       return;
     }
-    setPicked(res.data);
-    setResults([]);
-    setQuery("");
+    pick(res.data);
   }
 
   async function handleCreateByCnpj() {
@@ -72,9 +83,7 @@ export default function CompanyPicker() {
       setError(res.message);
       return;
     }
-    setPicked(res.data);
-    setResults([]);
-    setQuery("");
+    pick(res.data);
   }
 
   if (picked) {
@@ -84,7 +93,7 @@ export default function CompanyPicker() {
         <div className="co-picker-selected">
           <span className="co-tag empresa">selecionada</span>
           <span className="co-nome">{picked.name}</span>
-          <button type="button" className="co-picker-clear" title="Trocar empresa" onClick={() => setPicked(null)}>
+          <button type="button" className="co-picker-clear" title="Trocar empresa" onClick={clear}>
             <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>

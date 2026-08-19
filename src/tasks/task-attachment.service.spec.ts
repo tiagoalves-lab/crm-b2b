@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { SupabaseStorageService } from '../storage/supabase-storage.service';
@@ -75,10 +76,12 @@ function fakeTx(attachment?: {
 }
 
 describe('TaskAttachmentService', () => {
+  const policy = new PolicyService();
+
   it('createUploadUrl checa visibilidade de leitura, cria o metadado e devolve a signed URL', async () => {
     const taskService = fakeTaskService();
     const storage = fakeStorage();
-    const service = new TaskAttachmentService(taskService, storage);
+    const service = new TaskAttachmentService(taskService, storage, policy);
     const tx = fakeTx();
 
     const result = await service.createUploadUrl(tx, membership(), TASK_ID, {
@@ -104,7 +107,11 @@ describe('TaskAttachmentService', () => {
 
   it('sanitiza o nome do arquivo no caminho do storage (sem path traversal)', async () => {
     const storage = fakeStorage();
-    const service = new TaskAttachmentService(fakeTaskService(), storage);
+    const service = new TaskAttachmentService(
+      fakeTaskService(),
+      storage,
+      policy,
+    );
     const tx = fakeTx();
 
     await service.createUploadUrl(tx, membership(), TASK_ID, {
@@ -119,7 +126,11 @@ describe('TaskAttachmentService', () => {
   });
 
   it('createDownloadUrl 404 pra anexo inexistente', async () => {
-    const service = new TaskAttachmentService(fakeTaskService(), fakeStorage());
+    const service = new TaskAttachmentService(
+      fakeTaskService(),
+      fakeStorage(),
+      policy,
+    );
     const tx = fakeTx();
     await expect(
       service.createDownloadUrl(tx, membership(), TASK_ID, 'attachment-x'),
@@ -136,7 +147,11 @@ describe('TaskAttachmentService', () => {
       sizeBytes: null,
     };
     const storage = fakeStorage();
-    const service = new TaskAttachmentService(fakeTaskService(), storage);
+    const service = new TaskAttachmentService(
+      fakeTaskService(),
+      storage,
+      policy,
+    );
     const tx = fakeTx(attachment);
 
     const result = await service.createDownloadUrl(
@@ -151,6 +166,9 @@ describe('TaskAttachmentService', () => {
     expect(result.url).toBe('https://storage.example/download');
   });
 
+  // role 'manager' de propósito nos dois testes abaixo — verificam o
+  // critério de autoria, não a restrição de papel (teste dedicado no fim
+  // do describe).
   it('CRÍTICO: só quem fez upload pode remover o anexo', async () => {
     const attachment = {
       id: 'attachment-1',
@@ -160,12 +178,16 @@ describe('TaskAttachmentService', () => {
       uploadedBy: 'outro-user',
       sizeBytes: null,
     };
-    const service = new TaskAttachmentService(fakeTaskService(), fakeStorage());
+    const service = new TaskAttachmentService(
+      fakeTaskService(),
+      fakeStorage(),
+      policy,
+    );
     const tx = fakeTx(attachment);
     await expect(
       service.remove(
         tx,
-        membership({ userId: 'user-1' }),
+        membership({ role: 'manager', userId: 'user-1' }),
         TASK_ID,
         'attachment-1',
       ),
@@ -182,15 +204,44 @@ describe('TaskAttachmentService', () => {
       sizeBytes: null,
     };
     const storage = fakeStorage();
-    const service = new TaskAttachmentService(fakeTaskService(), storage);
+    const service = new TaskAttachmentService(
+      fakeTaskService(),
+      storage,
+      policy,
+    );
     const tx = fakeTx(attachment);
 
     await service.remove(
       tx,
-      membership({ userId: 'user-1' }),
+      membership({ role: 'manager', userId: 'user-1' }),
       TASK_ID,
       'attachment-1',
     );
     expect(storage.remove).toHaveBeenCalledWith(attachment.storagePath);
+  });
+
+  it('CRÍTICO: representante (sales_rep) não remove nem o próprio anexo', async () => {
+    const attachment = {
+      id: 'attachment-1',
+      taskId: TASK_ID,
+      storagePath: 'ws/task/arquivo.pdf',
+      fileName: 'a.pdf',
+      uploadedBy: 'user-1',
+      sizeBytes: null,
+    };
+    const service = new TaskAttachmentService(
+      fakeTaskService(),
+      fakeStorage(),
+      policy,
+    );
+    const tx = fakeTx(attachment);
+    await expect(
+      service.remove(
+        tx,
+        membership({ userId: 'user-1' }),
+        TASK_ID,
+        'attachment-1',
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

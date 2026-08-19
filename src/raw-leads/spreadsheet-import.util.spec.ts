@@ -85,7 +85,10 @@ describe('parseLeadsSpreadsheet', () => {
   });
 
   it('rejeita planilha sem coluna de razão social/empresa', async () => {
-    const buffer = Buffer.from('CNPJ,Cidade\n11.222.333/0001-44,PORTO FICTICIO', 'utf8');
+    const buffer = Buffer.from(
+      'CNPJ,Cidade\n11.222.333/0001-44,PORTO FICTICIO',
+      'utf8',
+    );
     await expect(parseLeadsSpreadsheet(buffer, 'leads.csv')).rejects.toThrow(
       /razão social/i,
     );

@@ -27,7 +27,11 @@ export class TaskCommentController {
     @Body() dto: CreateCommentDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.comments.create(tx, membership, taskId, dto),
     );
   }
@@ -40,7 +44,11 @@ export class TaskCommentController {
     @Param('commentId', ParseUUIDPipe) commentId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.comments.remove(tx, membership, taskId, commentId),
     );
   }

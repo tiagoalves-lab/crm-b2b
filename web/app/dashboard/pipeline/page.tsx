@@ -5,8 +5,10 @@ import { companyDisplayName, getCompany, listCompanies } from "@/lib/api/compani
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
 import type { Company, Opportunity } from "@/lib/api/types";
+import { dayKeyBR, formatDateBR } from "@/lib/format-date";
 import { createPipelineAction } from "./actions";
 import PipelineBoard from "./pipeline-board";
+import SubmitButton from "@/app/_components/submit-button";
 
 function brl(value: number, currency = "BRL"): string {
   return `${currency} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
@@ -14,7 +16,7 @@ function brl(value: number, currency = "BRL"): string {
 
 function fmtDate(value?: string | null): string {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("pt-BR");
+  return formatDateBR(value);
 }
 
 // "2026-07" -> [primeiro dia, primeiro dia do mês seguinte) — comparação
@@ -26,9 +28,14 @@ function monthRange(mes: string): { start: Date; end: Date } {
   return { start, end };
 }
 
+// Achado 2026-08-13: `now.getFullYear()/getMonth()` lê os componentes no
+// fuso LOCAL de onde o código roda — na Vercel isso é UTC, então perto da
+// virada do mês em Brasília (21h-23h59 do último dia) o filtro padrão
+// "mês atual" abria já no mês seguinte. `dayKeyBR` calcula o dia
+// calendário certo em Brasília (yyyy-mm-dd); os 7 primeiros caracteres já
+// são o "yyyy-mm" que esta função precisa.
 function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return dayKeyBR(new Date()).slice(0, 7);
 }
 
 function shiftMonth(mes: string, delta: number): string {
@@ -79,9 +86,9 @@ export default async function PipelinePage({
                   Nome do pipeline*
                   <input name="name" required defaultValue="Funil Padrão" />
                 </label>
-                <button type="submit" className="btn btn-primary">
+                <SubmitButton className="btn btn-primary" pendingLabel="Criando…">
                   Criar pipeline
-                </button>
+                </SubmitButton>
               </form>
             </div>
           ) : (
@@ -256,9 +263,9 @@ export default async function PipelinePage({
               <input type="date" name="ini" defaultValue={ini ?? customIniDefault} />
               <label>Até</label>
               <input type="date" name="fim" defaultValue={fim ?? customFimDefault} />
-              <button type="submit" className="btn btn-sm">
+              <SubmitButton className="btn btn-sm" pendingLabel="Aplicando…">
                 Aplicar
-              </button>
+              </SubmitButton>
             </form>
           )}
 

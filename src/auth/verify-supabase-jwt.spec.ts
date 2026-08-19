@@ -21,10 +21,16 @@ function signToken(
     aud: string;
     expiresIn: SignOptions['expiresIn'];
     key: string;
+    userMetadata: Record<string, unknown>;
   }> = {},
 ): string {
   return sign(
-    { email: overrides.email ?? 'pessoa@gamabrasil.com.br' },
+    {
+      email: overrides.email ?? 'pessoa@gamabrasil.com.br',
+      ...(overrides.userMetadata
+        ? { user_metadata: overrides.userMetadata }
+        : {}),
+    },
     overrides.key ?? privateKey,
     {
       algorithm: 'ES256',
@@ -46,6 +52,18 @@ describe('verifySupabaseJwt', () => {
     });
     expect(claims.sub).toBe(SUB);
     expect(claims.email).toBe('pessoa@gamabrasil.com.br');
+  });
+
+  // Pedido do usuário (2026-08-03): timeline mostra o nome real em vez de
+  // "Você" — vem do user_metadata embutido no próprio JWT (sem chamada à
+  // Admin API), ver supabase-auth.guard.ts.
+  it('devolve user_metadata.name embutido no token (sem Admin API)', () => {
+    const token = signToken({ userMetadata: { name: 'Tiago Alves' } });
+    const claims = verifySupabaseJwt(token, publicKey, {
+      issuer: ISSUER,
+      audience: AUDIENCE,
+    });
+    expect(claims.user_metadata?.name).toBe('Tiago Alves');
   });
 
   it('rejeita token expirado', () => {

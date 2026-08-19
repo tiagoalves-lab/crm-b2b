@@ -9,8 +9,6 @@ import { TaskChecklistController } from './task-checklist.controller';
 import { TaskChecklistService } from './task-checklist.service';
 import { TaskCommentController } from './task-comment.controller';
 import { TaskCommentService } from './task-comment.service';
-import { TaskListController } from './task-list.controller';
-import { TaskListService } from './task-list.service';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 
@@ -18,17 +16,18 @@ import { TaskService } from './task.service';
   imports: [TenancyModule, PolicyModule, ActivityModule, StorageModule],
   controllers: [
     TaskController,
-    TaskListController,
     TaskChecklistController,
     TaskCommentController,
     TaskAttachmentController,
   ],
   providers: [
     TaskService,
-    TaskListService,
     TaskChecklistService,
     TaskCommentService,
     TaskAttachmentService,
   ],
+  // TaskService sai do módulo pro CountsService reusar o findAll no badge
+  // da barra lateral (ver src/counts/).
+  exports: [TaskService],
 })
 export class TaskModule {}

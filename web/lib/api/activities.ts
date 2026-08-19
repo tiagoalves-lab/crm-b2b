@@ -13,12 +13,27 @@ export function listActivities(
   });
 }
 
+// Sem companyId/opportunityId — feed "Últimas atividades" do workspace
+// inteiro (Painel comercial, fora do SPEC-CRM-GAMA.md original). Escopado
+// por papel no backend (ActivityQueryService#findAll), mesmo critério de
+// Company/Opportunity/Task.
+export function listRecentActivities(
+  token: string,
+  options: { pageSize?: number } = {},
+): Promise<PaginatedResult<Activity>> {
+  const query = new URLSearchParams({ pageSize: String(options.pageSize ?? 12) });
+  return apiFetch<PaginatedResult<Activity>>(`/activities?${query.toString()}`, {
+    token,
+  });
+}
+
 export interface CreateActivityInput {
   companyId?: string;
   opportunityId?: string;
   type: "note" | "call" | "email";
   texto: string;
   subtipo?: string;
+  contactId?: string;
 }
 
 export function createActivity(
@@ -27,3 +42,10 @@ export function createActivity(
 ): Promise<Activity> {
   return apiFetch<Activity>("/activities", { method: "POST", token, body: input });
 }
+
+// Subtipos que exigem contato (pedido direto do usuário, 2026-08-05) —
+// mesma lista de CONTACT_REQUIRED_TASK_TYPES (web/lib/api/tasks.ts) e do
+// backend (src/activities/activity-subtipo.constants.ts), mantida à mão
+// aqui (sem tipos compartilhados entre os dois projetos npm, mesmo padrão
+// de sempre neste repo).
+export const CONTACT_REQUIRED_ACTIVITY_SUBTIPOS = ["ligacao", "reuniao", "visita", "email"];

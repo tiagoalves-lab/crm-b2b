@@ -16,7 +16,12 @@ export default async function NovoMembroPage({
   const token = await getServerAccessToken();
   const [me, members] = await Promise.all([getMe(token), listMemberships(token)]);
 
-  if (me.membership.role !== "owner" && me.membership.role !== "admin") {
+  const canCreate =
+    me.membership.role === "owner" ||
+    me.membership.role === "admin" ||
+    me.membership.role === "manager";
+
+  if (!canCreate) {
     return (
       <>
         <div className="topbar">
@@ -29,7 +34,9 @@ export default async function NovoMembroPage({
           </Link>
         </div>
         <div className="content">
-          <div className="error-banner">Só owner/admin podem criar membros.</div>
+          <div className="error-banner">
+            Só owner/admin/gerente podem cadastrar membros.
+          </div>
         </div>
       </>
     );
@@ -49,7 +56,7 @@ export default async function NovoMembroPage({
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
         <div className="form-panel">
-          <MemberForm members={members} />
+          <MemberForm members={members} actorRole={me.membership.role} />
         </div>
       </div>
     </>

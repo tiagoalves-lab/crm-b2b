@@ -1,13 +1,13 @@
-import type { TaskStatus } from '@prisma/client';
+import type { TaskStatus, TaskType } from '@prisma/client';
 import {
   IsDateString,
   IsIn,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { TASK_TYPES } from '../task-type.constants';
 
 const STATUSES: TaskStatus[] = ['pending', 'done'];
 
@@ -30,24 +30,20 @@ export class UpdateTaskDto {
   dueAt?: string;
 
   @IsOptional()
+  @IsIn(TASK_TYPES)
+  tipo?: TaskType;
+
+  // Obrigatório quando o tipo efetivo (este campo, ou o já salvo se
+  // omitido aqui) é ligação/reunião/visita/e-mail — checado no service.
+  @IsOptional()
+  @IsUUID()
+  contactId?: string;
+
+  @IsOptional()
   @IsIn(STATUSES)
   status?: TaskStatus;
 
   @IsOptional()
   @IsUUID()
   assigneeUserId?: string;
-
-  // Mover entre colunas (drag-and-drop) — ver TaskService.update pra
-  // sincronização automática com `status` quando a coluna de destino é
-  // is_done_list.
-  @IsOptional()
-  @IsUUID()
-  listId?: string;
-
-  // Posição fracionária dentro da coluna (fractional indexing) — o
-  // cliente calcula a média entre os vizinhos ao redor do drop; o backend
-  // só armazena o valor, sem recalcular os outros cartões.
-  @IsOptional()
-  @IsNumber()
-  position?: number;
 }

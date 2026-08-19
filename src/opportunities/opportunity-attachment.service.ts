@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { OpportunityAttachment } from '@prisma/client';
+import { PolicyService } from '../policy/policy.service';
 import { SupabaseStorageService } from '../storage/supabase-storage.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
@@ -47,6 +48,7 @@ export class OpportunityAttachmentService {
   constructor(
     private readonly opportunities: OpportunityService,
     private readonly storage: SupabaseStorageService,
+    private readonly policy: PolicyService,
   ) {}
 
   async findAll(
@@ -54,7 +56,12 @@ export class OpportunityAttachmentService {
     membership: MembershipContext,
     opportunityId: string,
   ): Promise<SerializedAttachment[]> {
-    await this.opportunities.mustBeVisible(tx, membership, opportunityId, 'read');
+    await this.opportunities.mustBeVisible(
+      tx,
+      membership,
+      opportunityId,
+      'read',
+    );
     const attachments = await tx.opportunityAttachment.findMany({
       where: { opportunityId },
       orderBy: { createdAt: 'desc' },
@@ -72,7 +79,12 @@ export class OpportunityAttachmentService {
     uploadUrl: string;
     token: string;
   }> {
-    await this.opportunities.mustBeVisible(tx, membership, opportunityId, 'read');
+    await this.opportunities.mustBeVisible(
+      tx,
+      membership,
+      opportunityId,
+      'read',
+    );
 
     const storagePath = buildStoragePath(
       membership.workspaceId,
@@ -118,6 +130,7 @@ export class OpportunityAttachmentService {
     opportunityId: string,
     attachmentId: string,
   ): Promise<void> {
+    this.policy.assertCanDelete(membership, 'oportunidades');
     const attachment = await this.mustExist(
       tx,
       membership,
@@ -138,7 +151,12 @@ export class OpportunityAttachmentService {
     attachmentId: string,
     action: 'read' | 'write' = 'read',
   ): Promise<OpportunityAttachment> {
-    await this.opportunities.mustBeVisible(tx, membership, opportunityId, action);
+    await this.opportunities.mustBeVisible(
+      tx,
+      membership,
+      opportunityId,
+      action,
+    );
     const attachment = await tx.opportunityAttachment.findFirst({
       where: { id: attachmentId, opportunityId },
     });

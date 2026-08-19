@@ -174,15 +174,37 @@ describe('Autorização por papel — RBAC + ownership (Fase 2, núcleo)', () =>
   it('CRÍTICO: can() nega ação de sales_rep sobre empresa de outra pessoa', async () => {
     await withTenant(salesRep.userId, workspace.id, async (tx) => {
       await expect(
-        policy.can(tx, salesRep, 'write', {
-          ownerUserId: companyOwnedByOther.ownerUserId,
-        }),
+        policy.can(
+          tx,
+          salesRep,
+          'write',
+          { ownerUserId: companyOwnedByOther.ownerUserId },
+          'empresas_cadastro',
+        ),
       ).resolves.toBe(false);
       await expect(
-        policy.can(tx, salesRep, 'write', {
-          ownerUserId: companyOwnedBySalesRep.ownerUserId,
-        }),
+        policy.can(
+          tx,
+          salesRep,
+          'write',
+          { ownerUserId: companyOwnedBySalesRep.ownerUserId },
+          'empresas_cadastro',
+        ),
       ).resolves.toBe(true);
+    });
+  });
+
+  it('CRÍTICO: sales_rep não pode excluir nenhum registro, nem o próprio (2026-08-06)', async () => {
+    await withTenant(salesRep.userId, workspace.id, async (tx) => {
+      await expect(
+        policy.can(
+          tx,
+          salesRep,
+          'delete',
+          { ownerUserId: companyOwnedBySalesRep.ownerUserId },
+          'empresas_cadastro',
+        ),
+      ).resolves.toBe(false);
     });
   });
 });

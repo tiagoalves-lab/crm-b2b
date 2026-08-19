@@ -2,9 +2,8 @@
 
 Esqueleto Next.js (App Router) com login real via Supabase Auth e um shell
 de navegação (sidebar + rotas por seção). **Nenhuma tela tem dado real
-ainda** — todas mostram um placeholder até a Fase 1/3 do
-[`../docs/roadmap.md`](../docs/roadmap.md) estarem prontas. Ver a nota na
-Fase 6 desse roadmap sobre por que isso foi adiantado fora de ordem.
+ainda** — todas mostram um placeholder até as etapas de dados e API
+estarem prontas.
 
 ## 1. Configurar o Supabase
 

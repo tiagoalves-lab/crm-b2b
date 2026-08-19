@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { CnpjLookupResult } from "@/lib/api/companies";
 import { createRawLeadAction } from "./actions";
+import SubmitButton from "@/app/_components/submit-button";
 
 const PORTES = ["GRANDE", "MÉDIO", "PEQUENO"];
 const SITUACOES = ["ATIVA", "BAIXADA", "SUSPENSA", "INAPTA", "NULA"];
@@ -26,6 +27,19 @@ type Fields = {
   municipio: string;
   fonte: string;
 };
+
+// Campos de texto livre do cadastro que a "Nova empresa" da Prospecção
+// converte pra caixa alta ao digitar (pedido do usuário, 2026-08-10) —
+// mesmo escopo do RawLeadService#upperCaseTextFields no backend. Fora:
+// cnpj (dígito, não texto de cadastro) e os <select> (porte/situação/
+// origem), que já só têm opções fixas em maiúsculo.
+const UPPERCASE_FIELDS = new Set<keyof Fields>([
+  "razaoSocial",
+  "cnaePrincipal",
+  "cnaeDescricao",
+  "uf",
+  "municipio",
+]);
 
 const EMPTY_FIELDS: Fields = {
   razaoSocial: "",
@@ -86,6 +100,12 @@ export default function LeadForm() {
   const [cnpjQuery, setCnpjQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  // Hint pro backend não redetectar "EM RECUPERAÇÃO JUDICIAL" a partir de
+  // um razaoSocial que a busca por CNPJ já devolve limpo (ver
+  // CnpjLookupResult#emRecuperacaoJudicial) — undefined quando o usuário
+  // nunca buscou por CNPJ ou editou a razão social manualmente depois
+  // (nesse caso o backend autodetecta a partir do texto final mesmo).
+  const [rjHint, setRjHint] = useState<boolean | undefined>(undefined);
 
   const [state, formAction] = useActionState(createRawLeadAction, null);
   useEffect(() => {
@@ -97,8 +117,22 @@ export default function LeadForm() {
 
   const field = (name: keyof Fields) => ({
     value: fields[name],
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-      setFields((prev) => ({ ...prev, [name]: e.target.value })),
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      // Editar a razão social manualmente depois da busca por CNPJ invalida
+      // o hint (o texto que será submetido não é mais garantidamente o que
+      // a Receita devolveu) — o backend volta a autodetectar a partir do
+      // texto final.
+      if (name === "razaoSocial") setRjHint(undefined);
+      // Padroniza em caixa alta os campos de texto do cadastro (pedido do
+      // usuário, 2026-08-10) — o textbox já mostra maiúsculo enquanto
+      // digita, então o que é submetido já sai nessa condição (o backend
+      // também normaliza, ver RawLeadService#upperCaseTextFields, mas o
+      // pedido aqui era o campo virar visualmente maiúsculo na digitação).
+      // CNPJ fica de fora (é dígito, não texto de cadastro); os campos
+      // <select> (porte/situação/origem) já só têm opções fixas em maiúsculo.
+      const value = UPPERCASE_FIELDS.has(name) ? e.target.value.toUpperCase() : e.target.value;
+      setFields((prev) => ({ ...prev, [name]: value }));
+    },
   });
 
   async function handleLookup() {
@@ -118,15 +152,19 @@ export default function LeadForm() {
       const cnae = splitCnae(data.cnaePrincipal);
       setFields((prev) => ({
         ...prev,
-        razaoSocial: data.razaoSocial ?? prev.razaoSocial,
+        // Mesma padronização em caixa alta do field() acima — a Receita
+        // devolve razão social/município em texto misto, então força pra
+        // já entrar no cadastro na condição padrão.
+        razaoSocial: (data.razaoSocial ?? prev.razaoSocial).toUpperCase(),
         cnpj: data.cpfCnpj ?? prev.cnpj,
-        cnaePrincipal: cnae.codigo || prev.cnaePrincipal,
-        cnaeDescricao: cnae.descricao || prev.cnaeDescricao,
+        cnaePrincipal: (cnae.codigo || prev.cnaePrincipal).toUpperCase(),
+        cnaeDescricao: (cnae.descricao || prev.cnaeDescricao).toUpperCase(),
         porte: normalizePorte(data.porte) || prev.porte,
         situacao: normalizeSituacao(data.situacaoCadastral),
-        uf: data.uf ?? prev.uf,
-        municipio: data.cidade ?? prev.municipio,
+        uf: (data.uf ?? prev.uf).toUpperCase(),
+        municipio: (data.cidade ?? prev.municipio).toUpperCase(),
       }));
+      setRjHint(data.emRecuperacaoJudicial);
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : "Erro ao consultar CNPJ.");
     } finally {
@@ -148,12 +186,19 @@ export default function LeadForm() {
       </div>
       {lookupError && <div className="error-banner">{lookupError}</div>}
       {state?.ok === false && <div className="error-banner">{state.message}</div>}
+      {rjHint && (
+        <div className="error-banner">
+          ⚠ Esta empresa está em recuperação judicial na Receita Federal — o aviso foi retirado
+          da razão social e vira um indicador próprio ao salvar.
+        </div>
+      )}
       <p className="field-hint" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: -4, marginBottom: 12 }}>
         Puxa razão social, CNAE, porte e situação cadastral da Receita Federal (BrasilAPI) — os
         demais campos continuam editáveis antes de adicionar à triagem.
       </p>
 
       <form action={formAction} className="form-grid">
+        <input type="hidden" name="emRecuperacaoJudicial" value={rjHint === undefined ? "" : String(rjHint)} />
         <label>
           Razão social*
           <input name="razaoSocial" required maxLength={255} {...field("razaoSocial")} />
@@ -219,9 +264,9 @@ export default function LeadForm() {
           />
           Importador (Comex Stat)
         </label>
-        <button type="submit" className="btn btn-primary">
+        <SubmitButton className="btn btn-primary" pendingLabel="Adicionando…">
           Adicionar à triagem
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );

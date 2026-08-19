@@ -16,16 +16,47 @@ import {
   deleteAttachment,
   getDownloadUrl,
 } from "@/lib/api/task-attachments";
-import {
-  createTaskList,
-  deleteTaskList,
-  updateTaskList,
-} from "@/lib/api/task-lists";
 import { createTask, deleteTask, updateTask } from "@/lib/api/tasks";
+import type { CreateTaskInput, UpdateTaskInput } from "@/lib/api/tasks";
+import { createContact, listContacts } from "@/lib/api/contacts";
+import type { CreateContactInput } from "@/lib/api/contacts";
+import type { Contact, Task } from "@/lib/api/types";
+
+type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   const str = value ? String(value).trim() : "";
   return str === "" ? undefined : str;
+}
+
+// Chamada direto (não como form action) pelo client component de
+// "Nova tarefa" (nova-form.tsx) sempre que a Empresa/Oportunidade
+// selecionada muda — repopula o combobox de Contato sem expor o access
+// token do Supabase ao navegador (mesmo motivo de sempre: chamadas à API
+// do NestJS só acontecem no servidor).
+export async function listCompanyContactsAction(companyId: string): Promise<Contact[]> {
+  if (!companyId) return [];
+  const token = await getServerAccessToken();
+  return listContacts(token, companyId);
+}
+
+// Cadastro rápido de contato direto do combobox de Contato (TipoContatoFields)
+// — pra quando a empresa escolhida ainda não tem nenhum registrado e o tipo
+// da tarefa (ligação/reunião/visita/e-mail) exige um. Chamada direto (não form
+// action) porque o resultado precisa voltar pro estado do form em vez de
+// redirecionar — mesmo motivo de createTaskModalAction/
+// listCompanyContactsAction.
+export async function createContactInlineAction(
+  companyId: string,
+  data: CreateContactInput,
+): Promise<ActionResult<Contact>> {
+  const token = await getServerAccessToken();
+  try {
+    const contact = await createContact(token, companyId, data);
+    return { ok: true, data: contact };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
 }
 
 // Toda action de formulário volta pra essa mesma URL (preserva view/card/
@@ -35,52 +66,73 @@ function backPath(formData: FormData): string {
   return emptyToUndefined(formData.get("back")) ?? "/dashboard/tarefas";
 }
 
-export async function createTaskAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-
-  try {
-    await createTask(token, {
-      title: String(formData.get("title") ?? "").trim(),
-      dueAt: emptyToUndefined(formData.get("dueAt")),
-      companyId: emptyToUndefined(formData.get("companyId")),
-      opportunityId: emptyToUndefined(formData.get("opportunityId")),
-      listId: emptyToUndefined(formData.get("listId")),
-    });
-  } catch (error) {
-    redirectWithError(back, error);
-  }
-
-  revalidatePath("/dashboard/tarefas");
-  redirectWithMessage("/dashboard/tarefas", "Tarefa criada");
-}
-
 export type CreateTaskState = { ok: true } | { ok: false; message: string };
 
-// Mesma criação de createTaskAction, só que devolve o resultado em vez de
-// redirecionar — usado via useActionState só pelo form "Nova tarefa"
-// (nova-form.tsx), pro modal fechar com router.push no client depois de
-// confirmar (redirect() de dentro da action não derruba o slot @modal da
-// rota interceptada — mesmo motivo documentado em empresas/actions.ts
-// createCompanyAction). createTaskAction continua como está porque
-// também é usada pelo quick-add de tarefa dentro da ficha de lead, que
-// não é modal e não deve mudar de comportamento.
+// Toda criação de tarefa passa por aqui — devolve o resultado em vez de
+// redirecionar, usado via useActionState pelo form "Nova tarefa"
+// (nova-form.tsx, o único jeito de criar tarefa na UI: menu Tarefas,
+// "+ Gerar tarefa" do Pipeline e "Criar tarefa" da ficha de lead/empresa
+// na Prospecção reusam o mesmo form) — pro modal fechar com router.push
+// no client depois de confirmar (redirect() de dentro da action não
+// derruba o slot @modal da rota interceptada — mesmo motivo documentado
+// em empresas/actions.ts createCompanyAction).
 export async function createTaskModalAction(
   _prevState: CreateTaskState | null,
   formData: FormData,
 ): Promise<CreateTaskState> {
   const token = await getServerAccessToken();
 
+  let task: Task;
   try {
-    await createTask(token, {
+    task = await createTask(token, {
       title: String(formData.get("title") ?? "").trim(),
       dueAt: emptyToUndefined(formData.get("dueAt")),
+      tipo: emptyToUndefined(formData.get("tipo")) as CreateTaskInput["tipo"],
+      contactId: emptyToUndefined(formData.get("contactId")),
       companyId: emptyToUndefined(formData.get("companyId")),
       opportunityId: emptyToUndefined(formData.get("opportunityId")),
-      listId: emptyToUndefined(formData.get("listId")),
+      assigneeUserId: emptyToUndefined(formData.get("assigneeUserId")),
     });
   } catch (error) {
     return { ok: false, message: errorMessage(error) };
+  }
+
+  // Comentário inicial (opcional) — mesmo endpoint já usado no cartão de
+  // uma tarefa existente (createCommentAction), só que chamado uma vez
+  // logo depois da criação, com o id que acabou de sair do POST acima.
+  const comment = String(formData.get("comment") ?? "").trim();
+  if (comment) {
+    try {
+      await createComment(token, task.id, comment);
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) };
+    }
+  }
+
+  // Anexo inicial (opcional) — mesma dança de signed URL do upload no
+  // cartão de uma tarefa existente (uploadAttachmentAction): o binário
+  // nunca passa pelo NestJS, só esta Server Action assina a URL e faz o
+  // PUT direto no Storage do Supabase.
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    try {
+      const { uploadUrl } = await createUploadUrl(token, task.id, {
+        fileName: file.name,
+        mimeType: file.type || undefined,
+        sizeBytes: file.size,
+      });
+      const bytes = await file.arrayBuffer();
+      const res = await fetch(uploadUrl, {
+        method: "PUT",
+        body: bytes,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!res.ok) {
+        throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
+      }
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) };
+    }
   }
 
   revalidatePath("/dashboard/tarefas");
@@ -143,6 +195,8 @@ export async function updateTaskDetailAction(formData: FormData) {
       title: emptyToUndefined(formData.get("title")),
       description: String(formData.get("description") ?? ""),
       dueAt: emptyToUndefined(formData.get("dueAt")),
+      tipo: emptyToUndefined(formData.get("tipo")) as UpdateTaskInput["tipo"],
+      contactId: emptyToUndefined(formData.get("contactId")),
       assigneeUserId: emptyToUndefined(formData.get("assigneeUserId")),
     });
   } catch (error) {
@@ -151,77 +205,6 @@ export async function updateTaskDetailAction(formData: FormData) {
 
   revalidatePath("/dashboard/tarefas");
   redirectWithMessage(`/dashboard/tarefas/${id}`, "Tarefa atualizada");
-}
-
-// Drag-and-drop no Kanban chama isso direto (não é submit de form) — sem
-// redirectWithError aqui, o Client Component trata o erro sozinho.
-export async function moveTaskAction(
-  taskId: string,
-  listId: string,
-  position: number,
-): Promise<{ ok: boolean; error?: string }> {
-  const token = await getServerAccessToken();
-  try {
-    await updateTask(token, taskId, { listId, position });
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Erro ao mover o cartão.",
-    };
-  }
-  revalidatePath("/dashboard/tarefas");
-  return { ok: true };
-}
-
-// ---------- Colunas (TaskList) ----------
-
-export async function createTaskListAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-
-  try {
-    await createTaskList(token, {
-      name: String(formData.get("name") ?? "").trim(),
-      order: Number(formData.get("order") ?? 0),
-      isDoneList: formData.get("isDoneList") === "on",
-    });
-  } catch (error) {
-    redirectWithError(back, error);
-  }
-
-  revalidatePath("/dashboard/tarefas");
-}
-
-export async function updateTaskListAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const id = String(formData.get("id"));
-
-  try {
-    await updateTaskList(token, id, {
-      name: emptyToUndefined(formData.get("name")),
-      order: formData.get("order") ? Number(formData.get("order")) : undefined,
-      isDoneList: formData.get("isDoneList") === "on",
-    });
-  } catch (error) {
-    redirectWithError(back, error);
-  }
-
-  revalidatePath("/dashboard/tarefas");
-}
-
-export async function deleteTaskListAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const id = String(formData.get("id"));
-
-  try {
-    await deleteTaskList(token, id);
-  } catch (error) {
-    redirectWithError(back, error);
-  }
-
-  revalidatePath("/dashboard/tarefas");
 }
 
 // ---------- Checklist ----------

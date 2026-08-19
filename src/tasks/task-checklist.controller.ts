@@ -29,7 +29,11 @@ export class TaskChecklistController {
     @Body() dto: CreateChecklistItemDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.checklist.create(tx, membership, taskId, dto),
     );
   }
@@ -42,7 +46,11 @@ export class TaskChecklistController {
     @Body() dto: UpdateChecklistItemDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.checklist.update(tx, membership, taskId, itemId, dto),
     );
   }
@@ -55,7 +63,11 @@ export class TaskChecklistController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.checklist.remove(tx, membership, taskId, itemId),
     );
   }

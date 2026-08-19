@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -52,6 +53,12 @@ export class OpportunityService {
     membership: MembershipContext,
     dto: CreateOpportunityDto,
   ): Promise<Opportunity> {
+    if (!this.policy.canModule(membership, 'oportunidades', 'criar')) {
+      throw new ForbiddenException(
+        'Sem permissão para cadastrar oportunidades.',
+      );
+    }
+
     const ownerUserId = dto.ownerUserId ?? membership.userId;
     await assertActiveMembership(tx, membership.workspaceId, ownerUserId);
     await this.mustCompanyExist(tx, membership.workspaceId, dto.companyId);
@@ -94,6 +101,16 @@ export class OpportunityService {
     membership: MembershipContext,
     query: ListOpportunitiesQueryDto,
   ): Promise<PaginatedResult<Opportunity>> {
+    // Mesmo critério de TaskService#findAll: filtrado por empresa (aba
+    // "Oportunidades" da ficha) usa empresas_oportunidades, separado da
+    // tela geral (Pipeline) — só 'ver' tem efeito próprio, ver comentário
+    // lá.
+    const viewModule = query.companyId
+      ? 'empresas_oportunidades'
+      : 'oportunidades';
+    if (!this.policy.canModule(membership, viewModule, 'ver')) {
+      throw new ForbiddenException('Sem permissão para ver oportunidades.');
+    }
     const ownerFilter = await this.policy.scopeFilter(tx, membership);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
@@ -102,6 +119,7 @@ export class OpportunityService {
       ...ownerFilter,
       deletedAt: query.includeDeleted ? undefined : null,
       ...(query.companyId ? { companyId: query.companyId } : {}),
+      ...(query.status ? { status: query.status } : {}),
     };
 
     if (query.staleDays) {
@@ -320,7 +338,7 @@ export class OpportunityService {
     membership: MembershipContext,
     id: string,
   ): Promise<Opportunity> {
-    const existing = await this.mustBeVisible(tx, membership, id, 'write');
+    const existing = await this.mustBeVisible(tx, membership, id, 'delete');
 
     const deleted = await tx.opportunity.update({
       where: { id: existing.id },
@@ -348,7 +366,13 @@ export class OpportunityService {
     });
     if (
       !existing ||
-      !(await this.policy.can(tx, membership, 'write', existing))
+      !(await this.policy.can(
+        tx,
+        membership,
+        'write',
+        existing,
+        'oportunidades',
+      ))
     ) {
       throw new NotFoundException('Oportunidade não encontrada.');
     }
@@ -427,7 +451,7 @@ export class OpportunityService {
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
-    action: 'read' | 'write' = 'read',
+    action: 'read' | 'write' | 'delete' = 'read',
   ): Promise<Opportunity> {
     const opportunity = await tx.opportunity.findFirst({
       where: { id, workspaceId: membership.workspaceId },
@@ -435,7 +459,15 @@ export class OpportunityService {
     if (!opportunity || opportunity.deletedAt) {
       throw new NotFoundException('Oportunidade não encontrada.');
     }
-    if (!(await this.policy.can(tx, membership, action, opportunity))) {
+    if (
+      !(await this.policy.can(
+        tx,
+        membership,
+        action,
+        opportunity,
+        'oportunidades',
+      ))
+    ) {
       throw new NotFoundException('Oportunidade não encontrada.');
     }
     return opportunity;

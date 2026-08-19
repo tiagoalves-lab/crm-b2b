@@ -30,7 +30,11 @@ export class MembershipController {
     @Body() dto: CreateMembershipDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.memberships.create(tx, membership, dto),
     );
   }
@@ -42,7 +46,11 @@ export class MembershipController {
   @Get()
   async findAll(@CurrentMembership() membership: MembershipContext) {
     const rows = await this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.memberships.findAll(tx, membership),
     );
     const identities = await this.supabaseUser.getIdentities(
@@ -50,12 +58,17 @@ export class MembershipController {
     );
     return rows.map((row) => ({
       ...row,
-      ...(identities.get(row.userId) ?? { login: null, name: null }),
+      ...(identities.get(row.userId) ?? {
+        login: null,
+        name: null,
+        email: null,
+      }),
     }));
   }
 
-  // dto.name não é coluna de Membership — atualizado à parte, fora da
-  // transação, mesmo motivo do findAll acima (chamada HTTP, não query).
+  // dto.name/email/login não são coluna de Membership — atualizados à
+  // parte, fora da transação, mesmo motivo do findAll acima (chamada
+  // HTTP, não query).
   @Patch(':id')
   async update(
     @CurrentMembership() membership: MembershipContext,
@@ -63,11 +76,21 @@ export class MembershipController {
     @Body() dto: UpdateMembershipDto,
   ) {
     const updated = await this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.memberships.update(tx, membership, id, dto),
     );
-    if (dto.name !== undefined) {
-      await this.supabaseUser.updateUserName(updated.userId, dto.name);
+    if (dto.name !== undefined || dto.email !== undefined) {
+      await this.supabaseUser.updateUserProfile(updated.userId, {
+        name: dto.name,
+        email: dto.email,
+      });
+    }
+    if (dto.login !== undefined) {
+      await this.supabaseUser.updateUserLogin(updated.userId, dto.login);
     }
     if (dto.password) {
       await this.supabaseUser.updateUserPassword(updated.userId, dto.password);
@@ -81,7 +104,11 @@ export class MembershipController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.memberships.remove(tx, membership, id),
     );
   }

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { createActivity } from "@/lib/api/activities";
-import type { PessoaTipo } from "@/lib/api/types";
+import { createContact, deleteContact, updateContact } from "@/lib/api/contacts";
+import type { Activity, Contact, PessoaTipo } from "@/lib/api/types";
 import {
   createCompany,
   deleteCompany,
@@ -13,6 +14,42 @@ import {
   restoreCompany,
   updateCompany,
 } from "@/lib/api/companies";
+import { propagarCompanyParaEgestor } from "@/lib/api/egestor";
+
+// Propagação CRM → eGestor depois de salvar a ficha (decisão do usuário,
+// 2026-08-14: "eu altero no CRM e ao salvar ele propaga"). Só roda depois
+// do save ter dado certo — o cadastro do CRM é o que manda, a propagação é
+// consequência.
+//
+// Nunca derruba a ação: o save já aconteceu e não dá pra desfazer, então
+// falhar aqui e mostrar erro daria a impressão falsa de que nada foi
+// gravado. O desfecho vira sufixo da mensagem de sucesso. Erro de verdade
+// (rede/eGestor fora do ar) também vira sufixo, com o texto do erro, pra
+// não ficar silencioso — o histórico de requisições da tela Integração
+// eGestor guarda o registro completo.
+async function propagarSufixo(token: string, companyId: string): Promise<string> {
+  try {
+    const resultado = await propagarCompanyParaEgestor(token, companyId);
+    if (!resultado.propagado) return "";
+    const lados = resultado.lados
+      .map((lado) => (lado === "matriz" ? "Matriz" : "Filial"))
+      .join(" e ");
+    return ` — propagado pro eGestor ${lados}`;
+  } catch (error) {
+    return ` — mas falhou ao propagar pro eGestor: ${errorMessage(error)}`;
+  }
+}
+
+// `indicadorIE` do eGestor — guardado como NÚMERO puro (1/2/9), que é o
+// único formato que a API aceita no corpo do POST/PUT (decisão do usuário,
+// 2026-08-17; ver docs/api-egestor-contatos.md). Qualquer coisa fora do
+// enum, inclusive o "Não informado" do select, volta `undefined`: a chave
+// some do cadastro e o CRM deixa de opinar sobre esse campo, em vez de
+// afirmar um valor que ninguém escolheu.
+function indicadorIeFromForm(value: FormDataEntryValue | null): number | undefined {
+  const str = value ? String(value).trim() : "";
+  return str === "1" || str === "2" || str === "9" ? Number(str) : undefined;
+}
 
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   const str = value ? String(value).trim() : "";
@@ -137,8 +174,10 @@ export async function updateCompanyAction(formData: FormData) {
     redirectWithError(back, error);
   }
 
+  const sufixo = await propagarSufixo(token, id);
+
   revalidatePath("/dashboard/empresas");
-  redirectWithMessage(back, "Empresa atualizada");
+  redirectWithMessage(back, `Empresa atualizada${sufixo}`);
 }
 
 // Campos fiscais estaduais (IE/contribuinte ICMS/situação) — vivem em
@@ -159,16 +198,27 @@ export async function updateCustomFieldsAction(formData: FormData) {
       customFields: {
         ...current.customFields,
         inscricao_estadual: emptyToUndefined(formData.get("inscricao_estadual")),
-        contribuinte_icms: formData.get("contribuinte_icms") === "on",
-        situacao_cadastral: emptyToUndefined(formData.get("situacao_cadastral")),
+        indicador_ie: indicadorIeFromForm(formData.get("indicador_ie")),
+        // Campos que saíram do formulário em 2026-08-17: `contribuinte_icms`
+        // (substituído pelo `indicador_ie` acima) e `situacao_cadastral`
+        // estadual (removido a pedido do usuário — a situação que interessa
+        // é a federal, que já vem da Receita em customFields.cnpj_lookup).
+        // Explicitados como undefined em vez de só apagados daqui: o spread
+        // de `current.customFields` acima traria a chave antiga de volta em
+        // qualquer empresa que já a tivesse gravada, e ela ficaria pra
+        // sempre num cadastro sem tela que a mostre.
+        contribuinte_icms: undefined,
+        situacao_cadastral: undefined,
       },
     });
   } catch (error) {
     redirectWithError(back, error);
   }
 
+  const sufixo = await propagarSufixo(token, id);
+
   revalidatePath("/dashboard/empresas");
-  redirectWithMessage(back, "Dados fiscais salvos");
+  redirectWithMessage(back, `Dados fiscais salvos${sufixo}`);
 }
 
 // Aba "Dados cadastrais" — busca a Receita Federal (BrasilAPI, via proxy
@@ -195,6 +245,7 @@ export async function refreshCnpjDataAction(formData: FormData) {
     const [current, lookup] = await Promise.all([getCompany(token, id), lookupCnpj(token, cnpj)]);
     await updateCompany(token, id, {
       razaoSocial: lookup.razaoSocial,
+      emRecuperacaoJudicial: lookup.emRecuperacaoJudicial,
       fantasia: lookup.fantasia,
       cpfCnpj: lookup.cpfCnpj,
       tipo: "PJ",
@@ -245,28 +296,152 @@ const SUBTYPE_TO_TYPE: Record<string, "note" | "call" | "email"> = {
   email: "email",
 };
 
-export async function createNoteAction(formData: FormData) {
+// RPC via Server Action (não <form action=...>) — pedido direto do
+// usuário (2026-08-05): a versão antiga (FormData + redirectWithMessage)
+// forçava uma navegação de volta pra mesma URL a cada "Registrar", e isso
+// fechava e reabria o drawer/modal interceptado da ficha (mesmo gotcha já
+// documentado: só router.back() colapsa o slot @modal/@drawer nesta
+// versão do Next — redirect()/router.push() não fecham o overlay, mas
+// ainda disparam um ciclo de navegação que pisca a UI inteira). Sem
+// redirect nenhum: devolve o resultado pro client component
+// (AddNoteForm) chamar router.refresh() — atualiza só os dados da rota
+// atual sem navegar, então o drawer nunca fecha, só a Timeline ganha o
+// registro novo.
+export async function createNoteRpcAction(
+  companyId: string,
+  data: { subtipo: string; texto: string; contactId?: string },
+): Promise<ActionResult<Activity>> {
+  const token = await getServerAccessToken();
+  try {
+    const activity = await createActivity(token, {
+      companyId,
+      type: SUBTYPE_TO_TYPE[data.subtipo] ?? "note",
+      texto: data.texto,
+      subtipo: data.subtipo,
+      contactId: data.contactId,
+    });
+    revalidatePath("/dashboard/empresas");
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: activity };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+}
+
+// Aba "Contatos" da ficha (entre "Dados cadastrais" e "Timeline") —
+// reusada tal e qual na ficha de Leads (companyId = RawLead.
+// promotedCompanyId), feature nova fora do SPEC-CRM-GAMA.md original.
+export async function createContactAction(formData: FormData) {
   const token = await getServerAccessToken();
   const companyId = String(formData.get("companyId"));
   const back = String(formData.get("back") ?? "/dashboard/empresas");
-  const subtipo = String(formData.get("subtipo") ?? "nota");
-  const texto = String(formData.get("texto") ?? "").trim();
+  const nome = String(formData.get("nome") ?? "").trim();
 
-  if (!texto) {
-    redirectWithError(back, new Error("Escreva algo antes de registrar."));
+  if (!nome) {
+    redirectWithError(back, new Error("Informe o nome do contato."));
   }
 
   try {
-    await createActivity(token, {
-      companyId,
-      type: SUBTYPE_TO_TYPE[subtipo] ?? "note",
-      texto,
-      subtipo,
+    await createContact(token, companyId, {
+      nome,
+      cargo: emptyToUndefined(formData.get("cargo")),
+      email: emptyToUndefined(formData.get("email")),
+      telefone: emptyToUndefined(formData.get("telefone")),
+      decisor: formData.get("decisor") === "on",
     });
   } catch (error) {
     redirectWithError(back, error);
   }
 
   revalidatePath("/dashboard/empresas");
-  redirectWithMessage(back, "Interação registrada");
+  revalidatePath("/dashboard/leads");
+  redirectWithMessage(back, "Contato adicionado");
+}
+
+type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
+
+// Versões RPC de criar/remover contato (2026-08-13).
+//
+// As versões com `<form action=...>` + redirectWithMessage acima faziam a
+// aba "Contatos" pagar uma navegação inteira por clique: o redirect
+// remonta o layout e recarrega a ficha toda, o que dentro do drawer/modal
+// interceptado aparece como um piscar da tela e vários segundos de espera
+// — e era nessa espera que o usuário clicava de novo e criava o contato
+// duplicado. Mesmo tratamento que a aba Timeline já tinha recebido
+// (createNoteRpcAction, logo acima): sem redirect, devolve o resultado
+// pro client component chamar router.refresh(), que atualiza só os dados
+// da rota atual sem navegar — o drawer nunca fecha.
+export async function createContactRpcAction(
+  companyId: string,
+  data: { nome: string; cargo?: string; email?: string; telefone?: string; decisor: boolean },
+): Promise<ActionResult<Contact>> {
+  const token = await getServerAccessToken();
+
+  const nome = data.nome.trim();
+  if (!nome) {
+    return { ok: false, message: "Informe o nome do contato." };
+  }
+
+  try {
+    const contact = await createContact(token, companyId, { ...data, nome });
+    revalidatePath("/dashboard/empresas");
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: contact };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+}
+
+export async function deleteContactRpcAction(
+  companyId: string,
+  contactId: string,
+): Promise<ActionResult<null>> {
+  const token = await getServerAccessToken();
+  try {
+    await deleteContact(token, companyId, contactId);
+    revalidatePath("/dashboard/empresas");
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: null };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+}
+
+// Chamada via onClick (contact-item.tsx), não <form action> — devolve o
+// contato atualizado em vez de redirecionar, pro item da lista voltar do
+// modo de edição pro modo de exibição sem sair da ficha (mesmo motivo de
+// approveLeadForOpportunityAction em leads/actions.ts). Backend restringe
+// a owner/admin (ContactService#mustBeAdminOrOwner) — pedido do usuário
+// (2026-08-03): representante só vê/insere, não edita/remove.
+export async function updateContactAction(
+  companyId: string,
+  contactId: string,
+  data: { nome?: string; cargo?: string; email?: string; telefone?: string; decisor?: boolean },
+): Promise<ActionResult<Contact>> {
+  const token = await getServerAccessToken();
+  try {
+    const contact = await updateContact(token, companyId, contactId, data);
+    revalidatePath("/dashboard/empresas");
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: contact };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+}
+
+export async function deleteContactAction(formData: FormData) {
+  const token = await getServerAccessToken();
+  const companyId = String(formData.get("companyId"));
+  const contactId = String(formData.get("contactId"));
+  const back = String(formData.get("back") ?? "/dashboard/empresas");
+
+  try {
+    await deleteContact(token, companyId, contactId);
+  } catch (error) {
+    redirectWithError(back, error);
+  }
+
+  revalidatePath("/dashboard/empresas");
+  revalidatePath("/dashboard/leads");
+  redirectWithMessage(back, "Contato removido");
 }

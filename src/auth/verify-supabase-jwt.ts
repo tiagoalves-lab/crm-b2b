@@ -8,6 +8,11 @@ import {
 export interface SupabaseJwtClaims extends JwtPayload {
   sub: string;
   email?: string;
+  // Supabase embute isto de fábrica em todo access token — não precisa de
+  // chamada à Admin API pra ler o nome do próprio usuário logado (só pra
+  // ler o nome de OUTROS usuários é que precisa, ver
+  // SupabaseUserService#getIdentities).
+  user_metadata?: Record<string, unknown>;
 }
 
 export interface VerifySupabaseJwtOptions {

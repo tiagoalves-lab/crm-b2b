@@ -5,9 +5,21 @@
 export type MembershipRole = "owner" | "admin" | "manager" | "sales_rep" | "readonly";
 export type MembershipStatus = "active" | "invited" | "suspended";
 
+// Matriz granular de permissões (módulo × ver/criar/editar/excluir) — ver
+// lib/api/permission-catalog.ts pro catálogo completo (módulos/ações/
+// presets) e src/policy/permission-catalog.ts no backend (fonte da
+// verdade, aplicada de verdade em cada endpoint).
+export type PermissionMatrix = {
+  [module: string]: { [action: string]: boolean | undefined } | undefined;
+};
+
 export interface AuthenticatedUser {
   id: string;
   email?: string;
+  // user_metadata.name embutido no JWT do Supabase — usado na Timeline pra
+  // mostrar o nome de quem registrou em vez de "Você" (pedido do usuário,
+  // 2026-08-03). Ausente se a conta nunca teve nome preenchido.
+  name?: string;
 }
 
 export interface Membership {
@@ -24,6 +36,16 @@ export interface Membership {
   // null quando o Admin API falha ou o membro é anterior a este campo.
   login?: string | null;
   name?: string | null;
+  // E-mail de CONTATO do membro (2026-08-06) — separado do login (que é
+  // só o identificador de acesso, ver comentário em
+  // src/memberships/supabase-user.service.ts no backend). Mesma origem/
+  // limitação de name/login acima (user_metadata, não coluna).
+  email?: string | null;
+  // Matriz granular de PermissionMatrix — null = usa o preset padrão do
+  // papel (ver permission-catalog.ts). owner/admin ignoram isto (bypass
+  // total no backend), mas o campo continua vindo preenchido/null igual
+  // pros dois.
+  permissions?: PermissionMatrix | null;
 }
 
 export interface MeResponse {
@@ -58,14 +80,27 @@ export interface Company {
   cidade: string | null;
   uf: string | null;
   tags: string[];
-  // Campos fiscais estaduais (IE, contribuinte de ICMS, situação
-  // cadastral) — dado que a Receita não fornece, preenchimento manual
-  // (SPEC-CRM-GAMA.md §3.4/§4.1). Chaves usadas:
-  // inscricao_estadual/contribuinte_icms/situacao_cadastral.
+  // Indicativo "EM RECUPERAÇÃO JUDICIAL" da Receita Federal, extraído da
+  // razão social pra este flag (2026-08-05) — ver
+  // src/common/sanitize-razao-social.ts no backend. razaoSocial já vem
+  // sem esse texto quando true.
+  emRecuperacaoJudicial: boolean;
+  // Campos fiscais estaduais (IE + indicador de IE) — dado que a Receita
+  // não fornece, preenchimento manual (SPEC-CRM-GAMA.md §3.4/§4.1). Chaves
+  // usadas: inscricao_estadual/indicador_ie. `indicador_ie` guarda só o
+  // NÚMERO do enum do eGestor (1/2/9) — decisão do usuário, 2026-08-17,
+  // substituindo o antigo checkbox booleano contribuinte_icms. Na mesma
+  // data saiu a situação cadastral estadual (situacao_cadastral): a
+  // situação que o CRM usa é a federal, que vem da Receita no snapshot
+  // customFields.cnpj_lookup.
   customFields: Record<string, unknown>;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Vínculo com a tabela espelho do eGestor (S2.4,
+  // docs/roadmap.md) — não-nulo = empresa integrada
+  // (Matriz e/ou Filial). Vem só de GET /companies e GET /companies/:id.
+  egestorContato: { id: string } | null;
 }
 
 export interface Stage {
@@ -121,26 +156,18 @@ export interface OpportunityWithDetails extends Opportunity {
 }
 
 export type TaskStatus = "pending" | "done";
-
-export interface TaskList {
-  id: string;
-  workspaceId: string;
-  name: string;
-  order: number;
-  isDoneList: boolean;
-  createdAt: string;
-}
+export type TaskType = "ligacao" | "email" | "visita" | "proposta" | "followup" | "reuniao";
 
 export interface Task {
   id: string;
   title: string;
   description: string | null;
   dueAt: string | null;
+  tipo: TaskType | null;
+  contactId: string | null;
   assigneeUserId: string;
   companyId: string | null;
   opportunityId: string | null;
-  listId: string;
-  position: number;
   status: TaskStatus;
   createdBy: string;
   createdAt: string;
@@ -178,6 +205,10 @@ export interface Activity {
   actorUserId: string | null;
   companyId: string | null;
   opportunityId: string | null;
+  // Contato vinculado (2026-08-05) — obrigatório no back quando
+  // payload.subtipo é ligação/reunião/visita/e-mail; o nome pra exibição
+  // já vem denormalizado em payload.contatoNome (sem precisar de JOIN).
+  contactId: string | null;
   occurredAt: string;
 }
 
@@ -197,6 +228,23 @@ export interface SalesHistory {
   valorTotal: string;
   situacaoOs: string | null;
   fonte: string;
+  createdAt: string;
+}
+
+// Agenda de contatos de uma empresa (feature nova, fora do
+// SPEC-CRM-GAMA.md original) — reusada na ficha de Leads via
+// RawLead.promotedCompanyId, sem tabela própria de lead.
+export interface Contact {
+  id: string;
+  workspaceId: string;
+  companyId: string;
+  nome: string;
+  cargo: string | null;
+  email: string | null;
+  telefone: string | null;
+  // Tomador de decisão — pedido do usuário (2026-08-03), fora do
+  // protótipo original.
+  decisor: boolean;
   createdAt: string;
 }
 
@@ -220,6 +268,96 @@ export interface RawLead {
   manualTier: LeadTier | null;
   status: RawLeadStatus;
   promotedCompanyId: string | null;
+  // Tags livres de organização do usuário (2026-08-05, fora do
+  // SPEC-CRM-GAMA.md original) — não confundir com companies.tags (marcador
+  // de sistema "lead-triagem"), coluna própria em raw_leads.
+  tags: string[];
+  // Segmento de negócio (2026-08-05, mesmo pedido) — valor único, não
+  // array como tags acima.
+  segmento: string | null;
+  // Mesmo indicativo de Company.emRecuperacaoJudicial acima — coluna
+  // própria em raw_leads (não deriva da company associada).
+  emRecuperacaoJudicial: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// Integração eGestor — tela "Integração eGestor" (Administração, só
+// owner/admin). Espelha EgestorContatoConsolidado (backend), ver
+// docs/roadmap.md itens 9.3/9.6 e docs/api-egestor-contatos.md.
+export type EgestorContatoStatus = "so_matriz" | "so_filial" | "ambos_iguais" | "ambos_diferentes";
+
+// Payload cru de um lado (Matriz ou Filial) — só os campos que a Gama
+// sincroniza (CAMPOS_CONTATO no backend), sem tipagem campo a campo pelo
+// mesmo motivo do backend (EgestorContatoRaw): é lido de volta como blob
+// só pra montar o diff na tela de correção.
+export type EgestorContatoRaw = Record<string, unknown> & {
+  codigo: number | string;
+  nome?: string;
+};
+
+// Cadastro de Company (CRM) com o mesmo CNPJ desta linha — 3ª fonte de
+// comparação ao lado de Matriz/Filial (pedido do usuário, 2026-08-13, na
+// esteira da sanitização em lote via cartão CNPJ). `null` quando nenhuma
+// Company do workspace tem este CNPJ. Mesmo grupo de campos de
+// CAMPOS_SEFAZ/CAMPOS_CRM do backend — nunca e-mail/telefone.
+export interface CrmContatoFonte {
+  razaoSocial: string | null;
+  fantasia: string | null;
+  nomeParaContato: string | null;
+  cpfCnpj: string | null;
+  emails: string[];
+  fones: string[];
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cep: string | null;
+  uf: string | null;
+  cidade: string | null;
+  inscricaoEstadual: string | null;
+  // Derivado do bloco "Dados estaduais (SEFAZ / ICMS)" da ficha da empresa
+  // (Inscrição Estadual + "Contribuinte de ICMS") — enum 1/2/9 do eGestor.
+  // `null` quando o cadastro não afirma nada sobre isso.
+  indicadorIE: string | null;
+}
+
+export interface EgestorContatoConsolidado {
+  id: string;
+  cpfCnpj: string;
+  status: EgestorContatoStatus;
+  codigoMatriz: string | null;
+  codigoFilial: string | null;
+  nomeMatriz: string | null;
+  nomeFilial: string | null;
+  dadosMatriz: EgestorContatoRaw | null;
+  dadosFilial: EgestorContatoRaw | null;
+  camposDiferentes: string[];
+  companyId: string | null;
+  crm: CrmContatoFonte | null;
+  // Campos onde o CRM diverge de Matriz e/ou Filial, mesmo quando os dois
+  // JÁ SÃO IGUAIS entre si (fora de `camposDiferentes`, que só compara
+  // Matriz×Filial) — pedido do usuário, 2026-08-14: sem isso, empresa com
+  // Matriz==Filial mas desatualizada em relação ao CRM nunca aparecia como
+  // precisando de correção. Vazio pra so_matriz/so_filial.
+  crmCamposDivergentes: string[];
+  lastSyncedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Histórico legível de interações (docs/roadmap.md, "Criar log das
+// interações de requisições de API", 2026-08-13) — botão "Histórico de
+// requisições" na tela Integração eGestor. Espelha EgestorInteractionLog
+// (backend): "crm" é ação manual (Sincronizar/Promover/Corrigir/
+// Consolidar/Corrigir com SEFAZ/Completar), "egestor_matriz"/
+// "egestor_filial" é processamento automático via webhook daquela conta.
+export type EgestorInteractionOrigin = "crm" | "egestor_matriz" | "egestor_filial";
+
+export interface EgestorInteractionLog {
+  id: string;
+  occurredAt: string;
+  origin: EgestorInteractionOrigin;
+  action: string;
+  summary: string;
 }

@@ -1,5 +1,6 @@
 import { getMe } from "@/lib/api/me";
 import { companyDisplayName, getCompany } from "@/lib/api/companies";
+import { listContacts } from "@/lib/api/contacts";
 import { getOpportunity } from "@/lib/api/opportunities";
 import { getTask } from "@/lib/api/tasks";
 import { listAttachments } from "@/lib/api/task-attachments";
@@ -17,16 +18,26 @@ export async function loadTaskDetail(token: string, id: string) {
   ]);
 
   let targetLabel = "—";
+  let companyId: string | null = null;
   if (task.companyId) {
-    const company = await getCompany(token, task.companyId);
+    companyId = task.companyId;
+    const company = await getCompany(token, companyId);
     targetLabel = `Empresa: ${companyDisplayName(company)}`;
   } else if (task.opportunityId) {
     const opp = await getOpportunity(token, task.opportunityId);
-    const company = await getCompany(token, opp.companyId);
+    companyId = opp.companyId;
+    const company = await getCompany(token, companyId);
     targetLabel = `Oportunidade: ${companyDisplayName(company)}`;
   }
 
-  return { me, task, attachments, memberships, targetLabel };
+  // Empresa é fixa nesse ponto (vínculo imutável após a criação da
+  // tarefa) — contatos pra Ligação/Reunião/Visita/E-mail (pedido do usuário,
+  // 2026-08-04) resolvidos aqui, sem precisar de fetch disparado no
+  // cliente (diferente de "Nova tarefa", onde a empresa ainda pode
+  // mudar).
+  const contacts = companyId ? await listContacts(token, companyId) : [];
+
+  return { me, task, attachments, memberships, targetLabel, contacts, companyId };
 }
 
 export type TaskDetail = Awaited<ReturnType<typeof loadTaskDetail>>;

@@ -15,6 +15,12 @@ import { verifySupabaseJwt } from './verify-supabase-jwt';
 export interface AuthenticatedUser {
   id: string;
   email?: string;
+  // user_metadata.name já vem embutido no próprio JWT do Supabase (não
+  // precisa de chamada nenhuma à Admin API) — mesmo campo que
+  // SupabaseUserService#createUser grava na criação do membro
+  // (src/memberships/supabase-user.service.ts). Pedido do usuário
+  // (2026-08-03): timeline mostra o nome real em vez de "Você".
+  name?: string;
 }
 
 export type AuthenticatedRequest = Request & { user: AuthenticatedUser };
@@ -61,7 +67,15 @@ export class SupabaseAuthGuard implements CanActivate {
         issuer: `${supabaseUrl}/auth/v1`,
         audience: 'authenticated',
       });
-      request.user = { id: claims.sub, email: claims.email };
+      const metaName = claims.user_metadata?.name;
+      request.user = {
+        id: claims.sub,
+        email: claims.email,
+        name:
+          typeof metaName === 'string' && metaName.trim()
+            ? metaName
+            : undefined,
+      };
       return true;
     } catch {
       throw new UnauthorizedException(

@@ -1,9 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Activity } from '@prisma/client';
+import type { Activity, Prisma } from '@prisma/client';
 import type { PaginatedResult } from '../companies/company.service';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
@@ -19,15 +20,55 @@ export class ActivityQueryService {
     membership: MembershipContext,
     query: ListActivitiesQueryDto,
   ): Promise<PaginatedResult<Activity>> {
-    await this.assertEntityVisible(tx, membership, query);
+    const hasEntityFilter =
+      query.companyId !== undefined || query.opportunityId !== undefined;
+
+    let where: Prisma.ActivityWhereInput;
+    if (hasEntityFilter) {
+      await this.assertEntityVisible(tx, membership, query);
+      // Ver visível a Company/Opportunity não bastava (pedido direto do
+      // usuário, 2026-08-06): quando duas pessoas trabalham a MESMA
+      // empresa/oportunidade (cada uma com seu próprio vínculo — ex.: dois
+      // representantes com oportunidades próprias na mesma company), a
+      // Timeline mostrava o histórico de registro manual de TODOS,
+      // vazando anotação/ligação/etc. de um representante pro outro.
+      // Mesmo escopo por ator que o feed "sem filtro" abaixo já aplicava
+      // — owner/admin/manager (+hierarquia) veem tudo, sales_rep só o que
+      // ele mesmo registrou (`actorUserId`).
+      const scope = await this.policy.scopeFilter(tx, membership);
+      where = {
+        workspaceId: membership.workspaceId,
+        companyId: query.companyId,
+        opportunityId: query.opportunityId,
+        ...(scope.ownerUserId !== undefined
+          ? { actorUserId: scope.ownerUserId }
+          : {}),
+      };
+    } else {
+      // Sem companyId/opportunityId: feed "últimas atividades" do
+      // workspace inteiro (Painel comercial, fora do SPEC-CRM-GAMA.md
+      // original) — `activities` não tem RLS por papel (só isolamento de
+      // workspace, é "área comum" na tabela em si), então o escopo por
+      // ownership precisa ser feito aqui na app, igual Company/
+      // Opportunity/Task.findAll (Fatia 9): owner/admin/manager (+
+      // hierarquia) enxergam tudo; sales_rep só o que é dele via a
+      // company/opportunity referenciada.
+      const scope = await this.policy.scopeFilter(tx, membership);
+      where = {
+        workspaceId: membership.workspaceId,
+        ...(scope.ownerUserId !== undefined
+          ? {
+              OR: [
+                { company: { is: { ownerUserId: scope.ownerUserId } } },
+                { opportunity: { is: { ownerUserId: scope.ownerUserId } } },
+              ],
+            }
+          : {}),
+      };
+    }
 
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const where = {
-      workspaceId: membership.workspaceId,
-      companyId: query.companyId,
-      opportunityId: query.opportunityId,
-    };
 
     const [items, total] = await Promise.all([
       tx.activity.findMany({
@@ -75,9 +116,22 @@ export class ActivityQueryService {
       if (
         !company ||
         company.deletedAt ||
-        !(await this.policy.can(tx, membership, 'read', company))
+        !(await this.policy.can(
+          tx,
+          membership,
+          'read',
+          company,
+          'empresas_cadastro',
+        ))
       ) {
         throw new NotFoundException('Empresa não encontrada.');
+      }
+      // Aba Timeline da ficha da empresa — permissão própria (2026-08-12),
+      // além de conseguir VER a empresa em si (empresas_cadastro acima).
+      if (!this.policy.canModule(membership, 'empresas_timeline', 'ver')) {
+        throw new ForbiddenException(
+          'Sem permissão para ver a timeline desta empresa.',
+        );
       }
       return;
     }
@@ -91,7 +145,13 @@ export class ActivityQueryService {
       if (
         !opportunity ||
         opportunity.deletedAt ||
-        !(await this.policy.can(tx, membership, 'read', opportunity))
+        !(await this.policy.can(
+          tx,
+          membership,
+          'read',
+          opportunity,
+          'oportunidades',
+        ))
       ) {
         throw new NotFoundException('Oportunidade não encontrada.');
       }

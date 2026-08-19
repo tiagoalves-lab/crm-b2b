@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { companyDisplayName, listCompanies } from "@/lib/api/companies";
+import { getMe } from "@/lib/api/me";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listSalesHistory } from "@/lib/api/sales-history";
 import type { Company } from "@/lib/api/types";
@@ -21,11 +22,16 @@ export default async function EmpresasPage({
   const token = await getServerAccessToken();
 
   const showDeleted = includeDeleted === "1";
-  const [{ items: allCompanies }, { items: opportunities }, salesHistory] = await Promise.all([
+  const [{ items: allCompanies }, { items: opportunities }, salesHistory, me] = await Promise.all([
     listCompanies(token, showDeleted),
     listOpportunities(token),
     listSalesHistory(token),
+    getMe(token),
   ]);
+  // Representante não exclui nenhum tipo de registro (pedido do usuário,
+  // 2026-08-06, ver PolicyService#can) — botão escondido aqui pra não
+  // oferecer uma ação que o backend vai rejeitar de qualquer forma.
+  const canDelete = me.membership.role !== "sales_rep";
 
   // Company-lead ainda em triagem (SPEC-CRM-GAMA.md §4.4) não é uma
   // empresa de verdade até ser aprovada — fica de fora daqui, mesmo
@@ -113,6 +119,7 @@ export default async function EmpresasPage({
           currentFiltro={currentFiltro}
           showDeleted={showDeleted}
           counts={{ todas: companies.length, lead: leadsCount, cliente: clientesCount }}
+          canDelete={canDelete}
         />
       </div>
     </>

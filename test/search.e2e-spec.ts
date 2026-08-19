@@ -23,7 +23,10 @@ describe('SearchController (e2e) â€” GET /busca-empresa-lead (SPEC-CRM-GAMA.md Â
 
   beforeAll(async () => {
     workspace = await prisma.workspace.create({
-      data: { name: 'Workspace Search (teste)', slug: `search-test-${Date.now()}` },
+      data: {
+        name: 'Workspace Search (teste)',
+        slug: `search-test-${Date.now()}`,
+      },
     });
     const userId = randomUUID();
     membership = await withTenant(prisma, userId, workspace.id, (tx) =>
@@ -104,7 +107,9 @@ describe('SearchController (e2e) â€” GET /busca-empresa-lead (SPEC-CRM-GAMA.md Â
       .get('/busca-empresa-lead?q=MetalÃºrgica Busca')
       .expect(200);
     const body = res.body as SearchResult[];
-    expect(body.some((r) => r.id === companyId && r.origem === 'empresa')).toBe(true);
+    expect(body.some((r) => r.id === companyId && r.origem === 'empresa')).toBe(
+      true,
+    );
   });
 
   it('casa empresa cadastrada por CNPJ', async () => {
@@ -121,7 +126,9 @@ describe('SearchController (e2e) â€” GET /busca-empresa-lead (SPEC-CRM-GAMA.md Â
       .expect(200);
     const body = res.body as SearchResult[];
     expect(body.some((r) => r.id === leadId && r.origem === 'lead')).toBe(true);
-    expect(body.every((r) => r.origem === 'lead' || r.id !== leadId)).toBe(true);
+    expect(body.every((r) => r.origem === 'lead' || r.id !== leadId)).toBe(
+      true,
+    );
   });
 
   it('nÃ£o retorna a company marcada como lead-triagem via origem=empresa', async () => {
@@ -129,8 +136,10 @@ describe('SearchController (e2e) â€” GET /busca-empresa-lead (SPEC-CRM-GAMA.md Â
       .get('/busca-empresa-lead?q=triagem')
       .expect(200);
     const body = res.body as SearchResult[];
-    expect(body.some((r) => r.origem === 'empresa' && r.nome === 'Empresa ainda em triagem')).toBe(
-      false,
-    );
+    expect(
+      body.some(
+        (r) => r.origem === 'empresa' && r.nome === 'Empresa ainda em triagem',
+      ),
+    ).toBe(false);
   });
 });

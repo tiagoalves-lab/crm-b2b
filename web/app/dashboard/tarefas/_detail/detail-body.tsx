@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Membership } from "@/lib/api/types";
+import { formatDateTimeBR } from "@/lib/format-date";
 import type { TaskDetail } from "./load";
+import TipoContatoFields from "../tipo-contato-fields";
 import {
   completeTaskAction,
   createCommentAction,
@@ -9,26 +11,20 @@ import {
   deleteTaskAction,
   downloadAttachmentAction,
   reopenTaskAction,
+  updateTaskDetailAction,
   uploadAttachmentAction,
 } from "../actions";
+import SubmitButton, { ExternalSubmitButton } from "@/app/_components/submit-button";
 
-function fmtDate(value: string | null): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString("pt-BR");
-}
+// Único form de edição da tarefa (título/descrição/tipo/prazo/
+// responsável) — o botão "Salvar" mora no rodapé do modal (DetailFooter,
+// fora da árvore deste <form>), por isso o atributo form= referenciando
+// esse id (associação padrão do HTML, funciona com Server Actions do
+// Next igual a qualquer outro submit).
+const EDIT_FORM_ID = "task-edit-form";
 
 function fmtDateTime(value: string): string {
-  return new Date(value).toLocaleString("pt-BR");
-}
-
-function dueClass(task: TaskDetail["task"]): string {
-  if (task.status === "done" || !task.dueAt) return "due-ok";
-  const due = new Date(task.dueAt);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (due < today) return "due-late";
-  if (due.getTime() === today.getTime()) return "due-today";
-  return "due-ok";
+  return formatDateTimeBR(value);
 }
 
 function attachKind(mimeType: string | null): "pdf" | "imagem" | "planilha" | "outro" {
@@ -65,20 +61,62 @@ function initialsOf(name: string): string {
 // não pede; feature extra da v1 removida da UI a pedido do usuário — o
 // endpoint no backend continua existindo, só não é exposto aqui).
 export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: string }) {
-  const { task, attachments, targetLabel, me, memberships } = data;
+  const { task, attachments, targetLabel, me, memberships, contacts, companyId } = data;
 
   return (
     <>
-      <div className="row-form" style={{ marginBottom: 6, flexWrap: "wrap" }}>
-        <span className={task.status === "done" ? "pill pill-green" : "pill pill-gray"}>
-          {task.status === "done" ? "Concluída" : "Pendente"}
-        </span>
-        <span className={`task-due ${dueClass(task)}`} style={{ fontFamily: "var(--font-mono)", fontSize: 12, marginLeft: "auto" }}>
-          {fmtDate(task.dueAt)}
+      <div
+        className="row-form"
+        style={{ marginBottom: 12, justifyContent: "space-between", alignItems: "center" }}
+      >
+        <div className="row-form" style={{ alignItems: "center", gap: 10 }}>
+          <span className={task.status === "done" ? "pill pill-green" : "pill pill-gray"}>
+            {task.status === "done" ? "Concluída" : "Pendente"}
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>{targetLabel}</span>
+        </div>
+        <span className="field-hint" style={{ marginTop: 0 }}>
+          Inserido por {memberDisplayName(task.createdBy, memberships)}
         </span>
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>{targetLabel}</div>
-      {task.description && <p className="sub" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{task.description}</p>}
+
+      <form id={EDIT_FORM_ID} action={updateTaskDetailAction} className="form-grid">
+        <input type="hidden" name="id" value={task.id} />
+        <input type="hidden" name="back" value={backHref} />
+        <label style={{ gridColumn: "1 / -1" }}>
+          Título
+          <input name="title" defaultValue={task.title} required />
+        </label>
+        <label style={{ gridColumn: "1 / -1" }}>
+          Descrição
+          <textarea name="description" defaultValue={task.description ?? ""} rows={3} />
+        </label>
+        <TipoContatoFields
+          initialTipo={task.tipo}
+          contactId={task.contactId}
+          contacts={contacts}
+          companyId={companyId}
+        />
+        <label>
+          Prazo
+          <input
+            name="dueAt"
+            type="date"
+            defaultValue={task.dueAt ? task.dueAt.slice(0, 10) : ""}
+            required
+          />
+        </label>
+        <label>
+          Responsável
+          <select name="assigneeUserId" defaultValue={task.assigneeUserId} required>
+            {memberships.map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {memberDisplayName(m.userId, memberships)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </form>
 
       <div className="task-detail-section">
         <div className="drawer-section-title" style={{ marginTop: 0 }}>
@@ -95,9 +133,9 @@ export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: str
           </div>
           <div className="row-form" style={{ justifyContent: "center" }}>
             <input type="file" name="file" required />
-            <button type="submit" className="btn btn-sm">
+            <SubmitButton className="btn btn-sm" pendingLabel="Enviando…">
               Enviar
-            </button>
+            </SubmitButton>
           </div>
         </form>
         {attachments.map((att) => {
@@ -120,22 +158,22 @@ export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: str
                 <input type="hidden" name="taskId" value={task.id} />
                 <input type="hidden" name="attachmentId" value={att.id} />
                 <input type="hidden" name="back" value={backHref} />
-                <button type="submit" className="icon-btn" title="Baixar">
+                <SubmitButton className="icon-btn" title="Baixar">
                   <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                   </svg>
-                </button>
+                </SubmitButton>
               </form>
-              {att.uploadedBy === me.user.id && (
+              {att.uploadedBy === me.user.id && me.membership.role !== "sales_rep" && (
                 <form action={deleteAttachmentAction}>
                   <input type="hidden" name="taskId" value={task.id} />
                   <input type="hidden" name="attachmentId" value={att.id} />
                   <input type="hidden" name="back" value={backHref} />
-                  <button type="submit" className="icon-btn danger" title="Remover">
+                  <SubmitButton className="icon-btn danger" title="Remover">
                     <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
             </div>
@@ -158,14 +196,18 @@ export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: str
                     <span className="chat-time">{fmtDateTime(c.createdAt)}</span>
                   </div>
                   <div className="chat-text">{c.body}</div>
-                  {c.authorUserId === me.user.id && (
+                  {c.authorUserId === me.user.id && me.membership.role !== "sales_rep" && (
                     <form action={deleteCommentAction}>
                       <input type="hidden" name="taskId" value={task.id} />
                       <input type="hidden" name="commentId" value={c.id} />
                       <input type="hidden" name="back" value={backHref} />
-                      <button type="submit" className="btn btn-ghost btn-sm" style={{ padding: 0, marginTop: 4 }}>
+                      <SubmitButton
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: 0, marginTop: 4 }}
+                        pendingLabel="Removendo…"
+                      >
                         Remover
-                      </button>
+                      </SubmitButton>
                     </form>
                   )}
                 </div>
@@ -180,9 +222,9 @@ export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: str
           <input type="hidden" name="taskId" value={task.id} />
           <input type="hidden" name="back" value={backHref} />
           <textarea name="body" placeholder="Escrever comentário..." required />
-          <button type="submit" className="btn btn-primary btn-sm">
+          <SubmitButton className="btn btn-primary btn-sm" pendingLabel="Enviando…">
             Enviar
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </>
@@ -191,29 +233,38 @@ export function DetailBody({ data, backHref }: { data: TaskDetail; backHref: str
 
 // Rodapé (protótipo: botões de renderTaskDetailModal).
 export function DetailFooter({ data, backHref }: { data: TaskDetail; backHref: string }) {
-  const { task } = data;
+  const { task, me } = data;
   const done = task.status === "done";
+  // Representante não exclui nenhum tipo de registro (pedido do usuário,
+  // 2026-08-06, ver PolicyService#can) — botão escondido pra não oferecer
+  // uma ação que o backend vai rejeitar de qualquer forma.
+  const canDelete = me.membership.role !== "sales_rep";
 
   return (
     <>
-      <form action={deleteTaskAction}>
-        <input type="hidden" name="id" value={task.id} />
-        <button type="submit" className="btn btn-danger">
-          Excluir
-        </button>
-      </form>
+      {canDelete && (
+        <form action={deleteTaskAction}>
+          <input type="hidden" name="id" value={task.id} />
+          <SubmitButton className="btn btn-danger" pendingLabel="Excluindo…">
+            Excluir
+          </SubmitButton>
+        </form>
+      )}
       <Link href="/dashboard/tarefas" className="btn btn-ghost">
         Fechar
       </Link>
-      <Link href={`/dashboard/tarefas/${task.id}/editar`} className="btn">
-        Editar dados
-      </Link>
+      <ExternalSubmitButton form={EDIT_FORM_ID} className="btn" pendingLabel="Salvando…">
+        Salvar
+      </ExternalSubmitButton>
       <form action={done ? reopenTaskAction : completeTaskAction}>
         <input type="hidden" name="id" value={task.id} />
         <input type="hidden" name="back" value={backHref} />
-        <button type="submit" className={done ? "btn" : "btn btn-primary"}>
+        <SubmitButton
+          className={done ? "btn" : "btn btn-primary"}
+          pendingLabel={done ? "Reabrindo…" : "Concluindo…"}
+        >
           {done ? "Reabrir" : "Concluir"}
-        </button>
+        </SubmitButton>
       </form>
     </>
   );

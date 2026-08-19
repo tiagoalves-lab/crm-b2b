@@ -1,0 +1,23 @@
+-- Membership.permissions — matriz granular de permissões (módulo ×
+-- ver/criar/editar/excluir), pedido direto do usuário (2026-08-12):
+-- substitui o binário fixo que PolicyService tinha antes (sales_rep nunca
+-- exclui, readonly só lê) por checkbox real por membro, editável na
+-- subpágina de Permissões do cadastro/edição de membro. Ver
+-- src/policy/permission-catalog.ts pro catálogo completo e presets, e
+-- PolicyService pro consumo (canModule/can/assertCanDelete).
+--
+-- Nullable, sem default: null = "sem matriz própria", PolicyService cai
+-- pro preset padrão do papel (DEFAULT_PERMISSIONS) — todo membro já
+-- existente continua funcionando exatamente como antes desta migration,
+-- sem precisar de backfill.
+--
+-- NÃO mexe em `role` nem em nenhuma policy de RLS — o RLS de
+-- companies/opportunities/tasks/raw_leads/contacts continua lendo
+-- app.current_role (ver migrations 20260731200000_role_based_rls_policies
+-- e seguintes) pra decidir ESCOPO (próprio/equipe/todos), dimensão
+-- separada de CAPACIDADE que esta coluna decide agora. Escrita manual
+-- (mesmo motivo já documentado nas migrations anteriores: `prisma migrate
+-- diff` pede --shadow-database-url, não configurado neste projeto).
+-- Aplicado via `prisma migrate deploy`.
+
+ALTER TABLE "memberships" ADD COLUMN "permissions" JSONB;

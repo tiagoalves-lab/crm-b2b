@@ -2,10 +2,41 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `master` é a branch real deste repo — `main` fica na lista só por
+    # segurança caso o padrão mude. Ficou meses só com `main` aqui, o que
+    # significava que NENHUM teste (inclusive os de RLS) rodava
+    # automaticamente. Ver docs/seguranca.md, decisão 6.1.
+    branches: [master, main]
   pull_request:
 
 jobs:
+  # Varredura de dependência vulnerável — o vetor mais comum de invasão
+  # real num app Node, e o que faltava por completo até 2026-08-12.
+  # Ver docs/seguranca.md, seção 7 (decisões 7.1 a 7.3) pro racional de
+  # cada escolha abaixo, inclusive a dívida aceita e datada.
+  #
+  # --omit=dev: audita só o que vai pro servidor em produção. Ferramenta
+  # de linha de comando que nunca é publicada (ex.: @railway/cli) não é
+  # superfície de ataque do app — sem isso o gate travaria em CVE de
+  # ferramenta de deploy, e gate que trava por ruído é gate que todo
+  # mundo aprende a ignorar.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Auditar dependências do backend
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Auditar dependências do frontend
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=critical
+
   lint-and-test:
     runs-on: ubuntu-latest
 

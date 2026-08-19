@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { companyDisplayName } from "@/lib/api/companies";
 import type { Company, Opportunity, Stage } from "@/lib/api/types";
@@ -126,6 +127,7 @@ export default function PipelineBoard({
   companies: Company[];
   currentUserId: string;
 }) {
+  const router = useRouter();
   const [items, setItems] = useState(openOpportunities);
   useEffect(() => setItems(openOpportunities), [openOpportunities]);
 
@@ -170,7 +172,23 @@ export default function PipelineBoard({
 
     const result = await moveOpportunityStageAction(oppId, destStageId, version);
     if (!result.ok) {
+      // Reverte pro que o servidor tem. router.refresh() em vez de confiar
+      // só na prop: `openOpportunities` vem do closure deste render e pode
+      // estar tão velha quanto o estado que acabou de falhar.
       setItems(openOpportunities);
+      router.refresh();
+      return;
+    }
+
+    // Aplica o version devolvido pelo servidor na hora, sem esperar a
+    // revalidação chegar. É isso que permite arrastar o mesmo cartão
+    // várias vezes seguidas sem tomar 409 e ver o cartão voltar (ver
+    // comentário em moveOpportunityStageAction).
+    const novaVersao = result.version;
+    if (typeof novaVersao === "number") {
+      setItems((prev) =>
+        prev.map((o) => (o.id === oppId ? { ...o, version: novaVersao } : o)),
+      );
     }
   }
 

@@ -6,6 +6,7 @@ import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { Stage } from "@/lib/api/types";
 import CompanyPicker from "../company-picker";
 import { createOpportunityAction } from "../actions";
+import SubmitButton from "@/app/_components/submit-button";
 
 // Compartilhado entre a versão full-page e a versão modal de "Nova
 // oportunidade" — protótipo: openDealForm. Fecha via router.back() depois
@@ -15,9 +16,18 @@ import { createOpportunityAction } from "../actions";
 export default function NovaForm({
   pipelineId,
   stages,
+  lockedCompanyId,
+  lockedCompanyLabel,
 }: {
   pipelineId: string;
   stages: Stage[];
+  // Preenchidos quando o form é aberto a partir da ficha de um lead recém
+  // aprovado ("Aprovar para Lead" → "Sim, cadastrar oportunidade") — trava
+  // o vínculo na empresa que acabou de ser criada em vez de deixar o
+  // usuário buscar de novo no CompanyPicker. Mesmo padrão de
+  // lockedOpportunityId em tarefas/nova/nova-form.tsx.
+  lockedCompanyId?: string;
+  lockedCompanyLabel?: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(createOpportunityAction, null);
@@ -42,7 +52,14 @@ export default function NovaForm({
             Empresa <span style={{ color: "var(--danger)" }}>*</span>
           </label>
         </div>
-        <CompanyPicker />
+        {lockedCompanyId ? (
+          <>
+            <input type="hidden" name="companyId" value={lockedCompanyId} />
+            <div className="field-hint">{lockedCompanyLabel}</div>
+          </>
+        ) : (
+          <CompanyPicker />
+        )}
       </div>
       <label>
         Etapa
@@ -66,9 +83,9 @@ export default function NovaForm({
         Previsão de fechamento
         <input name="expectedCloseDate" type="date" />
       </label>
-      <button type="submit" className="btn btn-primary">
+      <SubmitButton className="btn btn-primary" pendingLabel="Criando…">
         Criar oportunidade
-      </button>
+      </SubmitButton>
     </form>
   );
 }

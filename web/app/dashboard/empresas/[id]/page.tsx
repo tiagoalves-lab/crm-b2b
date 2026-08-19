@@ -19,7 +19,7 @@ export default async function EmpresaFichaPage({
   const { aba, error } = await searchParams;
   const token = await getServerAccessToken();
   const data = await loadFicha(token, id);
-  const { company, activities, tasks, opportunities } = data;
+  const { company, activities, tasks, opportunities, contacts } = data;
   // Mesmo critério da lista (web/app/dashboard/empresas/page.tsx#tipoOf):
   // tag "cliente" (dado real da importação), não presença de Opportunity
   // "won" — pipeline novo começou do zero, sem negócio pros clientes já
@@ -54,7 +54,12 @@ export default async function EmpresaFichaPage({
         <FichaTabs
           companyId={id}
           aba={aba}
-          counts={{ timeline: activities.length, tarefas: tasks.length, negocios: opportunities.length }}
+          counts={{
+            timeline: activities.length,
+            tarefas: tasks.length,
+            negocios: opportunities.length,
+            contatos: contacts.length,
+          }}
         />
       </div>
 

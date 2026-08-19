@@ -60,6 +60,21 @@ enum TaskStatus {
   done
 }
 
+// Mesmos 5 tipos de openTaskForm() no protótipo (gama-crm-mvp.html) —
+// "Reunião" não existe lá como tipo de tarefa (só como ActivityType da
+// timeline da empresa), de propósito não incluído aqui.
+enum TaskType {
+  ligacao
+  email
+  visita
+  proposta
+  followup
+  // Adicionado depois dos 5 originais do protótipo (pedido do usuário,
+  // 2026-08-04) — exige contato da empresa (Task.contactId), junto com
+  // ligacao/visita.
+  reuniao
+}
+
 enum ActivityType {
   note
   call
@@ -76,6 +91,17 @@ enum PessoaTipo {
   PJ
 }
 
+// Status de consolidação de um contato entre as duas contas eGestor
+// (Matriz/Filial) — mesmo vocabulário já usado no script de comparação
+// que a Gama já rodava fora do CRM (Integrar-bases-egestor.txt/
+// Scrip_AtualizarContatos), só formalizado como enum aqui.
+enum EgestorContatoStatus {
+  so_matriz
+  so_filial
+  ambos_iguais
+  ambos_diferentes
+}
+
 // Módulo de Leads/Triagem (SPEC-CRM-GAMA.md, §3.1).
 enum RawLeadStatus {
   novo
@@ -88,6 +114,11 @@ enum LeadFonte {
   apify
   comexstat
   manual
+  // Central de Leads do Meta Business Suite (Lead Ads Facebook/Instagram
+  // do Portfólio da Gama, ver docs/roadmap.md e docs/webhook-meta-leads.md)
+  // — criado via MetaLeadsWebhookService, nunca escolhido pelo usuário num
+  // form manual.
+  meta_leads
 }
 
 // Classificação manual (Quente/Morno/Frio) que o usuário pode atribuir a um
@@ -117,11 +148,17 @@ model Workspace {
   companies     Company[]
   pipelines     Pipeline[]
   opportunities Opportunity[]
-  taskLists     TaskList[]
   tasks         Task[]
   activities    Activity[]
   rawLeads      RawLead[]
   salesHistory  SalesHistory[]
+  contacts      Contact[]
+  companyAccess CompanyAccess[]
+  egestorContatos EgestorContatoConsolidado[]
+  egestorWebhookEvents EgestorWebhookEvent[]
+  egestorWriteEchoes   EgestorWriteEcho[]
+  egestorInteractionLogs EgestorInteractionLog[]
+  metaLeadsWebhookEvents MetaLeadsWebhookEvent[]
 
   @@map("workspaces")
 }
@@ -141,6 +178,15 @@ model Membership {
   invitedBy   String?          @map("invited_by") @db.Uuid
   joinedAt    DateTime?        @map("joined_at")
   createdAt   DateTime         @default(now()) @map("created_at")
+  // Matriz granular de capacidade (módulo × ver/criar/editar/excluir,
+  // src/policy/permission-catalog.ts) — null = usa o preset padrão do
+  // papel (DEFAULT_PERMISSIONS), caso de todo membro criado antes desta
+  // coluna existir. owner/admin nunca consultam isto (bypass). Não
+  // confundir com `role`: role continua sendo a fonte de ESCOPO
+  // (próprio/equipe/todos), inclusive no RLS — ver policies
+  // "ws_and_role_select" mais abaixo neste arquivo, que continuam
+  // intactas.
+  permissions Json?
 
   workspace Workspace    @relation(fields: [workspaceId], references: [id])
   manager   Membership?  @relation("MembershipHierarchy", fields: [managerId], references: [id])
@@ -192,6 +238,12 @@ model Company {
   cidade          String?
   uf              String?     @db.Char(2)
   tags            String[]    @default([])
+  // Indicativo da Receita Federal ("EM RECUPERAÇÃO JUDICIAL", concatenado
+  // à razão social) extraído do texto e guardado à parte (pedido direto
+  // do usuário, 2026-08-05) — ver src/common/sanitize-razao-social.ts.
+  // Sem isso o aviso passava despercebido dentro do nome da empresa em
+  // qualquer tela/proposta comercial.
+  emRecuperacaoJudicial Boolean @default(false) @map("em_recuperacao_judicial")
 
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
@@ -209,9 +261,99 @@ model Company {
   // de novo depois de já ter virado empresa.
   originLeads   RawLead[]
   salesHistory  SalesHistory[]
+  contacts      Contact[]
+  accessGrants  CompanyAccess[]
+  egestorContato EgestorContatoConsolidado?
 
   @@index([workspaceId])
   @@map("companies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Contact — pessoas de contato de uma empresa (não confundir com o antigo
+// model Contact removido em 2026-07-28, ver migration
+// 20260728130000_drop_contacts_expand_company: aquele guardava o "dono do
+// cadastro" PF/PJ, foi absorvido em Company; este é uma agenda de pessoas
+// dentro da empresa — uma company pode ter várias). Sem workspace próprio
+// nas queries de app (sempre acessado via companyId), mas carrega
+// workspace_id pra RLS não depender de subquery em toda policy futura,
+// mesmo padrão de SalesHistory.
+//
+// Pedido fora do SPEC-CRM-GAMA.md original. RawLead não ganha FK própria:
+// todo RawLead já nasce com promotedCompanyId apontando pra uma Company
+// (ver comentário em RawLead), então a ficha de Leads reusa companyId
+// pra listar/criar contatos — mesmo padrão já usado ali pra Timeline/
+// Tarefas (loadLeadFicha, web/app/dashboard/leads/_ficha/load.ts).
+// ─────────────────────────────────────────────────────────────────────────
+
+model Contact {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  nome        String
+  cargo       String?
+  email       String?
+  telefone    String?
+  // Marca o contato como tomador de decisão da empresa — pedido do
+  // usuário (2026-08-03), fora do protótipo original.
+  decisor     Boolean  @default(false)
+  // Dono do contato — pedido direto do usuário, 2026-08-06, junto da
+  // decisão de empresa compartilhada (ver CompanyAccess): quando dois
+  // representantes cadastram a mesma empresa, cada um só enxerga os
+  // PRÓPRIOS contatos ali, não os do outro. Mesmo padrão de
+  // Company.ownerUserId — sempre quem criou, nunca escolhido pelo
+  // cliente. Nullable só por simetria com os outros ownerUserId do
+  // projeto (nunca fica null na prática, ContactService sempre seta).
+  ownerUserId String?  @map("owner_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id])
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tasks      Task[]
+  activities Activity[]
+
+  @@index([workspaceId, companyId])
+  @@index([workspaceId, ownerUserId])
+  @@map("contacts")
+  // Existe ainda um índice ÚNICO que o Prisma não consegue declarar aqui:
+  // `contacts_no_exact_duplicate`, criado à mão na migration
+  // 20260813120000_contacts_anti_duplicate. Ele usa expressões
+  // (lower/btrim/regexp_replace/coalesce sobre nome, e-mail, telefone e
+  // cargo), e `@@unique` só aceita coluna crua — por isso vive só no SQL.
+  // Serve pra impedir contato duplicado por clique duplo; a chave é o
+  // registro inteiro, não só o nome, porque homônimos na mesma empresa
+  // existem de verdade na base. Motivação completa no cabeçalho da
+  // migration. Consequência prática: `prisma db pull` não traz este
+  // índice de volta pra cá — não o apague achando que sumiu do banco.
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CompanyAccess — pedido direto do usuário, 2026-08-06: quando um
+// representante "cadastra" uma empresa cujo CNPJ já existe no workspace
+// (de outro representante), o sistema NÃO duplica a Company — reaproveita
+// a mesma linha e grava aqui que esse segundo representante também tem
+// relação de trabalho com ela (ver CompanyService#create). É essa tabela
+// que estende a visibilidade do PERFIL da empresa (razão social, CNPJ,
+// endereço) pro segundo representante, sem tocar em `companies.owner_user_id`
+// (que continua sendo o criador original) e sem dar acesso ao histórico/
+// tarefas/oportunidades/contatos do primeiro representante — esses
+// continuam escopados por ownerUserId/assigneeUserId/actorUserId próprios
+// em cada tabela, como sempre.
+// ─────────────────────────────────────────────────────────────────────────
+
+model CompanyAccess {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([workspaceId])
+  @@map("company_access")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -242,6 +384,231 @@ model SalesHistory {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// EgestorContatoConsolidado — "espelho" cru dos contatos do eGestor,
+// consolidados por CNPJ entre as duas contas (Matriz/Filial). Plano
+// completo: docs/plano-integracao-egestor.md. Objetivo desta tabela: nunca
+// misturar o dado bruto do eGestor com o cadastro de verdade em `Company`
+// — comparação/auditoria (Matriz × Filial × CRM) e decisão de merge viram
+// uma ação explícita depois (fase de "sanitização", ainda não implementada
+// nesta migration), não uma regra automática embutida no import.
+//
+// Mesmo formato do relatório que a Gama já gera fora do CRM (planilha
+// Scrip_AtualizarContatos, script Integrar-bases-egestor.txt) — o pull do
+// eGestor (Fatia 1) escreve aqui; a promoção pra uma `Company` de verdade
+// (campo `companyId` abaixo, nullable) é sempre um passo posterior.
+// ─────────────────────────────────────────────────────────────────────────
+
+model EgestorContatoConsolidado {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String               @map("workspace_id") @db.Uuid
+  // Só dígitos, sem máscara — mesmo padrão de normalização usado no script
+  // de referência (`limparDocumento_`). Chave de consolidação entre Matriz
+  // e Filial: cada CNPJ aparece no máximo uma vez nesta tabela.
+  cpfCnpj     String               @map("cpf_cnpj")
+  status      EgestorContatoStatus
+  codigoMatriz String?             @map("codigo_matriz")
+  codigoFilial String?             @map("codigo_filial")
+  nomeMatriz   String?             @map("nome_matriz")
+  nomeFilial   String?             @map("nome_filial")
+  // Payload cru retornado pela API do eGestor pra cada lado (ver
+  // api-egestor-contatos.md) — nunca editado pelo sync, só substituído
+  // inteiro a cada rodada. `null` quando o contato não existe naquele
+  // estabelecimento (status so_matriz/so_filial).
+  dadosMatriz Json?                @map("dados_matriz")
+  dadosFilial Json?                @map("dados_filial")
+  // Nomes de campo (ex.: "nome", "logradouro") onde Matriz e Filial
+  // divergem — só preenchido quando status = ambos_diferentes. Mesma
+  // lista que `listarDiferencas_` calcula no script de referência.
+  camposDiferentes String[]        @default([]) @map("campos_diferentes")
+  // Preenchido só na fase de "sanitização" (ainda não implementada) —
+  // quando um humano confirma que este contato virou/já é uma Company de
+  // verdade no CRM. Nullable: a maioria das linhas nasce sem isso.
+  companyId   String?              @unique @map("company_id") @db.Uuid
+  lastSyncedAt DateTime            @map("last_synced_at")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  company   Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, cpfCnpj])
+  @@index([workspaceId, status])
+  @@map("egestor_contatos_consolidado")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EgestorWebhookEvent — log cru dos eventos recebidos via push do eGestor
+// (docs/webhook-egestor.md). Escopo desta primeira versão (decisão do
+// usuário, 2026-08-12): só registrar, sem processar automaticamente — o
+// re-fetch/atualização do espelho continua manual (botão "Sincronizar"
+// já existente). Isso é o que dá pra confirmar que os eventos chegam
+// certos antes de automatizar o resto.
+//
+// O payload do eGestor não traz o registro inteiro, só o aviso de que
+// `codigoExterno` mudou (ver formato em docs/webhook-egestor.md) — por
+// isso `rawPayload` guarda o evento inteiro tal como chegou, sem
+// transformação (mesmo padrão de `dadosMatriz`/`dadosFilial` acima).
+// ─────────────────────────────────────────────────────────────────────────
+
+model EgestorWebhookEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  // Qual conta eGestor mandou o evento — a rota é
+  // `/webhook/:estabelecimento`, o valor não vem no payload em si (só
+  // o securityToken, que é o que de fato distingue a conta).
+  estabelecimento String @map("estabelecimento")
+  module          String
+  action          String
+  codigoExterno   String @map("codigo_externo")
+  dataEgestor     DateTime @map("data_egestor")
+  rawPayload      Json     @map("raw_payload")
+  receivedAt      DateTime @default(now()) @map("received_at")
+  // Processamento operacional (2026-08-12) — `null` = ainda não processado
+  // (retry do eGestor deve tentar de novo, ver EgestorWebhookService).
+  // `processResult` é só pra auditoria/depuração humana (texto livre curto,
+  // ex. "promovida", "eco_ignorado", "desativada_nao_e_mais_cliente"), não
+  // é lido por código nenhum.
+  processedAt   DateTime? @map("processed_at")
+  processResult String?   @map("process_result")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  // Dedupe: o eGestor tenta até 5x se não responder a tempo (3s) — mesmo
+  // evento pode chegar mais de uma vez. Evento já existente e com
+  // `processedAt` nulo é reprocessado (não é eco de si mesmo) — só
+  // `processedAt` setado é que barra reprocessamento (ver
+  // EgestorWebhookService).
+  @@unique([workspaceId, estabelecimento, module, codigoExterno, action, dataEgestor])
+  @@index([workspaceId, receivedAt])
+  @@map("egestor_webhook_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EgestorWriteEcho — marcador de curta duração (2026-08-12): toda vez que
+// o PRÓPRIO CRM escreve num contato do eGestor (Corrigir/Consolidar/
+// Corrigir com SEFAZ/Completar Matriz⇄Filial), isso dispara o MESMO
+// webhook que uma edição manual na tela do eGestor dispararia — confirmado
+// contra a API real (payload não tem campo de origem/ator, não dá pra
+// diferenciar de outro jeito). Sem isso, o processamento automático do
+// webhook reprocessaria a própria escrita do CRM como se fosse uma
+// mudança externa.
+//
+// TTL curto (60s, ver EgestorWebhookEchoService) — folga generosa sobre a
+// latência real observada em teste (evento chegou em ~3s), sem deixar o
+// marcador vivo tempo demais (uma edição legítima feita por um humano no
+// mesmo código, minutos depois, não deve ser tratada como eco). Consumido
+// (apagado) no primeiro match — one-shot, não suprime edições futuras.
+model EgestorWriteEcho {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  estabelecimento String
+  codigo          String
+  createdAt       DateTime @default(now()) @map("created_at")
+  expiresAt       DateTime @map("expires_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, estabelecimento, codigo])
+  @@map("egestor_write_echo")
+}
+
+// Quem originou uma interação registrada em EgestorInteractionLog — "crm"
+// é ação manual disparada por um humano na tela Integração eGestor
+// (Sincronizar/Promover/Corrigir/Consolidar/Corrigir com SEFAZ/Completar);
+// "egestor_matriz"/"egestor_filial" é processamento automático disparado
+// pelo webhook daquela conta (EgestorWebhookService).
+enum EgestorInteractionOrigin {
+  crm
+  egestor_matriz
+  egestor_filial
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EgestorInteractionLog — histórico legível por humano de TODA interação
+// da integração eGestor (docs/roadmap.md, "Criar log das interações de
+// requisições de API", 2026-08-13). Complementar a EgestorWebhookEvent
+// (que já existia): aquele é o log CRU de cada evento recebido, pensado
+// pra dedupe/reprocessamento; este é o log DE NEGÓCIO, uma linha por
+// efeito colateral real (campo corrigido, Company criada, contato
+// promovido...), cobrindo também as ações manuais da tela (que
+// EgestorWebhookEvent nunca viu, por não passarem pelo webhook) — é o que
+// alimenta o botão "Histórico de requisições" da tela Integração eGestor.
+// Motivo direto do usuário: falta de confiança de que o CRM como
+// "orquestrador" (regra de correção automática via webhook, ver
+// docs/webhook-egestor.md) está realmente fazendo o que diz que faz —
+// este log é a forma de auditar isso sem precisar ler o rawPayload cru.
+//
+// `summary` é texto livre pronto pra tela (não uma struct que o frontend
+// precisa recompor) — decisão deliberada pra não amarrar o formato da
+// coluna "Ações realizadas" a um schema que teria que crescer a cada tipo
+// novo de ação; cada call site já sabe descrever o que fez em português.
+model EgestorInteractionLog {
+  id          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String                   @map("workspace_id") @db.Uuid
+  occurredAt  DateTime                 @default(now()) @map("occurred_at")
+  origin      EgestorInteractionOrigin
+  // Chave curta da ação (ex.: "sincronizar", "promover_contatos",
+  // "corrigir", "consolidar", "corrigir_sefaz", "completar",
+  // "webhook_processado") — não é lida por código nenhum hoje, só
+  // facilita filtro futuro na tela sem precisar de parsing de `summary`.
+  action  String
+  summary String
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, occurredAt])
+  @@map("egestor_interaction_log")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MetaLeadsWebhookEvent — log cru + dedupe do webhook `leadgen` da Central
+// de Leads do Meta Business Suite (docs/roadmap.md, docs/webhook-meta-
+// leads.md). Mesmo espírito de EgestorWebhookEvent (auditoria +
+// reprocessamento em retry), adaptado ao formato do payload da Meta: o
+// evento em si só traz o id do lead (`leadgenId`), quem processa busca os
+// campos de verdade depois via `GET /{leadgen_id}` (MetaGraphService).
+// ─────────────────────────────────────────────────────────────────────────
+
+model MetaLeadsWebhookEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  pageId      String   @map("page_id")
+  formId      String?  @map("form_id")
+  adId        String?  @map("ad_id")
+  leadgenId   String   @map("leadgen_id")
+  // `created_time` do evento como a Meta manda (epoch em segundos,
+  // convertido pro handler) — só auditoria, não usado em lógica.
+  createdTimeMeta DateTime? @map("created_time_meta")
+  rawPayload      Json      @map("raw_payload")
+  // Resposta completa do `GET /{leadgen_id}` (field_data inteiro), gravada
+  // no processamento. Existe por causa da dúvida em aberto do DE-PARA (ver
+  // docs/roadmap.md, dúvida 1.4): enquanto não se sabe quais perguntas
+  // customizadas os formulários da Gama fazem, o mapeador só entende os
+  // campos padrão — o payload cru fica aqui pra nada se perder e pra servir
+  // de base ao refinamento do mapeamento depois.
+  leadPayload     Json?     @map("lead_payload")
+  receivedAt      DateTime  @default(now()) @map("received_at")
+  // `null` = ainda não processado (deixa o retry nativo da Meta tentar de
+  // novo, mesmo racional de EgestorWebhookEvent). `processResult` é texto
+  // curto livre pra depuração humana (ex. "raw_lead_criado",
+  // "erro_ao_buscar_lead"), não lido por código nenhum.
+  processedAt   DateTime? @map("processed_at")
+  processResult String?   @map("process_result")
+  // RawLead criado a partir deste evento — plain UUID (sem @relation, mesmo
+  // padrão de RawLead.promotedCompanyId), só pra auditoria/rastreio manual.
+  rawLeadId String? @map("raw_lead_id") @db.Uuid
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  // Dedupe: a Meta reenvia o mesmo evento em retry se a resposta não vier a
+  // tempo/vier erro — leadgenId é o identificador natural de um lead
+  // capturado, único por workspace.
+  @@unique([workspaceId, leadgenId])
+  @@index([workspaceId, receivedAt])
+  @@map("meta_leads_webhook_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // RawLead — staging de leads brutos do crawler/import (SPEC-CRM-GAMA.md,
 // §3.1). É a "peneira" antes do pipeline: cada lead é pontuado (score) e
 // filtrado por faixa quente/morno/frio na tela de triagem. Aprovar um lead
@@ -268,6 +635,34 @@ model RawLead {
   manualTier        LeadTier?     @map("manual_tier")
   status            RawLeadStatus @default(novo)
   promotedCompanyId String?       @map("promoted_company_id") @db.Uuid
+  // Tags livres de organização do usuário (pedido direto, 2026-08-05, fora
+  // do SPEC-CRM-GAMA.md original) — coluna própria, não reaproveita
+  // companies.tags (que carrega o marcador de sistema "lead-triagem";
+  // misturar tag de usuário ali se perderia na aprovação, ver
+  // RawLeadService#approve, que só limpa "lead-triagem"). Sobrevive à
+  // aprovação/descarte do lead, sem normalização no banco (trim/dedupe
+  // acontece no service).
+  tags              String[]      @default([])
+  // Segmento de negócio (pedido direto, 2026-08-05, fora do
+  // SPEC-CRM-GAMA.md original) — valor único por lead (não é array como
+  // `tags` acima: usuário confirmou via pergunta direta que é "um
+  // segmento por vez", mais parecido com porte/situação do que com tag).
+  // Texto livre, mesma decisão de tags — sem lista pré-definida.
+  segmento          String?
+  // Mesmo indicativo/mesma extração de Company.emRecuperacaoJudicial —
+  // raw_leads tem sua própria coluna (e não deriva da company associada)
+  // porque a Prospecção exibe/filtra a partir do próprio RawLead, sem
+  // JOIN (mesma decisão de "coluna própria" já usada pra tags/segmento).
+  emRecuperacaoJudicial Boolean @default(false) @map("em_recuperacao_judicial")
+  // Dono do lead — carteira do representante que importou/cadastrou (pedido
+  // direto do usuário, 2026-08-06): antes disso raw_leads não tinha nenhum
+  // campo de ownership e a tela de Prospecção era "área comum" (decisão
+  // explícita do SPEC-CRM-GAMA.md §7.5, revertida aqui a pedido). Mesmo
+  // padrão de Company.ownerUserId — plain UUID, sem @relation (identidade
+  // vive em auth.users do Supabase, não numa tabela Prisma). Default é
+  // sempre quem está autenticado no momento da criação (RawLeadService),
+  // nunca escolhido pelo cliente.
+  ownerUserId       String?       @map("owner_user_id") @db.Uuid
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
@@ -275,6 +670,7 @@ model RawLead {
   promotedCompany Company?  @relation(fields: [promotedCompanyId], references: [id])
 
   @@index([workspaceId, status])
+  @@index([workspaceId, ownerUserId])
   @@map("raw_leads")
 }
 
@@ -394,52 +790,34 @@ model OpportunityAttachment {
 // migration).
 // ─────────────────────────────────────────────────────────────────────────
 
-// TaskList — colunas do Kanban de tarefas, configuráveis por workspace
-// (mesmo papel que Stage cumpre pro Pipeline de Opportunity). `isDoneList`
-// marca qual(is) coluna(s) equivalem a "concluída" — mover uma Task pra
-// uma coluna com isDoneList=true seta status=done automaticamente (e
-// vice-versa), preservando a semântica de `status` já usada em filtros
-// (overdue) e no feed de Activity.
-model TaskList {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId String   @map("workspace_id") @db.Uuid
-  name        String
-  order       Int
-  isDoneList  Boolean  @default(false) @map("is_done_list")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  tasks     Task[]
-
-  @@index([workspaceId])
-  @@map("task_lists")
-}
-
 model Task {
   id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId    String     @map("workspace_id") @db.Uuid
   assigneeUserId String     @map("assignee_user_id") @db.Uuid
   companyId      String?    @map("company_id") @db.Uuid
   opportunityId  String?    @map("opportunity_id") @db.Uuid
-  listId         String     @map("list_id") @db.Uuid
-  position       Float      @default(0)
   title          String
   description    String?
   dueAt          DateTime?  @map("due_at")
   status         TaskStatus @default(pending)
+  tipo           TaskType?
+  // Obrigatório (checado no service, não dá pra expressar "obrigatório
+  // condicional ao valor de outro campo" via constraint de coluna) quando
+  // `tipo` é ligação/reunião/visita — contato precisa pertencer à mesma
+  // company da tarefa (direta ou via opportunity.companyId).
+  contactId      String?    @map("contact_id") @db.Uuid
   createdBy      String     @map("created_by") @db.Uuid
   createdAt      DateTime   @default(now()) @map("created_at")
 
   workspace      Workspace           @relation(fields: [workspaceId], references: [id])
   company        Company?            @relation(fields: [companyId], references: [id])
   opportunity    Opportunity?        @relation(fields: [opportunityId], references: [id])
-  list           TaskList            @relation(fields: [listId], references: [id])
+  contact        Contact?            @relation(fields: [contactId], references: [id])
   checklistItems TaskChecklistItem[]
   comments       TaskComment[]
   attachments    TaskAttachment[]
 
   @@index([workspaceId])
-  @@index([listId])
   @@map("tasks")
 }
 
@@ -507,10 +885,18 @@ model Activity {
   type          ActivityType
   payload       Json         @default("{}")
   occurredAt    DateTime     @default(now()) @map("occurred_at")
+  // Contato da empresa vinculado ao registro (pedido direto do usuário,
+  // 2026-08-05) — obrigatório quando payload.subtipo é ligação/reunião/
+  // visita/e-mail (ver CONTACT_REQUIRED_ACTIVITY_SUBTIPOS), mesmo padrão
+  // já usado em Task.contactId. Sem onDelete: Cascade, mesmo motivo de
+  // Task.contactId: não é óbvio o que fazer com o registro histórico se o
+  // contato for removido, então o Postgres bloqueia por padrão.
+  contactId     String?      @map("contact_id") @db.Uuid
 
   workspace   Workspace    @relation(fields: [workspaceId], references: [id])
   company     Company?     @relation(fields: [companyId], references: [id])
   opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
 
   @@index([workspaceId])
   @@map("activities")

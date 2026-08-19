@@ -52,7 +52,7 @@ const HEADER_ALIASES: Record<CanonicalField, string[]> = {
   importador: ['importador'],
 };
 
-function normalizeHeader(value: string): string {
+export function normalizeHeader(value: string): string {
   return value
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -60,7 +60,9 @@ function normalizeHeader(value: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
-function buildHeaderIndex(headers: string[]): Partial<Record<CanonicalField, number>> {
+function buildHeaderIndex(
+  headers: string[],
+): Partial<Record<CanonicalField, number>> {
   const normalized = headers.map((h) => normalizeHeader(h ?? ''));
   const index: Partial<Record<CanonicalField, number>> = {};
   for (const [field, aliases] of Object.entries(HEADER_ALIASES) as Array<
@@ -72,9 +74,12 @@ function buildHeaderIndex(headers: string[]): Partial<Record<CanonicalField, num
   return index;
 }
 
-function cellText(value: unknown): string {
+export function cellText(value: unknown): string {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'object' && 'text' in (value as Record<string, unknown>)) {
+  if (
+    typeof value === 'object' &&
+    'text' in (value as Record<string, unknown>)
+  ) {
     return String((value as { text: unknown }).text ?? '').trim();
   }
   return String(value).trim();
@@ -82,13 +87,13 @@ function cellText(value: unknown): string {
 
 // Placeholder que o crawler grava quando não achou telefone de verdade
 // (tudo zero) — não vale a pena persistir.
-function isJunkPhone(digits: string): boolean {
+export function isJunkPhone(digits: string): boolean {
   return digits.length < 8 || /^0+$/.test(digits);
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function normalizePorte(raw: string): string | undefined {
+export function normalizePorte(raw: string): string | undefined {
   const value = raw.trim();
   if (!value) return undefined;
   const upper = normalizeHeader(value).toUpperCase(); // reaproveita o strip de acento
@@ -101,7 +106,7 @@ function normalizePorte(raw: string): string | undefined {
 }
 
 // Aceita "20140526" (formato do crawler) ou já-ISO ("2014-05-26").
-function normalizeAbertura(raw: string): string | undefined {
+export function normalizeAbertura(raw: string): string | undefined {
   const value = raw.trim();
   if (!value) return undefined;
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -115,7 +120,7 @@ function normalizeAbertura(raw: string): string | undefined {
   return undefined;
 }
 
-async function loadWorksheet(
+export async function loadWorksheet(
   buffer: Buffer,
   filename: string,
 ): Promise<ExcelJS.Worksheet> {
@@ -155,7 +160,9 @@ export async function parseLeadsSpreadsheet(
   const errors: RowError[] = [];
 
   const col = (field: CanonicalField, row: ExcelJS.Row): string =>
-    index[field] !== undefined ? cellText(row.getCell(index[field]! + 1).value) : '';
+    index[field] !== undefined
+      ? cellText(row.getCell(index[field] + 1).value)
+      : '';
 
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return; // header

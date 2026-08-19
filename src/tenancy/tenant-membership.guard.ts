@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { MembershipRole, MembershipStatus } from '@prisma/client';
+import type { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator';
 import type { AuthenticatedRequest } from '../auth/supabase-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -26,6 +26,15 @@ export interface MembershipContext {
   userId: string;
   role: MembershipRole;
   status: MembershipStatus;
+  // Matriz granular de permission-catalog.ts, guardada como Json cru
+  // (mesmo tipo que a coluna do Prisma) — tipada largo de propósito aqui
+  // pra qualquer row de Membership vinda direto do Prisma (produção,
+  // fixture de teste, e2e) ser atribuível sem cast. Opcional (tests
+  // frequentemente montam um MembershipContext à mão sem se importar com
+  // isto). Quem interpreta o shape é só PolicyService.canModule, via
+  // resolvePermission — narrowing pra PermissionMatrix acontece lá, no
+  // único ponto que realmente lê o conteúdo.
+  permissions?: Prisma.JsonValue | null;
 }
 
 export type MembershipRequest = AuthenticatedRequest & {
@@ -88,7 +97,7 @@ export class TenantMembershipGuard implements CanActivate {
       where: { workspaceId_userId: { workspaceId, userId } },
     });
     if (existing) {
-      return existing;
+      return this.toMembershipContext(existing);
     }
 
     // Primeiro membro do workspace vira owner — sem isso ninguém consegue
@@ -98,7 +107,7 @@ export class TenantMembershipGuard implements CanActivate {
     const role: MembershipRole = memberCount === 0 ? 'owner' : DEFAULT_ROLE;
 
     try {
-      return await tx.membership.create({
+      const created = await tx.membership.create({
         data: {
           workspaceId,
           userId,
@@ -107,13 +116,33 @@ export class TenantMembershipGuard implements CanActivate {
           joinedAt: new Date(),
         },
       });
+      return this.toMembershipContext(created);
     } catch {
       // Corrida rara: duas requests do mesmo usuário criando ao mesmo
       // tempo (ex.: dois cliques de login quase simultâneos). Quem perdeu
       // a corrida do unique constraint busca o que a outra já criou.
-      return tx.membership.findUniqueOrThrow({
+      const raced = await tx.membership.findUniqueOrThrow({
         where: { workspaceId_userId: { workspaceId, userId } },
       });
+      return this.toMembershipContext(raced);
     }
+  }
+
+  private toMembershipContext(row: {
+    id: string;
+    workspaceId: string;
+    userId: string;
+    role: MembershipRole;
+    status: MembershipStatus;
+    permissions: Prisma.JsonValue | null;
+  }): MembershipContext {
+    return {
+      id: row.id,
+      workspaceId: row.workspaceId,
+      userId: row.userId,
+      role: row.role,
+      status: row.status,
+      permissions: row.permissions,
+    };
   }
 }

@@ -1,11 +1,17 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Company, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Company } from '@prisma/client';
 import { assertActiveMembership } from '../common/assert-active-membership';
 import type { ListQueryDto } from '../common/dto/list-query.dto';
+import {
+  resolveRazaoSocial,
+  sanitizeRazaoSocial,
+} from '../common/sanitize-razao-social';
 import { ActivityService } from '../activities/activity.service';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
@@ -20,6 +26,14 @@ export interface PaginatedResult<T> {
   pageSize: number;
 }
 
+// `egestorContato` não-nulo = a empresa tem vínculo com o eGestor (Matriz
+// e/ou Filial) — coluna "integração" da tela de Empresas (S2.4,
+// docs/roadmap.md). Só o id importa pro frontend (basta
+// saber se existe), sem expor o payload cru da tabela espelho aqui.
+export type CompanyWithEgestor = Company & {
+  egestorContato: { id: string } | null;
+};
+
 // Retorno da busca por CNPJ — mesmos nomes de campo de CreateCompanyDto
 // pros campos de cadastro (pra o frontend poder jogar isto direto no form
 // sem remapear nada), mais os campos "só leitura" que a ficha da empresa
@@ -28,6 +42,12 @@ export interface PaginatedResult<T> {
 // coluna própria em Company; o chamador decide se guarda em customFields.
 export interface CnpjLookupResult {
   razaoSocial?: string;
+  // Detectado e removido de razaoSocial acima — ver
+  // src/common/sanitize-razao-social.ts. Sempre presente (mesmo `false`),
+  // pra quem chamar poder repassar o hint direto pra createCompany/
+  // updateCompany em vez de o service ter que redetectar num texto que já
+  // chega limpo daqui.
+  emRecuperacaoJudicial: boolean;
   fantasia?: string;
   cpfCnpj: string;
   tipo: 'PJ';
@@ -51,6 +71,16 @@ export interface CnpjLookupResult {
 
 // Formato de resposta da BrasilAPI (https://brasilapi.com.br/api/cnpj/v1) —
 // só os campos que a gente de fato usa, o resto da resposta é ignorado.
+// Tabela de situação cadastral da Receita Federal — usada só como
+// fallback (a BrasilAPI já manda `descricao_situacao_cadastral` pronta).
+const SITUACAO_CADASTRAL_POR_CODIGO: Record<number, string | undefined> = {
+  1: 'NULA',
+  2: 'ATIVA',
+  3: 'SUSPENSA',
+  4: 'INAPTA',
+  8: 'BAIXADA',
+};
+
 interface BrasilApiCnpjResponse {
   razao_social?: string;
   nome_fantasia?: string;
@@ -64,7 +94,10 @@ interface BrasilApiCnpjResponse {
   cep?: string;
   municipio?: string;
   uf?: string;
-  situacao_cadastral?: string;
+  // Código numérico (2 = ATIVA) — o texto vem em
+  // `descricao_situacao_cadastral`, ver o mapeamento em lookupCnpj.
+  situacao_cadastral?: number;
+  descricao_situacao_cadastral?: string;
   data_inicio_atividade?: string;
   porte?: string;
   descricao_porte?: string;
@@ -87,12 +120,51 @@ export class CompanyService {
     membership: MembershipContext,
     dto: CreateCompanyDto,
   ): Promise<Company> {
+    if (!this.policy.canModule(membership, 'empresas_cadastro', 'criar')) {
+      throw new ForbiddenException('Sem permissão para cadastrar empresas.');
+    }
+
+    // Empresa cadastrada em duplicidade por outro representante (pedido
+    // direto do usuário, 2026-08-06 — exemplo dado: Lauro cadastra
+    // "Empresa Modelo", depois Darlã também cadastra a mesma empresa).
+    // NÃO duplica o registro — reaproveita a Company existente.
+    // ownerUserId original não muda; o segundo representante ganha
+    // visão do PERFIL via CompanyAccess (ver attachToExisting/RLS da
+    // migration 20260806190000) — histórico (Activity), tarefas,
+    // oportunidades e contatos continuam privados de quem os criou,
+    // sem nenhuma mudança nessas tabelas por causa disto.
+    const cpfCnpjDigits = dto.cpfCnpj?.replace(/\D/g, '');
+    if (cpfCnpjDigits) {
+      // RLS de "companies" (Fatia 9) bloqueia um representante de ENXERGAR
+      // company de outro dono via SELECT normal — então uma checagem
+      // comum sob a sessão dele sempre voltaria vazia mesmo quando o
+      // registro existe (falso negativo, geraria duplicata). A function
+      // SECURITY DEFINER bypassa RLS só pra essa checagem pontual,
+      // devolvendo só o id (nunca dado do cadastro), sempre escopada por
+      // workspace — ver comentário completo na migration.
+      const rows = await tx.$queryRaw<Array<{ id: string | null }>>(
+        Prisma.sql`SELECT public.find_company_id_by_cnpj(${membership.workspaceId}::uuid, ${cpfCnpjDigits}) AS id`,
+      );
+      const existingId = rows[0]?.id;
+      if (existingId) {
+        return this.attachToExisting(tx, membership, existingId);
+      }
+    }
+
     const ownerUserId = dto.ownerUserId ?? membership.userId;
     await assertActiveMembership(tx, membership.workspaceId, ownerUserId);
 
     if (dto.parentCompanyId) {
       await this.mustExist(tx, membership.workspaceId, dto.parentCompanyId);
     }
+
+    // Extrai "EM RECUPERAÇÃO JUDICIAL" da razão social pra um flag próprio
+    // (ver src/common/sanitize-razao-social.ts) — só quando razaoSocial
+    // vem preenchida (empresa pode nascer só com fantasia).
+    const razao =
+      dto.razaoSocial !== undefined
+        ? resolveRazaoSocial(dto.razaoSocial, dto.emRecuperacaoJudicial)
+        : undefined;
 
     const company = await tx.company.create({
       data: {
@@ -103,7 +175,8 @@ export class CompanyService {
         ownerUserId,
         parentCompanyId: dto.parentCompanyId,
         customFields: (dto.customFields ?? {}) as Prisma.InputJsonValue,
-        razaoSocial: dto.razaoSocial,
+        razaoSocial: razao?.razaoSocial,
+        emRecuperacaoJudicial: razao?.emRecuperacaoJudicial,
         fantasia: dto.fantasia,
         nomeParaContato: dto.nomeParaContato,
         cpfCnpj: dto.cpfCnpj,
@@ -134,17 +207,53 @@ export class CompanyService {
     return company;
   }
 
+  // Chamado só pelo caminho de dedupe do create() acima — concede ao
+  // representante atual visão do PERFIL da company já existente
+  // (CompanyAccess, ver RLS da migration 20260806190000) sem tocar no
+  // ownerUserId original nem em nenhum dado da company. `upsert` porque
+  // o mesmo representante pode "recadastrar" o mesmo CNPJ mais de uma vez
+  // (ex.: reimportar planilha) — idempotente, sem erro de unique
+  // constraint na segunda vez.
+  private async attachToExisting(
+    tx: TenantTx,
+    membership: MembershipContext,
+    companyId: string,
+  ): Promise<Company> {
+    await tx.companyAccess.upsert({
+      where: { companyId_userId: { companyId, userId: membership.userId } },
+      create: {
+        workspaceId: membership.workspaceId,
+        companyId,
+        userId: membership.userId,
+      },
+      update: {},
+    });
+
+    const company = await tx.company.findFirst({
+      where: { id: companyId, workspaceId: membership.workspaceId },
+    });
+    if (!company) {
+      // Não deveria acontecer — acabamos de conceder o próprio acesso —,
+      // mas defesa em profundidade caso a RLS bloqueie por outro motivo.
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+    return company;
+  }
+
   async findAll(
     tx: TenantTx,
     membership: MembershipContext,
     query: ListQueryDto,
-  ): Promise<PaginatedResult<Company>> {
-    const ownerFilter = await this.policy.scopeFilter(tx, membership);
+  ): Promise<PaginatedResult<CompanyWithEgestor>> {
+    if (!this.policy.canModule(membership, 'empresas_cadastro', 'ver')) {
+      throw new ForbiddenException('Sem permissão para ver empresas.');
+    }
+    const visibilityWhere = await this.companyVisibilityFilter(tx, membership);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const where = {
+    const where: Prisma.CompanyWhereInput = {
       workspaceId: membership.workspaceId,
-      ...ownerFilter,
+      ...visibilityWhere,
       deletedAt: query.includeDeleted ? undefined : null,
       // Company-lead ainda em triagem (tag "lead-triagem", SPEC-CRM-GAMA.md
       // §4.4) não é uma empresa de verdade até ser aprovada — mesmo
@@ -164,6 +273,9 @@ export class CompanyService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
+        // Coluna "integração eGestor" (S2.4, docs/roadmap.md)
+        // — só o id basta, o frontend só precisa saber se é null ou não.
+        include: { egestorContato: { select: { id: true } } },
       }),
       tx.company.count({ where }),
     ]);
@@ -175,7 +287,7 @@ export class CompanyService {
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
-  ): Promise<Company> {
+  ): Promise<CompanyWithEgestor> {
     return this.mustBeVisible(tx, membership, id);
   }
 
@@ -199,6 +311,13 @@ export class CompanyService {
       await this.mustExist(tx, membership.workspaceId, dto.parentCompanyId);
     }
 
+    // Mesma extração do create() acima — só quando razaoSocial vem no
+    // update (undefined = campo não tocado, preserva o que já existia).
+    const razao =
+      dto.razaoSocial !== undefined
+        ? resolveRazaoSocial(dto.razaoSocial, dto.emRecuperacaoJudicial)
+        : undefined;
+
     const updated = await tx.company.update({
       where: { id: existing.id },
       data: {
@@ -208,7 +327,8 @@ export class CompanyService {
         ownerUserId: dto.ownerUserId,
         parentCompanyId: dto.parentCompanyId,
         customFields: dto.customFields as Prisma.InputJsonValue | undefined,
-        razaoSocial: dto.razaoSocial,
+        razaoSocial: razao?.razaoSocial,
+        emRecuperacaoJudicial: razao?.emRecuperacaoJudicial,
         fantasia: dto.fantasia,
         nomeParaContato: dto.nomeParaContato,
         cpfCnpj: dto.cpfCnpj,
@@ -244,7 +364,7 @@ export class CompanyService {
     membership: MembershipContext,
     id: string,
   ): Promise<Company> {
-    const existing = await this.mustBeVisible(tx, membership, id, 'write');
+    const existing = await this.mustBeVisible(tx, membership, id, 'delete');
 
     const deleted = await tx.company.update({
       where: { id: existing.id },
@@ -273,7 +393,15 @@ export class CompanyService {
     if (!existing) {
       throw new NotFoundException('Empresa não encontrada.');
     }
-    if (!(await this.policy.can(tx, membership, 'write', existing))) {
+    if (
+      !(await this.policy.can(
+        tx,
+        membership,
+        'write',
+        existing,
+        'empresas_cadastro',
+      ))
+    ) {
       throw new NotFoundException('Empresa não encontrada.');
     }
     if (!existing.deletedAt) {
@@ -313,13 +441,16 @@ export class CompanyService {
     // 403 (`x-vercel-mitigated: deny`) antes mesmo de chegar na API de
     // verdade. Descoberto rodando de dentro do Railway (2026-08-01) — de
     // fora (curl local) o mesmo CNPJ respondia 200 normalmente.
-    const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent':
-          'Mozilla/5.0 (compatible; CRM-Gama-Brasil/1.0; +https://web-gamma-olive-80.vercel.app)',
+    const response = await fetch(
+      `https://brasilapi.com.br/api/cnpj/v1/${digits}`,
+      {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent':
+            'Mozilla/5.0 (compatible; CRM-Gama-Brasil/1.0; +https://web-gamma-olive-80.vercel.app)',
+        },
       },
-    });
+    );
     if (response.status === 404) {
       throw new NotFoundException(`CNPJ "${digits}" não encontrado.`);
     }
@@ -331,15 +462,24 @@ export class CompanyService {
       const body: unknown = await response.json().catch(() => null);
       const message =
         body && typeof body === 'object' && 'message' in body
-          ? String((body as { message: unknown }).message)
+          ? String(body.message)
           : 'Não foi possível consultar o CNPJ agora — tente novamente em instantes.';
       throw new BadRequestException(message);
     }
 
     const data = (await response.json()) as BrasilApiCnpjResponse;
 
+    // Trata o indicativo "EM RECUPERAÇÃO JUDICIAL" direto na resposta da
+    // consulta de CNPJ (pedido do usuário: "na requisição da API") — quem
+    // chama recebe a razão social já limpa + o flag pra repassar como hint
+    // a createCompany/updateCompany (ver CreateCompanyDto#emRecuperacaoJudicial).
+    const razao = data.razao_social
+      ? sanitizeRazaoSocial(data.razao_social)
+      : undefined;
+
     return {
-      razaoSocial: data.razao_social,
+      razaoSocial: razao?.razaoSocial,
+      emRecuperacaoJudicial: razao?.emRecuperacaoJudicial ?? false,
       fantasia: data.nome_fantasia,
       cpfCnpj: digits,
       tipo: 'PJ',
@@ -354,7 +494,16 @@ export class CompanyService {
       cep: data.cep,
       cidade: data.municipio,
       uf: data.uf,
-      situacaoCadastral: data.situacao_cadastral,
+      // `situacao_cadastral` é o CÓDIGO numérico da Receita (2 = ATIVA);
+      // quem tem o texto é `descricao_situacao_cadastral` — confirmado
+      // contra a resposta real da BrasilAPI em 2026-08-19. Gravar o código
+      // fazia a ficha mostrar "2" e pintar o selo de vermelho (a tela
+      // compara com "ATIVA"), ou seja: toda empresa ativa aparecia como se
+      // não fosse. Fallback pelo código só pra não voltar a mostrar número
+      // cru se a API parar de mandar a descrição.
+      situacaoCadastral:
+        data.descricao_situacao_cadastral ??
+        SITUACAO_CADASTRAL_POR_CODIGO[Number(data.situacao_cadastral)],
       dataAbertura: data.data_inicio_atividade,
       porte: data.descricao_porte ?? data.porte,
       naturezaJuridica: data.natureza_juridica,
@@ -364,7 +513,9 @@ export class CompanyService {
           : undefined,
       cnaeSecundarios: (data.cnaes_secundarios ?? [])
         .filter((c) => c.codigo != null || c.descricao)
-        .map((c) => `${c.codigo ?? ''}${c.descricao ? ` - ${c.descricao}` : ''}`.trim()),
+        .map((c) =>
+          `${c.codigo ?? ''}${c.descricao ? ` - ${c.descricao}` : ''}`.trim(),
+        ),
       estabelecimento: data.descricao_identificador_matriz_filial,
     };
   }
@@ -386,21 +537,96 @@ export class CompanyService {
   // 404 (não 403) quando a policy nega — não confirma pra quem não tem
   // acesso que o registro existe no workspace, mesmo escopo de
   // PolicyService.scopeFilter (que simplesmente omite o registro da lista).
+  //
+  // Company tem visibilidade de LEITURA mais larga que PolicyService.can()
+  // conhece (esse só sabe de ownerUserId direto/hierarquia de manager):
+  // uma oportunidade própria na empresa (regra original do SPEC-CRM-GAMA.md
+  // §7.5) ou um CompanyAccess concedido (empresa compartilhada, pedido do
+  // usuário 2026-08-06, ver create()/attachToExisting() acima) TAMBÉM dão
+  // acesso ao PERFIL — por isso o ramo 'read' usa companyVisibilityFilter()
+  // em vez de policy.can() puro. Escrita (editar/excluir o cadastro em si)
+  // continua restrita ao critério clássico — CompanyAccess/oportunidade não
+  // fazem o segundo representante virar dono do cadastro.
   private async mustBeVisible(
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
-    action: 'read' | 'write' = 'read',
-  ): Promise<Company> {
+    action: 'read' | 'write' | 'delete' = 'read',
+  ): Promise<CompanyWithEgestor> {
     const company = await tx.company.findFirst({
       where: { id, workspaceId: membership.workspaceId },
+      include: { egestorContato: { select: { id: true } } },
     });
     if (!company || company.deletedAt) {
       throw new NotFoundException('Empresa não encontrada.');
     }
-    if (!(await this.policy.can(tx, membership, action, company))) {
+
+    if (action === 'write' || action === 'delete') {
+      if (
+        !(await this.policy.can(
+          tx,
+          membership,
+          action,
+          company,
+          'empresas_cadastro',
+        ))
+      ) {
+        throw new NotFoundException('Empresa não encontrada.');
+      }
+      return company;
+    }
+
+    if (!this.policy.canModule(membership, 'empresas_cadastro', 'ver')) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+
+    const visibilityWhere = await this.companyVisibilityFilter(tx, membership);
+    const visible = await tx.company.findFirst({
+      where: {
+        id: company.id,
+        workspaceId: membership.workspaceId,
+        ...visibilityWhere,
+      },
+      select: { id: true },
+    });
+    if (!visible) {
       throw new NotFoundException('Empresa não encontrada.');
     }
     return company;
+  }
+
+  // Mesmo critério pra findAll (lista) e mustBeVisible (registro único) —
+  // ver comentário de mustBeVisible acima sobre por que isso é mais largo
+  // que PolicyService.scopeFilter puro. Hierarquia de níveis, ver
+  // docs/arquitetura-dados.md §4a: níveis 1-3 (owner/admin/manager) sem
+  // filtro (`{}`) — veem todas as empresas do workspace. `manager` é
+  // tratado igual a owner/admin AQUI de propósito (pedido do usuário,
+  // 2026-08-13): em todo o resto do sistema (oportunidades, tarefas,
+  // leads, contatos) `manager` continua restrito à própria equipe via
+  // PolicyService.scopeFilter — não generalizar esse bypass pra lá sem
+  // pedido explícito. Nível 4 (sales_rep/readonly) mantém a lógica
+  // antiga: dono direto OU oportunidade própria OU CompanyAccess, dentro
+  // da própria hierarquia.
+  private async companyVisibilityFilter(
+    tx: TenantTx,
+    membership: MembershipContext,
+  ): Promise<Prisma.CompanyWhereInput> {
+    if (membership.role === 'manager') {
+      return {};
+    }
+    const scope = await this.policy.scopeFilter(tx, membership);
+    if (scope.ownerUserId === undefined) {
+      return {};
+    }
+    const ownerCondition = scope.ownerUserId;
+    const userIds =
+      typeof ownerCondition === 'string' ? [ownerCondition] : ownerCondition.in;
+    return {
+      OR: [
+        { ownerUserId: ownerCondition },
+        { opportunities: { some: { ownerUserId: ownerCondition } } },
+        { accessGrants: { some: { userId: { in: userIds } } } },
+      ],
+    };
   }
 }

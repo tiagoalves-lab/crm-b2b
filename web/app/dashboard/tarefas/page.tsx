@@ -1,27 +1,37 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { companyDisplayName, listCompanies } from "@/lib/api/companies";
+import { buildCompanyLookup, companyDisplayName, listCompanies } from "@/lib/api/companies";
+import { listMemberships } from "@/lib/api/memberships";
 import { listOpportunities } from "@/lib/api/opportunities";
-import { listTasks } from "@/lib/api/tasks";
-import type { Company, Task } from "@/lib/api/types";
-import { completeTaskAction, reopenTaskAction } from "./actions";
+import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
+import type { Company, Membership, Task } from "@/lib/api/types";
+import { dayKeyBR, formatDateBR } from "@/lib/format-date";
 import CalendarView from "./calendar-view";
+import TarefasTable from "./tarefas-table";
+
+// Mesmo padrão de tarefas/_detail/detail-body.tsx e dashboard/page.tsx —
+// GET /memberships vem enriquecido com nome/login real via Supabase Auth
+// Admin API.
+function memberDisplayName(userId: string, memberships: Membership[]): string {
+  const m = memberships.find((mm) => mm.userId === userId);
+  return m?.name?.trim() || m?.login?.trim() || `${userId.slice(0, 8)}…`;
+}
 
 type ViewName = "tabela" | "calendario";
 
 function targetLabel(
   task: Task,
-  companies: Company[],
+  companyMap: Map<string, Company>,
   opportunities: { id: string; companyId: string; deletedAt: string | null }[],
 ): string {
   if (task.companyId) {
-    const company = companies.find((c) => c.id === task.companyId);
-    return `📈 ${company ? companyDisplayName(company) : "—"}`;
+    const company = companyMap.get(task.companyId);
+    return company ? companyDisplayName(company) : "—";
   }
   if (task.opportunityId) {
     const opp = opportunities.find((o) => o.id === task.opportunityId);
-    const company = opp ? companies.find((c) => c.id === opp.companyId) : null;
-    return `📈 ${company ? companyDisplayName(company) : "—"}`;
+    const company = opp ? companyMap.get(opp.companyId) : undefined;
+    return company ? companyDisplayName(company) : "—";
   }
   return "—";
 }
@@ -29,8 +39,15 @@ function targetLabel(
 function dueClass(task: Task): string {
   if (task.status === "done" || !task.dueAt) return "due-ok";
   const due = new Date(task.dueAt);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Achado 2026-08-13: `today.setHours(0,0,0,0)` usava o fuso LOCAL de
+  // onde o código roda — na Vercel isso é UTC, então perto da virada do
+  // dia em Brasília (21h-23h59) o servidor já achava que "hoje" era
+  // amanhã, marcando tarefa como atrasada 3h cedo demais. `dueAt` é
+  // meia-noite UTC representando um dia sem hora (input type="date",
+  // mesmo padrão de calendar-view.tsx#dueDateKey) — comparamos com
+  // "hoje" calculado no dia calendário de Brasília, também como meia-
+  // noite UTC, pra bater com o mesmo referencial.
+  const today = new Date(`${dayKeyBR(new Date())}T00:00:00.000Z`);
   if (due < today) return "due-late";
   if (due.getTime() === today.getTime()) return "due-today";
   return "due-ok";
@@ -45,10 +62,25 @@ export default async function TarefasPage({
   const token = await getServerAccessToken();
   const currentView: ViewName = view === "calendario" ? "calendario" : "tabela";
 
-  const [{ items: tasks }, { items: companies }, { items: opportunities }] = await Promise.all([
+  const [{ items: tasks }, { items: companies }, { items: opportunities }, memberships] = await Promise.all([
     listTasks(token),
     listCompanies(token),
     listOpportunities(token),
+    listMemberships(token),
+  ]);
+
+  // Empresa com a tag "lead-triagem" não vem em GET /companies, mas uma
+  // tarefa pode apontar pra ela (criada antes da aprovação do lead) — sem
+  // o preenchimento individual o Vínculo sumia. Lógica compartilhada com o
+  // Painel desde 2026-08-13, ver buildCompanyLookup.
+  const referencedOpportunityIds = new Set(
+    tasks.map((t) => t.opportunityId).filter((id): id is string => !!id),
+  );
+  const companyMap = await buildCompanyLookup(token, companies, [
+    ...tasks.map((t) => t.companyId),
+    ...opportunities
+      .filter((o) => referencedOpportunityIds.has(o.id))
+      .map((o) => o.companyId),
   ]);
 
   const baseHref = `/dashboard/tarefas?view=${currentView}${month ? `&month=${month}` : ""}`;
@@ -63,6 +95,22 @@ export default async function TarefasPage({
     if (!b.dueAt) return -1;
     return a.dueAt.localeCompare(b.dueAt);
   });
+
+  // TarefasTable é client component (precisa de onClick pra linha
+  // inteira abrir a ficha) — só dados simples atravessam a fronteira,
+  // sem Map/função (nada de RSC serializar tipo não-plano).
+  const tableRows = rows.map((task) => ({
+    id: task.id,
+    title: task.title,
+    done: task.status === "done",
+    tipoLabel: taskTypeLabel(task.tipo),
+    vinculoLabel: targetLabel(task, companyMap, opportunities),
+    assigneeLabel: memberDisplayName(task.assigneeUserId, memberships),
+    dueLabel: task.dueAt ? formatDateBR(task.dueAt) : "—",
+    dueClass: dueClass(task),
+    nAnexos: task._count?.attachments ?? 0,
+    nComentarios: task._count?.comments ?? 0,
+  }));
 
   return (
     <>
@@ -98,97 +146,7 @@ export default async function TarefasPage({
         {error && <div className="error-banner">{error}</div>}
 
         {currentView === "tabela" ? (
-          <div className="panel">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}></th>
-                  <th>Tarefa</th>
-                  <th>Vínculo</th>
-                  <th>Prazo</th>
-                  <th>Situação</th>
-                  <th style={{ width: 60 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((task) => {
-                  const done = task.status === "done";
-                  const nAnexos = task._count?.attachments ?? 0;
-                  const nCom = task._count?.comments ?? 0;
-                  return (
-                    <tr key={task.id} className="row-clickable">
-                      <td>
-                        <form action={done ? reopenTaskAction : completeTaskAction}>
-                          <input type="hidden" name="id" value={task.id} />
-                          <input type="hidden" name="back" value={baseHref} />
-                          <button
-                            type="submit"
-                            className={done ? "task-check done" : "task-check"}
-                            aria-label={done ? "Reabrir" : "Concluir"}
-                          >
-                            {done && (
-                              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path d="M20 6L9 17l-5-5" />
-                              </svg>
-                            )}
-                          </button>
-                        </form>
-                      </td>
-                      <td>
-                        <Link href={`/dashboard/tarefas/${task.id}`} className={done ? "task-title-cell done" : "task-title-cell"}>
-                          {task.title}
-                        </Link>
-                        {nAnexos > 0 && (
-                          <span className="attach-count" title="Anexos">
-                            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-                            </svg>
-                            {nAnexos}
-                          </span>
-                        )}
-                        {nCom > 0 && (
-                          <span className="attach-count" title="Comentários">
-                            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-                            </svg>
-                            {nCom}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <span className="t-sub">{targetLabel(task, companies, opportunities)}</span>
-                      </td>
-                      <td>
-                        <span className={`task-due ${dueClass(task)}`} style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                          {task.dueAt ? new Date(task.dueAt).toLocaleDateString("pt-BR") : "—"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={done ? "pill pill-green" : "pill pill-gray"}>{done ? "Concluída" : "Pendente"}</span>
-                      </td>
-                      <td>
-                        <div className="cell-actions">
-                          <Link href={`/dashboard/tarefas/${task.id}/editar`} className="icon-btn" title="Editar">
-                            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                            </svg>
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="empty">
-                      Nenhuma tarefa.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <TarefasTable rows={tableRows} baseHref={baseHref} />
         ) : (
           <CalendarView tasks={tasks} month={month} />
         )}

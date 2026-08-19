@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { Membership, MembershipRole, MembershipStatus } from "./types";
+import type { Membership, MembershipRole, MembershipStatus, PermissionMatrix } from "./types";
 
 export function listMemberships(token: string): Promise<Membership[]> {
   return apiFetch<Membership[]>("/memberships", { token });
@@ -8,9 +8,16 @@ export function listMemberships(token: string): Promise<Membership[]> {
 export interface CreateMembershipInput {
   name: string;
   login: string;
+  // E-mail de contato — separado do login (que é o identificador de
+  // acesso, texto livre, sem formato de e-mail exigido).
+  email?: string;
   password: string;
   role?: MembershipRole;
   managerId?: string;
+  // Subpágina de Permissões do modal — ausente = backend usa o preset
+  // padrão do papel (ver DEFAULT_PERMISSIONS em permission-catalog.ts,
+  // nos dois lados).
+  permissions?: PermissionMatrix;
 }
 
 // Cria o login (Supabase Auth) e o Membership numa chamada só — o
@@ -31,6 +38,10 @@ export function createMembership(
 
 export interface UpdateMembershipInput {
   name?: string;
+  // E-mail de contato — mesmo campo de CreateMembershipInput.
+  email?: string;
+  // Muda o identificador de acesso (login) — ausente/undefined não mexe.
+  login?: string;
   // Redefine a senha do login — ausente/undefined não mexe na atual.
   // Não existe "ver senha" (Supabase guarda só hash, ver comentário no
   // backend), isto é o equivalente prático.
@@ -38,6 +49,9 @@ export interface UpdateMembershipInput {
   role?: MembershipRole;
   status?: MembershipStatus;
   managerId?: string | null;
+  // Mesmo campo de CreateMembershipInput — ausente = não mexe na matriz
+  // já salva.
+  permissions?: PermissionMatrix;
 }
 
 export function updateMembership(

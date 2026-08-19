@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { SupabaseStorageService } from '../storage/supabase-storage.service';
@@ -75,17 +76,27 @@ function fakeTx(attachment?: {
 }
 
 describe('OpportunityAttachmentService', () => {
+  const policy = new PolicyService();
+
   it('createUploadUrl checa visibilidade de leitura, cria o metadado e devolve a signed URL', async () => {
     const opportunities = fakeOpportunityService();
     const storage = fakeStorage();
-    const service = new OpportunityAttachmentService(opportunities, storage);
+    const service = new OpportunityAttachmentService(
+      opportunities,
+      storage,
+      policy,
+    );
     const tx = fakeTx();
 
     const result = await service.createUploadUrl(
       tx,
       membership(),
       OPPORTUNITY_ID,
-      { fileName: 'proposta.pdf', mimeType: 'application/pdf', sizeBytes: 2048 },
+      {
+        fileName: 'proposta.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 2048,
+      },
     );
 
     expect(opportunities.mustBeVisible).toHaveBeenCalledWith(
@@ -95,7 +106,9 @@ describe('OpportunityAttachmentService', () => {
       'read',
     );
     expect(storage.createUploadUrl).toHaveBeenCalledWith(
-      expect.stringContaining(`${WORKSPACE_ID}/opportunities/${OPPORTUNITY_ID}/`),
+      expect.stringContaining(
+        `${WORKSPACE_ID}/opportunities/${OPPORTUNITY_ID}/`,
+      ),
     );
     expect(result.uploadUrl).toBe('https://storage.example/upload');
     expect(result.attachment.sizeBytes).toBe(2048);
@@ -107,6 +120,7 @@ describe('OpportunityAttachmentService', () => {
     const service = new OpportunityAttachmentService(
       fakeOpportunityService(),
       storage,
+      policy,
     );
     const tx = fakeTx();
 
@@ -125,10 +139,16 @@ describe('OpportunityAttachmentService', () => {
     const service = new OpportunityAttachmentService(
       fakeOpportunityService(),
       fakeStorage(),
+      policy,
     );
     const tx = fakeTx();
     await expect(
-      service.createDownloadUrl(tx, membership(), OPPORTUNITY_ID, 'attachment-x'),
+      service.createDownloadUrl(
+        tx,
+        membership(),
+        OPPORTUNITY_ID,
+        'attachment-x',
+      ),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -145,6 +165,7 @@ describe('OpportunityAttachmentService', () => {
     const service = new OpportunityAttachmentService(
       fakeOpportunityService(),
       storage,
+      policy,
     );
     const tx = fakeTx(attachment);
 
@@ -160,6 +181,9 @@ describe('OpportunityAttachmentService', () => {
     expect(result.url).toBe('https://storage.example/download');
   });
 
+  // role 'manager' de propósito nos dois testes abaixo — verificam o
+  // critério de autoria, não a restrição de papel (teste dedicado logo
+  // após).
   it('CRÍTICO: só quem fez upload pode remover o anexo', async () => {
     const attachment = {
       id: 'attachment-1',
@@ -172,12 +196,13 @@ describe('OpportunityAttachmentService', () => {
     const service = new OpportunityAttachmentService(
       fakeOpportunityService(),
       fakeStorage(),
+      policy,
     );
     const tx = fakeTx(attachment);
     await expect(
       service.remove(
         tx,
-        membership({ userId: 'user-1' }),
+        membership({ role: 'manager', userId: 'user-1' }),
         OPPORTUNITY_ID,
         'attachment-1',
       ),
@@ -197,10 +222,41 @@ describe('OpportunityAttachmentService', () => {
     const service = new OpportunityAttachmentService(
       fakeOpportunityService(),
       storage,
+      policy,
     );
     const tx = fakeTx(attachment);
 
-    await service.remove(tx, membership({ userId: 'user-1' }), OPPORTUNITY_ID, 'attachment-1');
+    await service.remove(
+      tx,
+      membership({ role: 'manager', userId: 'user-1' }),
+      OPPORTUNITY_ID,
+      'attachment-1',
+    );
     expect(storage.remove).toHaveBeenCalledWith(attachment.storagePath);
+  });
+
+  it('CRÍTICO: representante (sales_rep) não remove nem o próprio anexo', async () => {
+    const attachment = {
+      id: 'attachment-1',
+      opportunityId: OPPORTUNITY_ID,
+      storagePath: 'ws/opportunities/opp/arquivo.pdf',
+      fileName: 'a.pdf',
+      uploadedBy: 'user-1',
+      sizeBytes: null,
+    };
+    const service = new OpportunityAttachmentService(
+      fakeOpportunityService(),
+      fakeStorage(),
+      policy,
+    );
+    const tx = fakeTx(attachment);
+    await expect(
+      service.remove(
+        tx,
+        membership({ userId: 'user-1' }),
+        OPPORTUNITY_ID,
+        'attachment-1',
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

@@ -46,11 +46,20 @@ export function scoreReasons(lead: Pick<RawLead, "cnaePrincipal" | "importador" 
   return reasons;
 }
 
+// 5000 (não 200): a tela de Prospecção busca tudo numa página só e
+// filtra/ordena no client, sem paginação de verdade (mesmo padrão de
+// approvedLeads/descartadosItems) — um teto baixo aqui faz lead de score
+// baixo "sumir" da tela mesmo existindo no banco (achado real, 2026-08-10:
+// reimportar planilha sem CNAE/porte gerou centenas de leads "frios" que
+// nunca apareciam por causa desse corte). Espelha o @Max(5000) do
+// ListRawLeadsQueryDto no backend.
+const DEFAULT_PAGE_SIZE = 5000;
+
 export function listRawLeads(
   token: string,
   options: { status?: RawLeadStatus; tier?: ScoreTier; q?: string; pageSize?: number } = {},
 ): Promise<PaginatedResult<RawLead>> {
-  const query = new URLSearchParams({ pageSize: String(options.pageSize ?? 200) });
+  const query = new URLSearchParams({ pageSize: String(options.pageSize ?? DEFAULT_PAGE_SIZE) });
   if (options.status) query.set("status", options.status);
   if (options.tier) query.set("tier", options.tier);
   if (options.q) query.set("q", options.q);
@@ -65,6 +74,8 @@ export function getRawLead(token: string, id: string): Promise<RawLead> {
 
 export interface CreateRawLeadInput {
   razaoSocial: string;
+  // Advisory — mesmo campo/motivo de CreateCompanyInput#emRecuperacaoJudicial.
+  emRecuperacaoJudicial?: boolean;
   cnpj?: string;
   cnaePrincipal?: string;
   cnaeDescricao?: string;
@@ -113,6 +124,35 @@ export function updateLeadTier(
   });
 }
 
+// Tags livres da Prospecção — substitui o conjunto inteiro (o cliente
+// sempre manda o array completo desejado, mesmo contrato de
+// updateLeadTier acima).
+export function updateLeadTags(
+  token: string,
+  id: string,
+  tags: string[],
+): Promise<RawLead> {
+  return apiFetch<RawLead>(`/raw-leads/${id}/tags`, {
+    method: "PATCH",
+    token,
+    body: { tags },
+  });
+}
+
+// Segmento de negócio — valor único (null limpa), diferente de
+// updateLeadTags acima (array).
+export function updateLeadSegmento(
+  token: string,
+  id: string,
+  segmento: string | null,
+): Promise<RawLead> {
+  return apiFetch<RawLead>(`/raw-leads/${id}/segmento`, {
+    method: "PATCH",
+    token,
+    body: { segmento },
+  });
+}
+
 export interface BulkResult {
   ok: string[];
   failed: Array<{ id: string; reason: string }>;
@@ -147,10 +187,33 @@ export interface ImportResult {
   errors: Array<{ row: number; reason: string }>;
 }
 
-// Fora do padrão apiFetch (JSON-only) de propósito: multipart precisa que
-// o próprio fetch monte o Content-Type com boundary — se a gente setar
-// manualmente, o multer do backend não consegue parsear o arquivo.
-export async function importRawLeadsSpreadsheet(
+// Modelo padrão FIXO com múltiplos contatos por empresa (linha se repete
+// pelo mesmo CNPJ, uma linha = um contato) — ver
+// src/raw-leads/contacts-spreadsheet-import.util.ts no backend, que rejeita
+// (400) qualquer cabeçalho fora do template.
+export const CONTACTS_TEMPLATE_HEADERS = [
+  "CNPJ",
+  "Razão Social",
+  "Fantasia",
+  "Cidade",
+  "UF",
+  "CNAE",
+  "Porte",
+  "Situação Cadastral",
+  "Abertura",
+  "Sócios (QSA)",
+  "Importador",
+  // Tags livres da Prospecção (2026-08-06, pedido direto do usuário —
+  // não existia neste modelo) — mesmo separador "|" de Sócios (QSA).
+  "Tags",
+  "Contato Nome",
+  "Contato Cargo",
+  "Contato Email",
+  "Contato Telefone",
+  "Contato Decisor",
+] as const;
+
+export async function importRawLeadsWithContactsSpreadsheet(
   token: string,
   file: File,
 ): Promise<ImportResult> {
@@ -162,7 +225,7 @@ export async function importRawLeadsSpreadsheet(
   const body = new FormData();
   body.append("file", file, file.name);
 
-  const res = await fetch(`${apiUrl}/raw-leads/import`, {
+  const res = await fetch(`${apiUrl}/raw-leads/import-contacts`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body,

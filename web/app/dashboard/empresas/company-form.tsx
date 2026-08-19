@@ -6,6 +6,7 @@ import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { CnpjLookupResult } from "@/lib/api/companies";
 import type { Company } from "@/lib/api/types";
 import { createCompanyAction, updateCompanyAction } from "./actions";
+import SubmitButton from "@/app/_components/submit-button";
 
 type Fields = {
   razaoSocial: string;
@@ -250,9 +251,9 @@ export default function CompanyForm({
           Tags (separadas por vírgula)
           <input name="tags" defaultValue={company?.tags.join(", ") ?? ""} />
         </label>
-        <button type="submit" className="btn btn-primary">
+        <SubmitButton className="btn btn-primary" pendingLabel="Salvando…">
           {company ? "Salvar cadastro" : "Nova empresa"}
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );

@@ -39,6 +39,14 @@ describe('RawLeadController (e2e) — POST /raw-leads/:id/approve (SPEC-CRM-GAMA
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.rawLead.deleteMany({ where: { workspaceId: workspace.id } }),
     );
+    // approve() (SPEC §4.2.1) agora emite uma Activity "lead_approved"
+    // ligada à company — precisa sumir antes da company, senão o
+    // ON DELETE SET NULL do FK deixa companyId/opportunityId nulos ao
+    // mesmo tempo e viola o CHECK "activities_exactly_one_relation"
+    // (mesmo gotcha já documentado pra Task/Kanban).
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.activity.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.company.deleteMany({ where: { workspaceId: workspace.id } }),
     );
@@ -108,7 +116,11 @@ describe('RawLeadController (e2e) — POST /raw-leads/:id/approve (SPEC-CRM-GAMA
       workspace.id,
       (tx) =>
         tx.company.create({
-          data: { workspaceId: workspace.id, razaoSocial: 'Já aprovada', tags: [] },
+          data: {
+            workspaceId: workspace.id,
+            razaoSocial: 'Já aprovada',
+            tags: [],
+          },
         }),
     );
     const lead = await withTenant(
@@ -235,7 +247,47 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
         tx.company.findUniqueOrThrow({ where: { id: body.promotedCompanyId } }),
     );
     expect(company.tags).toContain('lead-triagem');
-    expect(company.razaoSocial).toBe('Metalúrgica Quente Ltda');
+    // Caixa alta: RawLeadService#create() normaliza a razão social
+    // (padronização pedida pelo usuário em 2026-08-10). Estas asserções
+    // ficaram desatualizadas na época e ninguém viu, porque o CI
+    // disparava numa branch que não existe — corrigido em 2026-08-12
+    // junto com o gatilho do workflow (docs/seguranca.md, decisão 6.1).
+    expect(company.razaoSocial).toBe('METALÚRGICA QUENTE LTDA');
+  }, 15000);
+
+  // Indicativo "EM RECUPERAÇÃO JUDICIAL" da Receita Federal (pedido
+  // direto do usuário, 2026-08-05) — ver src/common/sanitize-razao-social.ts.
+  // Confirma que tanto o RawLead quanto a Company criada junto ficam
+  // marcados e com a razão social já sem o aviso.
+  it('POST /raw-leads detecta "EM RECUPERAÇÃO JUDICIAL" e limpa a razão social no lead e na company', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({
+        razaoSocial: 'Metalúrgica RJ Ltda EM RECUPERACAO JUDICIAL',
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
+      .expect(201);
+    const body = res.body as {
+      razaoSocial: string;
+      emRecuperacaoJudicial: boolean;
+      promotedCompanyId: string;
+    };
+    // Caixa alta pelo mesmo motivo do teste anterior — o que este caso
+    // prova de específico é que o aviso "EM RECUPERACAO JUDICIAL" saiu
+    // da razão social, não a caixa das letras.
+    expect(body.razaoSocial).toBe('METALÚRGICA RJ LTDA');
+    expect(body.emRecuperacaoJudicial).toBe(true);
+
+    const company = await withTenant(
+      prisma,
+      membership.userId,
+      workspace.id,
+      (tx) =>
+        tx.company.findUniqueOrThrow({ where: { id: body.promotedCompanyId } }),
+    );
+    expect(company.razaoSocial).toBe('METALÚRGICA RJ LTDA');
+    expect(company.emRecuperacaoJudicial).toBe(true);
   }, 15000);
 
   it('GET /raw-leads lista só status=novo por padrão, ordenado por score desc', async () => {
@@ -398,13 +450,19 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
       .patch(`/raw-leads/${lead.id}/tier`)
       .send({ tier: null })
       .expect(200);
-    expect((cleared.body as { manualTier: string | null }).manualTier).toBeNull();
+    expect(
+      (cleared.body as { manualTier: string | null }).manualTier,
+    ).toBeNull();
   }, 15000);
 
   it('PATCH /raw-leads/:id/tier devolve 400 pra valor fora do enum', async () => {
     const created = await request(app.getHttpServer())
       .post('/raw-leads')
-      .send({ razaoSocial: 'Lead pra tier inválido', situacao: 'ATIVA', uf: 'RS' })
+      .send({
+        razaoSocial: 'Lead pra tier inválido',
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
       .expect(201);
     const lead = created.body as { id: string };
 
@@ -413,6 +471,86 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
       .send({ tier: 'ardente' })
       .expect(400);
   }, 15000);
+
+  it('PATCH /raw-leads/:id/tags substitui o conjunto de tags, aparando espaço e removendo duplicata', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({
+        razaoSocial: 'Lead pra marcar com tags',
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
+      .expect(201);
+    const lead = created.body as { id: string; tags: string[] };
+    expect(lead.tags).toEqual([]);
+
+    const patched = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/tags`)
+      .send({ tags: ['  Prioridade  ', 'evento-x', 'Evento-X'] })
+      .expect(200);
+    expect((patched.body as { tags: string[] }).tags).toEqual([
+      'Prioridade',
+      'evento-x',
+    ]);
+
+    // Manda o conjunto vazio de novo — substitui por completo, não soma.
+    const cleared = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/tags`)
+      .send({ tags: [] })
+      .expect(200);
+    expect((cleared.body as { tags: string[] }).tags).toEqual([]);
+  }, 15000);
+
+  it('PATCH /raw-leads/:id/tags devolve 404 pra lead inexistente', async () => {
+    await request(app.getHttpServer())
+      .patch(`/raw-leads/${randomUUID()}/tags`)
+      .send({ tags: ['x'] })
+      .expect(404);
+  });
+
+  it('PATCH /raw-leads/:id/segmento define, aparando espaço, e limpa com null', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({
+        razaoSocial: 'Lead pra marcar com segmento',
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
+      .expect(201);
+    const lead = created.body as { id: string; segmento: string | null };
+    expect(lead.segmento).toBeNull();
+
+    const patched = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/segmento`)
+      .send({ segmento: '  Metalúrgica  ' })
+      .expect(200);
+    expect((patched.body as { segmento: string | null }).segmento).toBe(
+      'Metalúrgica',
+    );
+
+    // Valor único — a segunda chamada substitui, não soma.
+    const replaced = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/segmento`)
+      .send({ segmento: 'Serralheria' })
+      .expect(200);
+    expect((replaced.body as { segmento: string | null }).segmento).toBe(
+      'Serralheria',
+    );
+
+    // segmento: null limpa o valor.
+    const cleared = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/segmento`)
+      .send({ segmento: null })
+      .expect(200);
+    expect((cleared.body as { segmento: string | null }).segmento).toBeNull();
+  }, 15000);
+
+  it('PATCH /raw-leads/:id/segmento devolve 404 pra lead inexistente', async () => {
+    await request(app.getHttpServer())
+      .patch(`/raw-leads/${randomUUID()}/segmento`)
+      .send({ segmento: 'x' })
+      .expect(404);
+  });
 
   it('GET /raw-leads/:id devolve 404 pra lead de outro workspace', async () => {
     const otherWorkspace = await prisma.workspace.create({
@@ -446,4 +584,171 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
     );
     await prisma.workspace.delete({ where: { id: otherWorkspace.id } });
   }, 15000);
+});
+
+describe('RawLeadController (e2e) — POST /raw-leads/import-contacts (modelo padrão, 2026-08-03)', () => {
+  let app: INestApplication;
+  let workspace: { id: string };
+  let membership: MembershipContext;
+
+  const TEMPLATE_HEADER = [
+    'CNPJ',
+    'Razão Social',
+    'Fantasia',
+    'Cidade',
+    'UF',
+    'CNAE',
+    'Porte',
+    'Situação Cadastral',
+    'Abertura',
+    'Sócios (QSA)',
+    'Importador',
+    'Tags',
+    'Contato Nome',
+    'Contato Cargo',
+    'Contato Email',
+    'Contato Telefone',
+    'Contato Decisor',
+  ];
+
+  beforeAll(async () => {
+    workspace = await prisma.workspace.create({
+      data: {
+        name: 'Workspace RawLeads Import Contatos (teste)',
+        slug: `raw-leads-import-contacts-test-${Date.now()}`,
+      },
+    });
+    const userId = randomUUID();
+    membership = await withTenant(prisma, userId, workspace.id, (tx) =>
+      tx.membership.create({
+        data: {
+          workspaceId: workspace.id,
+          userId,
+          role: 'owner',
+          status: 'active',
+          joinedAt: new Date(),
+        },
+      }),
+    );
+
+    app = await createFakeAuthApp(membership);
+  }, 30000);
+
+  afterAll(async () => {
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.contact.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.rawLead.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.activity.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.company.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.membership.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
+    await prisma.workspace.delete({ where: { id: workspace.id } });
+    await app.close();
+    await prisma.$disconnect();
+  }, 20000);
+
+  it('agrupa linhas do mesmo CNPJ, cria uma empresa e um contato por linha', async () => {
+    const rows = [
+      [
+        '11.222.333/0001-44',
+        'Empresa Ficticia Import',
+        '',
+        '',
+        'RS',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        'quente|prioritario',
+        'Jonas Ficticio',
+        'Financeiro',
+        'jonas@ficticia.example.com',
+        '51999990000',
+        'Sim',
+      ],
+      [
+        '11.222.333/0001-44',
+        'Empresa Ficticia Import',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        'Maria Ficticia',
+        'Compras',
+        'maria@ficticia.example.com',
+        '51999991111',
+        'Não',
+      ],
+    ];
+    const buffer = Buffer.from(
+      [TEMPLATE_HEADER, ...rows].map((r) => r.join(',')).join('\n'),
+      'utf8',
+    );
+
+    const res = await request(app.getHttpServer())
+      .post('/raw-leads/import-contacts')
+      .attach('file', buffer, 'contatos.csv')
+      .expect(201);
+    const body = res.body as {
+      total: number;
+      imported: number;
+      errors: unknown[];
+    };
+    expect(body.errors).toEqual([]);
+    expect(body.imported).toBe(2);
+    expect(body.total).toBe(2);
+
+    const lead = await withTenant(
+      prisma,
+      membership.userId,
+      workspace.id,
+      (tx) =>
+        tx.rawLead.findFirstOrThrow({
+          where: { workspaceId: workspace.id, cnpj: '11222333000144' },
+        }),
+    );
+    expect(lead.tags).toEqual(['quente', 'prioritario']);
+    const contacts = await withTenant(
+      prisma,
+      membership.userId,
+      workspace.id,
+      (tx) =>
+        tx.contact.findMany({ where: { companyId: lead.promotedCompanyId! } }),
+    );
+    expect(contacts).toHaveLength(2);
+    expect(contacts.map((c) => c.nome).sort()).toEqual([
+      'Jonas Ficticio',
+      'Maria Ficticia',
+    ]);
+    expect(contacts.find((c) => c.nome === 'Jonas Ficticio')?.decisor).toBe(
+      true,
+    );
+  }, 15000);
+
+  it('400 quando o cabeçalho não segue o modelo padrão', async () => {
+    const buffer = Buffer.from(
+      'CNPJ,Razão Social\n11.222.333/0001-44,Empresa Ficticia Fora Do Modelo',
+      'utf8',
+    );
+    await request(app.getHttpServer())
+      .post('/raw-leads/import-contacts')
+      .attach('file', buffer, 'fora-do-modelo.csv')
+      .expect(400);
+  });
 });

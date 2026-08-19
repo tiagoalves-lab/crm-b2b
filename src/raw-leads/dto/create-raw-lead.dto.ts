@@ -19,6 +19,15 @@ export class CreateRawLeadDto {
   @MaxLength(255)
   razaoSocial!: string;
 
+  // Advisory — mesmo campo/mesmo motivo de CreateCompanyDto#emRecuperacaoJudicial
+  // (ver src/common/sanitize-razao-social.ts#resolveRazaoSocial): quando
+  // quem chama já sabe (ex.: lead-form.tsx repassando o que a busca por
+  // CNPJ detectou), confia direto; omitido, o service detecta a partir de
+  // razaoSocial.
+  @IsOptional()
+  @IsBoolean()
+  emRecuperacaoJudicial?: boolean;
+
   @IsOptional()
   @IsString()
   @MaxLength(20)
@@ -63,6 +72,15 @@ export class CreateRawLeadDto {
   @IsOptional()
   @IsEnum(LeadFonte)
   fonte?: LeadFonte;
+
+  // Tags livres da Prospecção (RawLead.tags) — normalizadas (trim/dedupe)
+  // no service, aqui só valida forma. Vem preenchido pela importação por
+  // planilha (coluna "Tags", separada por "|") ou pelo form manual, se
+  // quiser.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 
   // Campos abaixo não existem em RawLead — só alimentam a Company criada
   // junto (ver RawLeadService#create). Vieram junto com a importação por

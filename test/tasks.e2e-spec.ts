@@ -18,24 +18,17 @@ interface TaskListBody {
   items: TaskBody[];
 }
 
-interface TaskListColumnBody {
-  id: string;
-  name: string;
-  order: number;
-  isDoneList: boolean;
-}
-
 const prisma = new PrismaClient();
 
 describe('TaskController (e2e)', () => {
   let app: INestApplication;
-  let repApp: INestApplication;
   let adminApp: INestApplication;
   let workspace: { id: string };
   let membership: MembershipContext;
-  let repMembership: MembershipContext;
   let adminMembership: MembershipContext;
   let companyId: string;
+  let contactId: string;
+  let otherCompanyContactId: string;
   let taskId: string;
 
   beforeAll(async () => {
@@ -65,18 +58,28 @@ describe('TaskController (e2e)', () => {
     );
     companyId = company.id;
 
-    const repUserId = randomUUID();
-    repMembership = await withTenant(prisma, repUserId, workspace.id, (tx) =>
-      tx.membership.create({
+    const contact = await withTenant(prisma, userId, workspace.id, (tx) =>
+      tx.contact.create({
+        data: { workspaceId: workspace.id, companyId, nome: 'Contato Tasks' },
+      }),
+    );
+    contactId = contact.id;
+
+    const otherCompany = await withTenant(prisma, userId, workspace.id, (tx) =>
+      tx.company.create({
+        data: { workspaceId: workspace.id, razaoSocial: 'Outra Empresa Tasks' },
+      }),
+    );
+    const otherContact = await withTenant(prisma, userId, workspace.id, (tx) =>
+      tx.contact.create({
         data: {
           workspaceId: workspace.id,
-          userId: repUserId,
-          role: 'sales_rep',
-          status: 'active',
-          joinedAt: new Date(),
+          companyId: otherCompany.id,
+          nome: 'Contato de outra empresa',
         },
       }),
     );
+    otherCompanyContactId = otherContact.id;
 
     const adminUserId = randomUUID();
     adminMembership = await withTenant(
@@ -96,7 +99,6 @@ describe('TaskController (e2e)', () => {
     );
 
     app = await createFakeAuthApp(membership);
-    repApp = await createFakeAuthApp(repMembership, 'rep@gamabrasil.com.br');
     adminApp = await createFakeAuthApp(
       adminMembership,
       'admin@gamabrasil.com.br',
@@ -111,9 +113,6 @@ describe('TaskController (e2e)', () => {
       tx.task.deleteMany({ where: { workspaceId: workspace.id } }),
     );
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
-      tx.taskList.deleteMany({ where: { workspaceId: workspace.id } }),
-    );
-    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.company.deleteMany({ where: { workspaceId: workspace.id } }),
     );
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
@@ -121,7 +120,6 @@ describe('TaskController (e2e)', () => {
     );
     await prisma.workspace.delete({ where: { id: workspace.id } });
     await app.close();
-    await repApp.close();
     await adminApp.close();
     await prisma.$disconnect();
   }, 20000);
@@ -149,6 +147,67 @@ describe('TaskController (e2e)', () => {
       .post('/tasks')
       .send({ title: 'Dois alvos', companyId, opportunityId: randomUUID() })
       .expect(400);
+  });
+
+  describe('Contato obrigatório pra ligação/reunião/visita/e-mail', () => {
+    it('CRÍTICO: rejeita tipo ligação sem contactId', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .send({ title: 'Ligar sem contato', companyId, tipo: 'ligacao' })
+        .expect(400);
+    });
+
+    it('CRÍTICO: rejeita tipo e-mail sem contactId', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .send({ title: 'E-mail sem contato', companyId, tipo: 'email' })
+        .expect(400);
+    });
+
+    it('cria tarefa tipo e-mail com contactId da mesma empresa', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks')
+        .send({
+          title: 'E-mail com contato',
+          companyId,
+          tipo: 'email',
+          contactId,
+        })
+        .expect(201);
+      expect((res.body as { contactId: string }).contactId).toBe(contactId);
+    });
+
+    it('cria tarefa tipo reunião com contactId da mesma empresa', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks')
+        .send({
+          title: 'Reunião com contato',
+          companyId,
+          tipo: 'reuniao',
+          contactId,
+        })
+        .expect(201);
+      expect((res.body as { contactId: string }).contactId).toBe(contactId);
+    });
+
+    it('CRÍTICO: rejeita contactId de outra empresa', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .send({
+          title: 'Visita com contato errado',
+          companyId,
+          tipo: 'visita',
+          contactId: otherCompanyContactId,
+        })
+        .expect(400);
+    });
+
+    it('não exige contato pra tipos fora da lista (proposta)', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .send({ title: 'Enviar proposta', companyId, tipo: 'proposta' })
+        .expect(201);
+    });
   });
 
   it('GET /tasks lista a tarefa criada', async () => {
@@ -190,71 +249,12 @@ describe('TaskController (e2e)', () => {
     expect((res.body as TaskBody).status).toBe('done');
   });
 
-  it('PATCH /tasks/:id volta status pra pending (reabrir sem mover de coluna)', async () => {
+  it('PATCH /tasks/:id volta status pra pending (reabrir)', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/tasks/${taskId}`)
       .send({ status: 'pending' })
       .expect(200);
     expect((res.body as TaskBody).status).toBe('pending');
-  });
-
-  describe('Kanban — task-lists (colunas)', () => {
-    let listIds: string[];
-    let doneListId: string;
-
-    it('GET /task-lists bootstrapa as 3 colunas padrão', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/task-lists')
-        .expect(200);
-      const lists = res.body as TaskListColumnBody[];
-      expect(lists).toHaveLength(3);
-      expect(lists.map((l) => l.name)).toEqual([
-        'A fazer',
-        'Em andamento',
-        'Concluída',
-      ]);
-      listIds = lists.map((l) => l.id);
-      doneListId = lists.find((l) => l.isDoneList)!.id;
-    });
-
-    it('POST /task-lists rejeitado pra sales_rep (403)', async () => {
-      await request(repApp.getHttpServer())
-        .post('/task-lists')
-        .send({ name: 'Revisão', order: 3 })
-        .expect(403);
-    });
-
-    it('POST /task-lists cria coluna nova (owner)', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/task-lists')
-        .send({ name: 'Revisão', order: 3 })
-        .expect(201);
-      expect((res.body as TaskListColumnBody).name).toBe('Revisão');
-    });
-
-    it('CRÍTICO: mover a tarefa pra coluna is_done_list marca status=done automaticamente', async () => {
-      const res = await request(app.getHttpServer())
-        .patch(`/tasks/${taskId}`)
-        .send({ listId: doneListId })
-        .expect(200);
-      const body = res.body as TaskBody & { listId: string };
-      expect(body.status).toBe('done');
-      expect(body.listId).toBe(doneListId);
-    });
-
-    it('sair da coluna concluída volta status pra pending', async () => {
-      const res = await request(app.getHttpServer())
-        .patch(`/tasks/${taskId}`)
-        .send({ listId: listIds[0] })
-        .expect(200);
-      expect((res.body as TaskBody).status).toBe('pending');
-    });
-
-    it('DELETE /task-lists/:id bloqueado se a coluna ainda tem tarefas (409)', async () => {
-      await request(app.getHttpServer())
-        .delete(`/task-lists/${listIds[0]}`)
-        .expect(409);
-    });
   });
 
   describe('Cartão — checklist e comentários', () => {
@@ -265,7 +265,10 @@ describe('TaskController (e2e)', () => {
       const res = await request(app.getHttpServer())
         .get(`/tasks/${taskId}`)
         .expect(200);
-      const body = res.body as { checklistItems: unknown[]; comments: unknown[] };
+      const body = res.body as {
+        checklistItems: unknown[];
+        comments: unknown[];
+      };
       expect(body.checklistItems).toEqual([]);
       expect(body.comments).toEqual([]);
     });

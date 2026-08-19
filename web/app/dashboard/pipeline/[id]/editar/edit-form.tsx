@@ -1,4 +1,5 @@
 import type { OpportunityDetail } from "../../_detail/load";
+import SubmitButton from "@/app/_components/submit-button";
 
 // Compartilhado entre a versão full-page e a versão modal do "Editar
 // oportunidade" — só etapa/valor/moeda/previsão (a empresa vinculada não
@@ -41,9 +42,9 @@ export default function EditForm({
         Previsão de fechamento
         <input name="expectedCloseDate" type="date" defaultValue={o.expectedCloseDate?.slice(0, 10) ?? ""} />
       </label>
-      <button type="submit" className="btn btn-primary">
+      <SubmitButton className="btn btn-primary" pendingLabel="Salvando…">
         Salvar
-      </button>
+      </SubmitButton>
     </form>
   );
 }

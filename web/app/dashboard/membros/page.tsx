@@ -3,7 +3,9 @@ import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { listMemberships } from "@/lib/api/memberships";
 import type { Membership } from "@/lib/api/types";
-import { ROLE_LABELS, ROLE_PILL, memberLogin, memberName } from "./roles";
+import { removeMemberAction } from "./actions";
+import ConfirmSubmitButton from "./confirm-submit-button";
+import { ROLE_LABELS, ROLE_PILL, memberEmail, memberLogin, memberName } from "./roles";
 
 export default async function MembrosPage({
   searchParams,
@@ -17,6 +19,10 @@ export default async function MembrosPage({
     listMemberships(token),
   ]);
   const canManage = me.membership.role === "owner" || me.membership.role === "admin";
+  // Gerente cadastra (pedido direto do usuário, 2026-08-06), mas não edita
+  // nem remove membro nenhum — isso continua exclusivo de owner/admin
+  // (canManage acima, controla a coluna de ações e o editar/excluir).
+  const canCreate = canManage || me.membership.role === "manager";
 
   const managerName = (managerId: string | null) => {
     if (!managerId) return "—";
@@ -34,7 +40,7 @@ export default async function MembrosPage({
             gerente vê o próprio + o dos subordinados (definido aqui)
           </div>
         </div>
-        {canManage && (
+        {canCreate && (
           <Link href="/dashboard/membros/novo" className="btn btn-primary">
             + Novo membro
           </Link>
@@ -49,6 +55,7 @@ export default async function MembrosPage({
             <tr>
               <th>Nome</th>
               <th>Login</th>
+              <th>E-mail</th>
               <th>Papel</th>
               <th>Gerente</th>
               {canManage && <th></th>}
@@ -58,12 +65,10 @@ export default async function MembrosPage({
             {members.map((member) => (
               <tr key={member.id}>
                 <td>
-                  <span className="t-co">
-                    {memberName(member)}
-                    {member.userId === me.user.id ? " (você)" : ""}
-                  </span>
+                  <span className="t-co">{memberName(member)}</span>
                 </td>
                 <td className="t-sub">{memberLogin(member)}</td>
+                <td className="t-sub">{memberEmail(member)}</td>
                 <td>
                   <span className={ROLE_PILL[member.role]}>{ROLE_LABELS[member.role]}</span>
                 </td>
@@ -81,6 +86,19 @@ export default async function MembrosPage({
                           <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
                         </svg>
                       </Link>
+                      <form>
+                        <input type="hidden" name="id" value={member.id} />
+                        <ConfirmSubmitButton
+                          formAction={removeMemberAction}
+                          confirmMessage={`Remover ${memberName(member)}? Essa ação não pode ser desfeita.`}
+                          className="icon-btn danger"
+                          title="Excluir"
+                        >
+                          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" />
+                          </svg>
+                        </ConfirmSubmitButton>
+                      </form>
                     </div>
                   </td>
                 )}
@@ -88,7 +106,7 @@ export default async function MembrosPage({
             ))}
             {members.length === 0 && (
               <tr>
-                <td colSpan={canManage ? 5 : 4} className="empty">
+                <td colSpan={canManage ? 6 : 5} className="empty">
                   Nenhum membro encontrado.
                 </td>
               </tr>

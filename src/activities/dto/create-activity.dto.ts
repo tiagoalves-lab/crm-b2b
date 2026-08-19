@@ -32,4 +32,12 @@ export class CreateActivityDto {
   @IsString()
   @MaxLength(50)
   subtipo?: string;
+
+  // Contato da empresa vinculada — obrigatório quando `subtipo` é
+  // ligação/reunião/visita/e-mail (checado em ActivityService, não dá pra
+  // expressar "obrigatório condicional ao valor de outro campo" só com
+  // decorators, mesmo padrão de Task.contactId).
+  @IsOptional()
+  @IsUUID()
+  contactId?: string;
 }

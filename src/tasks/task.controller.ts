@@ -31,7 +31,11 @@ export class TaskController {
     @Body() dto: CreateTaskDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.tasks.create(tx, membership, dto),
     );
   }
@@ -42,7 +46,11 @@ export class TaskController {
     @Query() query: ListTasksQueryDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.tasks.findAll(tx, membership, query),
     );
   }
@@ -53,7 +61,11 @@ export class TaskController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.tasks.findOne(tx, membership, id),
     );
   }
@@ -65,7 +77,11 @@ export class TaskController {
     @Body() dto: UpdateTaskDto,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.tasks.update(tx, membership, id, dto),
     );
   }
@@ -77,7 +93,11 @@ export class TaskController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tenantContext.run(
-      { userId: membership.userId, workspaceId: membership.workspaceId, role: membership.role },
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
       (tx) => this.tasks.remove(tx, membership, id),
     );
   }

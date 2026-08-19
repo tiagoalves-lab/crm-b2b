@@ -67,7 +67,11 @@ export async function createFakeAuthApp(
     .useValue(new FakeMembershipGuard(membership))
     .compile();
 
-  const app = moduleRef.createNestApplication();
+  // `rawBody: true` espelha main.ts — sem isso `request.rawBody` chega
+  // undefined e a validação de assinatura do webhook do Meta recusaria tudo
+  // por falta do corpo cru, e não por assinatura errada. O teste passaria
+  // verde sem nunca exercitar o HMAC (ver test/idor.e2e-spec.ts).
+  const app = moduleRef.createNestApplication({ rawBody: true });
   // main.ts registra o ValidationPipe global via bootstrap() — os testes
   // e2e não passam por ali (criam a app direto do TestingModule), então
   // precisa registrar de novo aqui com a mesma config.
