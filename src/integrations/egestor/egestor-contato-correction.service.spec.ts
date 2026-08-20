@@ -886,7 +886,7 @@ describe('EgestorContatoCorrectionService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('lança BadRequestException quando o CRM não traz valor útil pra nenhum campo divergente', async () => {
+    it('lança BadRequestException quando não há nada a corrigir (CRM e eGestor igualmente em branco)', async () => {
       const service = new EgestorContatoCorrectionService(
         {} as EgestorAuthService,
         {} as EgestorHttpService,
@@ -894,8 +894,99 @@ describe('EgestorContatoCorrectionService', () => {
         { registrar: jest.fn() } as unknown as EgestorWebhookEchoService,
       );
 
+      const row = linha({
+        camposDiferentes: [],
+        dadosMatriz: { codigo: 10 },
+        dadosFilial: { codigo: 20 },
+      });
+
       await expect(
-        service.aplicarCorrecaoCrmNoEgestor(linha(), crm()), // sem razaoSocial/logradouro etc.
+        service.aplicarCorrecaoCrmNoEgestor(row, crm()),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // Regra 1.3 de docs/regras-de-negocio.md, implementada 2026-08-20:
+    // escolhida a direção, os dois lados ficam iguais inclusive quando isso
+    // significa apagar. Até aqui o campo em branco no CRM era simplesmente
+    // ignorado e o valor antigo do eGestor sobrevivia.
+    it('campo em branco no CRM APAGA o valor do eGestor (não é mais ignorado)', async () => {
+      const auth = {
+        getAccessToken: jest
+          .fn()
+          .mockImplementation((estabelecimento: string) =>
+            Promise.resolve(`token-${estabelecimento}`),
+          ),
+      } as unknown as EgestorAuthService;
+      const put = jest.fn().mockResolvedValue({});
+      const http = {
+        getOne: jest
+          .fn()
+          .mockImplementation((_token: string, path: string) =>
+            Promise.resolve(
+              path.endsWith('/10')
+                ? { codigo: '10', complemento: 'SALA 2' }
+                : { codigo: '20', complemento: 'SALA 2' },
+            ),
+          ),
+        put,
+      } as unknown as EgestorHttpService;
+      const service = new EgestorContatoCorrectionService(
+        auth,
+        http,
+        {} as CompanyService,
+        { registrar: jest.fn() } as unknown as EgestorWebhookEchoService,
+      );
+
+      const row = linha({
+        camposDiferentes: [],
+        status: EgestorContatoStatus.ambos_iguais,
+        dadosMatriz: { codigo: 10, complemento: 'SALA 2' },
+        dadosFilial: { codigo: 20, complemento: 'SALA 2' },
+      });
+
+      const resultado = await service.aplicarCorrecaoCrmNoEgestor(
+        row,
+        crm({ complemento: null }),
+      );
+
+      expect(resultado.camposConsolidados).toEqual(['complemento']);
+      expect(put).toHaveBeenCalledTimes(2);
+      expect(put.mock.calls[0][2]).toMatchObject({ complemento: '' });
+      expect(put.mock.calls[1][2]).toMatchObject({ complemento: '' });
+      expect(resultado.dadosMatrizAtualizados.complemento).toBe('');
+      expect(resultado.dadosFilialAtualizados.complemento).toBe('');
+    });
+
+    // Exceções deliberadas à regra acima (ver CAMPOS_CRM_SEM_APAGAR):
+    // razão social é a identidade do registro no ERP, e campo fiscal em
+    // branco no CRM significa "o CRM não sabe" (regra 4.1).
+    it('NÃO apaga razão social nem campo fiscal quando o CRM está em branco', async () => {
+      const service = new EgestorContatoCorrectionService(
+        {} as EgestorAuthService,
+        {} as EgestorHttpService,
+        {} as CompanyService,
+        { registrar: jest.fn() } as unknown as EgestorWebhookEchoService,
+      );
+
+      const row = linha({
+        camposDiferentes: [],
+        status: EgestorContatoStatus.ambos_iguais,
+        dadosMatriz: {
+          codigo: 10,
+          nome: 'EMPRESA X',
+          inscricaoEstadual: '111222333',
+          indicadorIE: 1,
+        },
+        dadosFilial: {
+          codigo: 20,
+          nome: 'EMPRESA X',
+          inscricaoEstadual: '111222333',
+          indicadorIE: 1,
+        },
+      });
+
+      await expect(
+        service.aplicarCorrecaoCrmNoEgestor(row, crm()),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -917,9 +1008,17 @@ describe('EgestorContatoCorrectionService', () => {
       );
 
       // Matriz já bate com o CRM ("Empresa Matriz"), só a Filial está errada.
+      // Logradouro igual nos três lados de propósito: campo em branco no CRM
+      // hoje APAGA no eGestor, e o foco deste teste é a direção do PUT.
       const resultado = await service.aplicarCorrecaoCrmNoEgestor(
-        linha(),
-        crm({ razaoSocial: 'Empresa Matriz' }),
+        linha({
+          dadosFilial: {
+            codigo: 20,
+            nome: 'Empresa Filial Errado',
+            logradouro: 'Rua Certa',
+          },
+        }),
+        crm({ razaoSocial: 'Empresa Matriz', logradouro: 'Rua Certa' }),
       );
 
       expect(auth.getAccessToken).toHaveBeenCalledTimes(1);
@@ -960,8 +1059,15 @@ describe('EgestorContatoCorrectionService', () => {
       );
 
       const resultado = await service.aplicarCorrecaoCrmNoEgestor(
-        linha({ camposDiferentes: ['nome'] }),
-        crm({ razaoSocial: 'Empresa Oficial do CRM' }),
+        linha({
+          camposDiferentes: ['nome'],
+          dadosFilial: {
+            codigo: 20,
+            nome: 'Empresa Filial Errado',
+            logradouro: 'Rua Certa',
+          },
+        }),
+        crm({ razaoSocial: 'Empresa Oficial do CRM', logradouro: 'Rua Certa' }),
       );
 
       expect(http.put).toHaveBeenCalledTimes(2);

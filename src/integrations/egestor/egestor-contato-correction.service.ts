@@ -134,6 +134,16 @@ const CAMPOS_CRM_ESCRITA: Partial<Record<string, keyof CrmContatoFonte>> = {
   indicadorIE: 'indicadorIE',
 };
 
+// Campos de CAMPOS_CRM_ESCRITA onde branco no CRM NÃO apaga o valor do
+// eGestor — a exceção à regra 1.3 ("campo vazio na origem esvazia o
+// destino"). O porquê de cada um está em extrairValoresDoCrm, que é quem
+// aplica esta lista.
+const CAMPOS_CRM_SEM_APAGAR = new Set([
+  'nome',
+  'inscricaoEstadual',
+  'indicadorIE',
+]);
+
 export type EgestorContatoComCrm = EgestorContatoConsolidado & {
   crm: CrmContatoFonte | null;
   // Campos onde o CRM diverge de Matriz e/ou Filial — calculado mesmo
@@ -611,13 +621,11 @@ export class EgestorContatoCorrectionService {
     row: EgestorContatoConsolidado,
     crm: CrmContatoFonte | null,
   ): Promise<AplicarConsolidacaoResult> {
-    const valoresCrm = crm
-      ? extrairValoresDeFonte(CAMPOS_CRM_ESCRITA, crm)
-      : {};
+    const valoresCrm = crm ? extrairValoresDoCrm(crm) : {};
     return this.aplicarValoresDeFonteNoEgestor(
       row,
       valoresCrm,
-      'O cadastro desta empresa no CRM não tem valor útil pra nenhum campo desta linha — empresa não cadastrada no CRM, campo vazio no cadastro, campo não coberto por este cadastro, ou os dois lados já batem com o CRM.',
+      'O cadastro desta empresa no CRM não tem nada a corrigir nesta linha — empresa não cadastrada no CRM, campo não coberto por este cadastro, ou os dois lados já batem com o CRM.',
     );
   }
 
@@ -984,13 +992,13 @@ export class EgestorContatoCorrectionService {
 }
 
 // Resolve, campo a campo (todo campo coberto por `mapa`), o valor de uma
-// fonte externa a Matriz/Filial (Receita/CnpjLookupResult ou
-// CRM/CrmContatoFonte — ver CAMPOS_SEFAZ/CAMPOS_CRM_ESCRITA) — compartilhado
-// aplicarCorrecaoSefazNoEgestor e aplicarCorrecaoCrmNoEgestor. Campo com
-// valor vazio/não-string na fonte fica de fora (sem fonte confiável pra
-// decidir nada sobre aquele campo). Não filtra mais por
-// `row.camposDiferentes` (mudou em 2026-08-14) — ver comentário nos 2 call
-// sites acima sobre por quê.
+// fonte externa a Matriz/Filial (Receita/CnpjLookupResult — ver
+// CAMPOS_SEFAZ) — usado por aplicarCorrecaoSefazNoEgestor. Campo com valor
+// vazio/não-string na fonte fica de fora: consulta à Receita que volta sem
+// um campo significa "a Receita não respondeu isso", nunca "apague o que
+// está no eGestor". O CRM como fonte é o caso oposto e tem função própria
+// (extrairValoresDoCrm). Não filtra mais por `row.camposDiferentes` (mudou
+// em 2026-08-14) — ver comentário nos 2 call sites acima sobre por quê.
 function extrairValoresDeFonte<T>(
   mapa: Partial<Record<string, keyof T>>,
   fonte: T,
@@ -1002,6 +1010,38 @@ function extrairValoresDeFonte<T>(
     const bruto = fonte[chave];
     const valor = typeof bruto === 'string' ? bruto.trim() : undefined;
     if (!valor) continue;
+    valores[campo] = valor;
+  }
+  return valores;
+}
+
+// Idem, com o CRM (Company) como fonte — separado de extrairValoresDeFonte
+// justamente pelo tratamento do vazio. Regra 1.3 de
+// docs/regras-de-negocio.md (decisão do usuário, 2026-08-14, implementada
+// em 2026-08-20): escolhida a direção, os dois lados ficam iguais
+// **inclusive quando isso significa apagar** — campo em branco na ficha da
+// empresa passa a limpar o campo correspondente no eGestor, em vez de ser
+// ignorado como era até aqui (o valor antigo do ERP sobrevivia a um campo
+// apagado no CRM, e a divergência nem aparecia na tela).
+//
+// CAMPOS_CRM_SEM_APAGAR são a exceção — ali o branco continua significando
+// "o CRM não sabe", e o campo fica fora da correção:
+//   - `inscricaoEstadual`/`indicadorIE`: regra 4.1 do mesmo documento — o
+//     CRM recebe campo fiscal do eGestor e guarda, mas nunca serve de
+//     origem para um campo fiscal que ele não tem.
+//   - `nome` (razão social): é a identidade do registro no ERP; contato
+//     sem nome não é cadastro válido lá. Empresa sem razão social no CRM é
+//     cadastro incompleto, não instrução pra apagar o nome no eGestor.
+// `emails`/`fones` nem chegam aqui — são lista e ficam de fora de
+// CAMPOS_CRM_ESCRITA (o caminho deles é "Consolidar").
+function extrairValoresDoCrm(crm: CrmContatoFonte): Record<string, string> {
+  const valores: Record<string, string> = {};
+  for (const campo of Object.keys(CAMPOS_CRM_ESCRITA)) {
+    const chave = CAMPOS_CRM_ESCRITA[campo];
+    if (!chave) continue;
+    const bruto = crm[chave];
+    const valor = typeof bruto === 'string' ? bruto.trim() : '';
+    if (!valor && CAMPOS_CRM_SEM_APAGAR.has(campo)) continue;
     valores[campo] = valor;
   }
   return valores;
@@ -1034,7 +1074,7 @@ export function calcularCrmCamposDivergentes(
 
   const dadosMatriz = row.dadosMatriz as EgestorContatoRaw;
   const dadosFilial = row.dadosFilial as EgestorContatoRaw;
-  const valoresCrm = extrairValoresDeFonte(CAMPOS_CRM_ESCRITA, crm);
+  const valoresCrm = extrairValoresDoCrm(crm);
 
   return Object.keys(valoresCrm).filter(
     (campo) =>

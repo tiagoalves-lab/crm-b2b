@@ -13,6 +13,10 @@ Instrução explícita do usuário (2026-08-14), depois de reclamar de
   pro paciente, só trata a doença.
 - **Resposta curta.** O que mudou, o que ele precisa fazer (se precisar),
   e pronto. Detalhe técnico só se ele perguntar.
+- **Sempre em tópicos, nunca texto corrido** (instrução dele,
+  2026-08-20): cada tema/demanda vira um item próprio, com um título em
+  negrito e a informação embaixo. Parágrafo emendando vários assuntos
+  gera ruído — ele precisa conseguir avaliar item por item.
 - **Uma decisão por vez.** Nunca despejar várias perguntas ou várias
   frentes simultâneas — ele fica em conflito sobre o que fazer primeiro.
   Se houver várias pendências, escolher a que destrava as outras e

@@ -453,9 +453,7 @@ export async function sincronizarCompanyComEgestor(
     if (!novo) continue; // eGestor sem valor nunca apaga o do CRM
     const atual = (company as Record<string, unknown>)[campoCompany];
     const valor =
-      campoCompany === 'uf'
-        ? emCaixaAlta(novo).slice(0, 2)
-        : emCaixaAlta(novo);
+      campoCompany === 'uf' ? emCaixaAlta(novo).slice(0, 2) : emCaixaAlta(novo);
     if (valor !== (atual ?? '')) {
       data[campoCompany] = valor;
       alterados.push(rotulo);

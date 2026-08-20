@@ -51,6 +51,12 @@ espalharia erro em vez de corrigir. Então:
   significa apagar. Vazio deixou de ser "sem opinião" e passou a ser um
   valor como qualquer outro.
 - Fonte → Decisão do usuário, 2026-08-14.
+- Detalhe → Três exceções, em que branco continua significando "não sei":
+  razão social (é a identidade do registro no ERP — empresa sem razão
+  social no CRM é cadastro incompleto, não ordem de apagar o nome lá) e os
+  campos fiscais da regra 4.1. Consulta à Receita que volta sem um campo
+  também não apaga nada — só diz que a Receita não respondeu aquilo.
+  E-mails e telefones são lista e se resolvem por "Consolidar".
 
 **1.4**
 - Decisão → Entre Matriz e Filial, a correção automática **continua

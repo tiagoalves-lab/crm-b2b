@@ -58,17 +58,21 @@ escrita do próprio CRM dispara webhook de volta.
   pessoa é o `Contact`) — sem isso, nome e telefone de quem preencheu
   ficariam só como campo solto da empresa.
 
-❓ **DÚVIDA — quais formulários e quais campos**: falta levantar
-quais formulários de Lead Ads a Gama roda hoje e o que cada um pergunta.
-Sem isso o DE-PARA (`meta-lead-mapper.ts`) cobre só os **campos padrão**
-da Meta — `full_name`/`first_name`+`last_name`, `email`, `phone_number`,
-`company_name`, `city`, `state`, `cnpj`, com os aliases mais comuns de
-cada um. Pergunta customizada ("Qual produto te interessa?") **não se
-perde**: a resposta inteira do `GET /{leadgen_id}` é gravada em
-`meta_leads_webhook_events.lead_payload`, e o nome do campo não
-reconhecido sai no log da aplicação. O que ainda não existe é ela
-aparecer em alguma tela — decidir isso depois de ver os formulários
-reais.
+**Formulários da Página: levantados em 2026-08-20**
+- Decisão → o DE-PARA (`meta-lead-mapper.ts`) fica como está. A Página
+  tem **um** formulário ativo, que coleta só `email` e `nome_completo` —
+  os dois já cobertos pelos aliases de `CAMPOS_PADRAO`, sem pergunta
+  customizada nenhuma. Não há campo novo pra mapear hoje.
+- Fonte → consulta a `GET /{page-id}/leadgen_forms` com o token da
+  Página, 2026-08-20.
+
+❓ **DÚVIDA — onde aparece resposta de pergunta customizada**: quando um
+formulário passar a fazer pergunta própria ("Qual produto te
+interessa?"), a resposta **não se perde** — o retorno inteiro do
+`GET /{leadgen_id}` é gravado em `meta_leads_webhook_events.lead_payload`
+e o campo não reconhecido sai no log. O que não existe é ela aparecer em
+alguma tela pro representante. Decidir onde exibir quando o primeiro
+formulário com pergunta customizada entrar no ar.
 
 ## Como o fluxo funciona
 
@@ -248,66 +252,59 @@ Nomes em `.env.example`, valores nunca em commit/doc/chat.
 Todas opcionais no boot (não entram em `REQUIRED_VARS`) — sem elas só a
 ingestão do Meta não funciona, o resto do app roda normal.
 
-## O que falta pra ligar em produção
+## Estado da configuração
 
-**Estado em 2026-08-17.** Já feito e conferido contra produção:
+**Ligada em 2026-08-20.** O que está no ar:
 
-- Migration aplicada no banco real (`meta_leads_webhook_events` existe,
-  com RLS ativa).
-- Rota no ar no Railway — o handshake de verificação (`GET`) responde o
-  `hub.challenge` corretamente, testado de fora.
-- `META_VERIFY_TOKEN` gerado e gravado no Railway (valor só no painel,
-  nunca em commit/chat).
-- `META_LEADS_DEFAULT_OWNER_USER_ID` gravado — aponta pro único
-  `manager` ativo do workspace.
+- App **Integrador de Leads** (id `1216494030654783`), tipo Empresa,
+  vinculado ao Portfólio "Gama Manufatura Avançada". Existe um segundo
+  App de mesmo nome, sobra de uma criação duplicada, sem vínculo com o
+  Portfólio e sem uso.
+- Webhook do objeto **Page** apontando pra
+  `/integrations/meta-leads/webhook` no Railway, campo `leadgen`
+  assinado.
+- Página **Gama Manufatura Avançada** (id `268499809678438`) instalada no
+  App via `POST /{page-id}/subscribed_apps` com
+  `subscribed_fields=leadgen`. **Esse passo é separado** da assinatura no
+  painel do App: sem ele o webhook fica configurado e não chega nada.
+- As quatro variáveis de ambiente configuradas no Railway.
+- Migration aplicada e handshake de verificação respondendo.
 
-Faltam só `META_APP_SECRET` e `META_PAGE_ACCESS_TOKEN`, que só existem
-depois do App criado.
+### Como o token foi obtido — e por que não pelo Explorador da Graph API
 
-**Bloqueio atual: o cadastro do usuário no Meta for Developers.** O
-registro trava na etapa "Verify account" — o SMS com o código nunca
-chega. Já tentado: reenvio, conferência do número na Central de Contas
-(está completo e bem formado), e troca de número. A troca de número
-esbarrou no limite antispam do próprio Meta ("Convém ir com mais calma
-ou parar um pouco para evitar uma restrição na sua conta"), então a
-tentativa foi interrompida de propósito em 2026-08-17 — insistir arrisca
-restrição na conta pessoal.
+O App é do tipo **Empresa**. Nesse tipo a Meta usa o Facebook Login for
+Business, que exige uma configuração de login própria — o token de
+usuário gerado no Explorador da Graph API sai válido, com todas as
+permissões concedidas, e mesmo assim enxergando **zero Páginas**. Foi
+exatamente o que aconteceu aqui, duas vezes, até a causa ficar clara.
+Conferido na doc oficial (2026-08-20).
 
-Caminhos ainda não tentados, pra retomar: refazer o cadastro pelo
-navegador do celular (o Meta às vezes confirma pelo app, sem SMS);
-adicionar uma segunda linha na Central de Contas em vez de trocar a
-existente; ou verificar a conta por cartão, alternativa que o Meta
-aceita no lugar do SMS.
+O caminho que funciona é **usuário do sistema**, em Business Settings →
+Usuários → Usuários do sistema:
 
-Sequência completa, nesta ordem — os dois primeiros passos são **ação do
-usuário**, não dá pra automatizar de uma sessão de código:
+1. Criar o usuário do sistema com função **Employee**, não Admin. Ele só
+   precisa dos dois ativos abaixo; Admin daria acesso a todo o Portfólio
+   e ainda permitiria criar outros usuários do sistema.
+2. Atribuir a ele a **Página** (acesso total) e o **App**.
+3. Gerar token com expiração **Nunca** e as seis permissões da lista
+   acima.
+4. Derivar daí o token da Página (`GET /me/accounts`) — **é esse** que vai
+   em `META_PAGE_ACCESS_TOKEN`. Token de Página derivado de usuário do
+   sistema não expira.
 
-1. **Criar o App no Meta for Developers** vinculado ao Business
-   Portfolio da Gama, com o produto "Webhooks" e as permissões abaixo.
-   Passa por **App Review** da Meta pra funcionar fora do modo
-   desenvolvimento.
+Vantagem sobre o token pessoal, além de não expirar: não quebra quando a
+pessoa que autorizou sai da empresa.
 
-   Lista conferida na doc oficial em 2026-08-14 — a doc lista conjuntos
-   ligeiramente **diferentes** em duas páginas ("Retrieving Leads" e
-   "Webhooks for Lead Ads"), então aqui está a união das duas, que é o
-   conjunto seguro de pedir:
+## O que falta
 
-   - `leads_retrieval` — ler o lead em si (`GET /{leadgen_id}`).
-   - `pages_manage_metadata` — **inscrever a Página no webhook**. É a que
-     falta com mais frequência: sem ela não dá nem pra ativar a
-     assinatura do campo `leadgen`, mesmo com todas as outras.
-   - `pages_show_list` — listar as Páginas do Portfólio.
-   - `pages_read_engagement` — ler dados da Página.
-   - `ads_management` — acessar o lead com os dados de anúncio junto.
-   - `pages_manage_ads` — citada na página "Retrieving Leads" (não na de
-     webhooks); incluída por segurança.
-2. **Assinar o campo `leadgen`** na Página, apontando a URL de callback
-   pro Railway (`/integrations/meta-leads/webhook`) com o
-   `META_VERIFY_TOKEN` combinado.
-3. Configurar as 4 variáveis no Railway.
-4. Aplicar a migration no banco (`prisma migrate deploy`).
-5. **Testar ponta a ponta** — mesma metodologia do webhook eGestor:
-   capturar um payload real via webhook.site primeiro (a Meta tem a
-   ferramenta "Testar" no painel do App, que dispara um evento de
-   exemplo), só depois apontar pro Railway e usar o formulário de teste
-   da Central de Leads.
+1. **Teste ponta a ponta.** `POST /{form-id}/test_leads` cria um lead de
+   teste que dispara o webhook de verdade e permite acompanhar o caminho
+   até a tela de Prospecção. A Meta permite **um** lead de teste por
+   formulário. Ainda não feito.
+2. **Modo desenvolvimento.** O App ainda está em modo desenvolvimento.
+   Falta confirmar se receber lead de anúncio no ar exige passar por App
+   Review, e fazer o pedido se exigir.
+3. **Qualidade do lead.** O único formulário ativo pede só nome e
+   e-mail — sem empresa, telefone ou CNPJ, o lead nasce magro pro que um
+   CRM B2B precisa. Revisar o formulário é decisão de marketing, já está
+   no Kanban.

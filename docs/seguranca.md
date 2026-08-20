@@ -392,6 +392,35 @@ o cenário A do modelo de ameaça — o mais provável de todos.
     ação), mas o teste precisa mandar corpo **válido** — senão passaria
     verde sem nunca ter exercitado a autorização. Um falso "protegido".
 
+**4.7 — Acesso exige cadastro prévio (não basta ter conta no Supabase).**
+- Decisão → Um login válido do Supabase Auth **não** entra sozinho no
+  CRM. Só entra quem um gestor já cadastrou (`POST /memberships`).
+  `TenantMembershipGuard` nega (403) qualquer usuário autenticado sem
+  `Membership` no workspace. Única exceção: o bootstrap do primeiríssimo
+  login de um workspace **vazio** (vira owner), que em produção já
+  ocorreu e nunca mais dispara.
+- Fonte → Auditoria de 2026-08-20. Até então o guard **criava um
+  `sales_rep` automático** pra qualquer JWT válido — o que transformava
+  "ter conta no Supabase Auth" em "ser funcionário da Gama" (cenário B do
+  modelo de ameaça). A porta só não era explorável de fora porque a
+  chave pública do Supabase não vaza pro navegador (decisão 3.4.3) — uma
+  única barreira, do tipo que a decisão 3.4.3 avisa **não** bastar
+  sozinha. O cadastro público do Supabase (`disable_signup=false`) era a
+  outra metade da mesma porta.
+- Estado → ✅ **As duas metades fechadas e verificadas em 2026-08-20.**
+  - **Metade do código** (guard) → corrigida e publicada no Railway.
+    `test/membership-gate.e2e-spec.ts` exercita o guard **real** contra a
+    RLS real (não o stub de `test/utils/fake-auth.ts`): prova que um
+    usuário sem cadastro leva 403 **e** que nada é criado no banco, e que
+    um membro já cadastrado continua entrando.
+  - **Metade da configuração** (Supabase) → cadastro público desligado no
+    painel (Authentication → Sign In / Providers → User Signups →
+    *Allow new users to sign up*). Verificado no servidor, não só na tela:
+    `/auth/v1/settings` devolve `disable_signup=true`, e uma tentativa
+    real de `POST /auth/v1/signup` agora responde `signup_disabled`
+    (*"Signups not allowed for this instance"*), onde antes prosseguia.
+    `Confirm email` segue ligada.
+
 ---
 
 ## 5. Superfície HTTP — CORS, cabeçalhos e rate limiting
@@ -1045,3 +1074,43 @@ desta vez, por disciplina, mas disciplina é exatamente o que a varredura
 existe pra substituir. Correção proposta: exigir que **toda** rota
 `@Public()` esteja em `ROTAS_PUBLICAS`, lendo o metadado do decorator
 via `Reflector` em vez de inferir pelo formato do caminho.
+
+**2026-08-20 — auditoria a pedido ("achar como o CRM se expõe a
+invasor").** Varredura completa (rotas, segredos, RLS, dependências,
+injeção/XSS, superfície HTTP), com verificação empírica assumindo o
+papel do atacante no banco de produção.
+
+Confirmado **sem** achado novo em: isolamento de dados (23 tabelas com
+RLS forçada; papel `app_runtime` sem `BYPASSRLS`; a view corrigida em
+3.4.1 segue com `security_invoker=true`), segredos (nada sem
+`NEXT_PUBLIC_` em `web/`, nada em código/commit/doc), injeção/XSS,
+cabeçalhos HTTP e CORS em produção (conferidos no ar), JWT recusando
+`HS256`.
+
+Achado que gerou mudança:
+  - **Acesso sem cadastro prévio** — `TenantMembershipGuard` promovia
+    qualquer JWT válido a `sales_rep` automático. Fechado: decisão 4.7,
+    com `test/membership-gate.e2e-spec.ts`. Publicado no mesmo dia.
+  - **Cadastro público do Supabase aberto** (`disable_signup=false`) —
+    a outra metade da mesma porta. Desligado no painel (ação do usuário)
+    e **verificado no servidor**: `signup` agora responde
+    `signup_disabled`. Sozinho não era explorável de fora porque a chave
+    pública não vaza pro navegador (3.4.3), mas depender só disso é a
+    barreira única que a própria 3.4.3 avisa não bastar.
+
+Correção de rota importante sobre o laudo inicial: a exposição de uma
+conta recém-criada **não** era "a carteira comercial inteira" — a RLS
+por dono (decisão 4.1/seção 3) barra empresas, leads e vendas de quem
+não é dono. Um `sales_rep` de fora enxergaria a **lista de membros**
+(nome/login/e-mail, via enriquecimento do `GET /memberships`) e a
+estrutura do funil, além de poder criar registros. Real, mas de tamanho
+diferente. A lição bate com a decisão 3.4.4: medir assumindo o papel do
+atacante antes de afirmar o tamanho do vazamento.
+
+**Pendências de configuração (não-código), a cargo do usuário:**
+- 🔒 **Senha fraca permitida** no Supabase Auth — mínimo de 6 caracteres,
+  sem checagem de senha vazada (HaveIBeenPwned). Baixo risco num app de
+  8 logins internos; registrar como risco aceito ou ligar a proteção no
+  painel (Authentication → Policies).
+- ⚠️ **Dependências `high` no `web/`** (4) só somem com `next@16` — a
+  mesma dívida datada em 7.3, ainda aberta.

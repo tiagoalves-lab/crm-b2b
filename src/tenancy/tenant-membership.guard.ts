@@ -12,13 +12,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService, type TenantTx } from './tenant-context.service';
 
 // Ferramenta interna de uso colaborativo da Gama — não é SaaS multi-tenant
-// pra clientes externos. Só existe um workspace; todo login válido entra
-// automaticamente nele, sem tela de "criar workspace" nem convite por
-// token (isso fica pra uma rodada futura, se algum dia for preciso separar
-// por área/filial — o modelo Workspace/Membership já suporta isso).
+// pra clientes externos. Só existe um workspace. Acesso exige cadastro
+// prévio: um login válido do Supabase Auth SÓ entra se um gestor já o
+// cadastrou (POST /memberships). A única exceção é o bootstrap do
+// primeiríssimo login de um workspace vazio (vira owner), que em produção
+// já ocorreu e nunca mais dispara. Antes da auditoria de 2026-08-20,
+// qualquer login válido era promovido a sales_rep automaticamente — o que
+// transformava "ter conta no Supabase" em "ser funcionário da Gama". Ver
+// docs/seguranca.md, seção 0 (cenário B).
 const DEFAULT_WORKSPACE_SLUG = 'gama';
 const DEFAULT_WORKSPACE_NAME = 'Gama Brasil';
-const DEFAULT_ROLE: MembershipRole = 'sales_rep';
 
 export interface MembershipContext {
   id: string;
@@ -89,10 +92,9 @@ export class TenantMembershipGuard implements CanActivate {
     workspaceId: string,
     userId: string,
   ): Promise<MembershipContext> {
-    // Não usa mais upsert simples — precisa decidir o papel do primeiro
-    // membro (owner) antes de criar, então checa existência primeiro. Se
-    // já existir, devolve como está — não queremos rebaixar alguém que um
-    // admin promoveu manualmente de volta pra sales_rep a cada novo login.
+    // Já tem cadastro: devolve como está — não queremos rebaixar alguém
+    // que um admin promoveu manualmente de volta pra sales_rep a cada novo
+    // login.
     const existing = await tx.membership.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
     });
@@ -100,32 +102,42 @@ export class TenantMembershipGuard implements CanActivate {
       return this.toMembershipContext(existing);
     }
 
-    // Primeiro membro do workspace vira owner — sem isso ninguém consegue
-    // promover ninguém (todo login novo cairia em sales_rep pra sempre, e
-    // não existe outro jeito de virar owner além de mexer direto no banco).
+    // Bootstrap: SÓ o primeiro login de um workspace vazio vira owner
+    // automaticamente — sem isso ninguém conseguiria virar owner sem mexer
+    // direto no banco. Em produção o workspace já tem membros, então este
+    // ramo nunca mais dispara aqui; ele protege só ambiente novo/local/de
+    // teste.
     const memberCount = await tx.membership.count({ where: { workspaceId } });
-    const role: MembershipRole = memberCount === 0 ? 'owner' : DEFAULT_ROLE;
-
-    try {
-      const created = await tx.membership.create({
-        data: {
-          workspaceId,
-          userId,
-          role,
-          status: 'active',
-          joinedAt: new Date(),
-        },
-      });
-      return this.toMembershipContext(created);
-    } catch {
-      // Corrida rara: duas requests do mesmo usuário criando ao mesmo
-      // tempo (ex.: dois cliques de login quase simultâneos). Quem perdeu
-      // a corrida do unique constraint busca o que a outra já criou.
-      const raced = await tx.membership.findUniqueOrThrow({
-        where: { workspaceId_userId: { workspaceId, userId } },
-      });
-      return this.toMembershipContext(raced);
+    if (memberCount === 0) {
+      try {
+        const created = await tx.membership.create({
+          data: {
+            workspaceId,
+            userId,
+            role: 'owner',
+            status: 'active',
+            joinedAt: new Date(),
+          },
+        });
+        return this.toMembershipContext(created);
+      } catch {
+        // Corrida rara: dois cliques de login quase simultâneos no
+        // bootstrap. Quem perdeu a corrida do unique constraint busca o
+        // que a outra já criou.
+        const raced = await tx.membership.findUniqueOrThrow({
+          where: { workspaceId_userId: { workspaceId, userId } },
+        });
+        return this.toMembershipContext(raced);
+      }
     }
+
+    // Workspace já tem membros e este login não tem cadastro: NEGA. Esta
+    // linha era, antes, a criação automática de um sales_rep pra qualquer
+    // login válido — a porta que a auditoria de 2026-08-20 fechou. Acesso
+    // agora exige cadastro prévio feito por um gestor.
+    throw new ForbiddenException(
+      'Seu login não tem acesso a este sistema. Peça a um gestor para cadastrá-lo.',
+    );
   }
 
   private toMembershipContext(row: {

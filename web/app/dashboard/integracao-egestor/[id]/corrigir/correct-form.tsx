@@ -422,7 +422,9 @@ export default function CorrectForm({ row }: { row: EgestorContatoConsolidado })
             &ldquo;Dados cadastrais&rdquo;) contra o que está na Matriz e na Filial — corrige só
             o(s) lado(s) que estiver(em) diferente(s) do CRM. Detecta mesmo quando Matriz e Filial
             já são iguais entre si (grava nos dois nesse caso). Atualiza só o eGestor — o cadastro
-            do CRM já é a fonte, não muda.
+            do CRM já é a fonte, não muda. Campo em branco no CRM <strong>apaga</strong> o valor
+            correspondente no eGestor; razão social, inscrição estadual e indicador de IE são a
+            exceção — em branco ali, ficam como estão.
           </>
         ) : (
           <>
