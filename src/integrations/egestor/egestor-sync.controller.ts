@@ -22,6 +22,7 @@ import { EgestorContatoSyncService } from './egestor-contato-sync.service';
 import { CompanyService } from '../../companies/company.service';
 import { PolicyService } from '../../policy/policy.service';
 import { EgestorInteractionLogService } from './egestor-interaction-log.service';
+import { EgestorVendaSyncService } from './egestor-venda-sync.service';
 import {
   descreverContato,
   descreverEmpresa,
@@ -54,6 +55,7 @@ export class EgestorSyncController {
     private readonly policy: PolicyService,
     private readonly companies: CompanyService,
     private readonly cartaoCnpj: EgestorCartaoCnpjService,
+    private readonly vendas: EgestorVendaSyncService,
   ) {}
 
   // Síncrono de propósito (decisão registrada em
@@ -107,6 +109,81 @@ export class EgestorSyncController {
     );
 
     return { ...stats, ...summary };
+  }
+
+  // Carga do histórico de vendas das duas contas (raia "Vendas histórico"
+  // do roadmap) — alimenta LTV/última compra/aba Pós-venda. Mesma
+  // separação fetch-fora/persist-dentro do sync de contatos, pelo mesmo
+  // motivo (23 páginas de API com throttle de 1,1s não podem segurar
+  // conexão do pool aberta).
+  //
+  // Pré-requisito: o sync de Contatos precisa ter rodado e as linhas
+  // promovidas — é o espelho de contatos que diz qual `codContato` do
+  // eGestor é qual empresa do CRM. Venda de cliente ainda não promovido
+  // não é perdida em silêncio: volta no resumo como "órfã".
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('sync/vendas')
+  async syncVendas(
+    @CurrentMembership() membership: MembershipContext,
+    @Query('maxPages') maxPages?: string,
+  ) {
+    if (!SYNC_ROLES.has(membership.role)) {
+      throw new ForbiddenException(
+        'Só owner/admin podem rodar a sincronização do eGestor.',
+      );
+    }
+
+    const parsedMaxPages = maxPages ? Number.parseInt(maxPages, 10) : undefined;
+    const options =
+      parsedMaxPages && Number.isFinite(parsedMaxPages) && parsedMaxPages > 0
+        ? { maxPages: parsedMaxPages }
+        : undefined;
+
+    const ctx = {
+      userId: membership.userId,
+      workspaceId: membership.workspaceId,
+      role: membership.role,
+    };
+
+    // Transação curta só pra saber quem são os membros — o casamento
+    // vendedor do eGestor × membro do CRM acontece contra o Supabase Auth
+    // (fora do Postgres), na fase de rede.
+    const membroUserIds = await this.tenantContext.run(ctx, (tx) =>
+      tx.membership
+        .findMany({
+          where: { workspaceId: membership.workspaceId },
+          select: { userId: true },
+        })
+        .then((ms) => ms.map((m) => m.userId)),
+    );
+
+    const fetched = await this.vendas.fetch(membroUserIds, options);
+
+    const summary = await this.tenantContext.run(
+      ctx,
+      async (tx) => {
+        const resultado = await this.vendas.persist(
+          tx,
+          membership.workspaceId,
+          fetched,
+        );
+        await this.interactionLog.registrar(tx, membership.workspaceId, {
+          origin: 'crm',
+          action: 'sincronizar_vendas',
+          summary: `Sincronização manual de vendas disparada — ${fetched.totalMatriz} venda(s) na Matriz e ${fetched.totalFilial} na Filial consultadas via API; tabela sales_history regravada com ${resultado.gravadas} venda(s) de ${resultado.empresasComVenda} empresa(s) (${resultado.novas} nova(s), ${resultado.removidas} que não existem mais no eGestor) e ${resultado.itensGravados} item(ns) de produto/serviço em sales_history_item${resultado.orfas > 0 ? `; ${resultado.orfas} cliente(s) do eGestor ainda sem empresa correspondente no CRM tiveram as vendas ignoradas` : ''}${resultado.semVendedorVinculado > 0 ? `; ${resultado.semVendedorVinculado} venda(s) sem vendedor vinculado a membro do CRM${fetched.vendedoresSemMembro.length > 0 ? ` (${fetched.vendedoresSemMembro.join(', ')})` : ''}` : ''}${fetched.descartadas > 0 ? `; ${fetched.descartadas} linha(s) da API sem código/cliente/data descartada(s)` : ''}.`,
+        });
+        return resultado;
+      },
+      { timeoutMs: 120_000 },
+    );
+
+    return {
+      totalMatriz: fetched.totalMatriz,
+      totalFilial: fetched.totalFilial,
+      descartadas: fetched.descartadas,
+      vendedoresSemMembro: fetched.vendedoresSemMembro,
+      ...summary,
+    };
   }
 
   // Promove linhas "limpas" (so_matriz/so_filial/ambos_iguais) da tabela

@@ -4,6 +4,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import type { TenantContextService } from '../../tenancy/tenant-context.service';
 import type { EgestorCartaoCnpjService } from './egestor-cartao-cnpj.service';
 import type { EgestorInteractionLogService } from './egestor-interaction-log.service';
+import type { EgestorVendaSyncService } from './egestor-venda-sync.service';
 import type { EgestorWebhookEchoService } from './egestor-webhook-echo.service';
 import type {
   EgestorWebhookProcessingService,
@@ -124,6 +125,8 @@ function criarService(overrides: {
   processingCompletar?: jest.Mock;
   processingFinalizar?: jest.Mock;
   cartaoPreencher?: jest.Mock;
+  buscarVendaFresca?: jest.Mock;
+  aplicarEventoVenda?: jest.Mock;
   fakeTxHolder?: ReturnType<typeof criarFakeTx>;
 }) {
   const fakeTxHolder = overrides.fakeTxHolder ?? criarFakeTx();
@@ -174,6 +177,21 @@ function criarService(overrides: {
     preencherSeFaltando,
   } as unknown as EgestorCartaoCnpjService;
 
+  // Módulo "vendas" (2026-08-20) — pipeline próprio, bem mais curto que o
+  // de contatos. Os testes deste arquivo cobrem contatos; o dublê existe
+  // só pra satisfazer o construtor e pra provar que uma venda NÃO passa
+  // pelas fases de contato (ver teste "evento de venda não toca no
+  // pipeline de contatos").
+  const vendas = {
+    buscarVendaFresca:
+      overrides.buscarVendaFresca ?? jest.fn().mockResolvedValue(null),
+    aplicarEventoWebhook:
+      overrides.aplicarEventoVenda ??
+      jest
+        .fn()
+        .mockResolvedValue({ resultado: 'venda_criada', empresa: 'ACME LTDA' }),
+  } as unknown as EgestorVendaSyncService;
+
   const service = new EgestorWebhookService(
     fakeConfig(overrides.config ?? {}),
     prisma,
@@ -182,6 +200,7 @@ function criarService(overrides: {
     processing,
     interactionLog,
     cartaoCnpj,
+    vendas,
   );
 
   return {
@@ -192,6 +211,7 @@ function criarService(overrides: {
     tenantContext,
     interactionLog,
     cartaoCnpj: preencherSeFaltando,
+    vendas,
   };
 }
 
@@ -426,18 +446,66 @@ describe('EgestorWebhookService', () => {
       });
     });
 
-    it('módulo não suportado (não é "contatos"): marca processado sem chamar planejamento/processamento', async () => {
+    it('módulo não suportado (nem "contatos" nem "vendas"): marca processado sem chamar planejamento/processamento', async () => {
       const { service, fakeTxHolder, processing } = criarService({});
 
       const resultado = await service.handleEvent(
         'matriz',
-        fakePayload({ module: 'vendas' }),
+        fakePayload({ module: 'produtos' }),
       );
 
       expect(resultado).toEqual({ processResult: 'modulo_nao_suportado' });
       expect(processing.buscarContatoFresco).not.toHaveBeenCalled();
       expect(processing.planejarEvento).not.toHaveBeenCalled();
       expect(fakeTxHolder.linhas[0].processedAt).not.toBeNull();
+    });
+
+    it('módulo "vendas": vai pro pipeline de vendas e não encosta no de contatos', async () => {
+      const { service, fakeTxHolder, processing, echo, vendas } = criarService(
+        {},
+      );
+
+      const resultado = await service.handleEvent(
+        'matriz',
+        fakePayload({ module: 'vendas', codigo: 447 }),
+      );
+
+      expect(resultado).toEqual({ processResult: 'venda_criada' });
+      expect(vendas.buscarVendaFresca).toHaveBeenCalledWith(
+        'matriz',
+        'updated',
+        '447',
+      );
+      // Venda é espelho de mão única: nada de eco, nada de consolidação.
+      expect(echo.consumirSeEco).not.toHaveBeenCalled();
+      expect(processing.buscarContatoFresco).not.toHaveBeenCalled();
+      expect(processing.planejarEvento).not.toHaveBeenCalled();
+      expect(fakeTxHolder.linhas[0].processedAt).not.toBeNull();
+      expect(fakeTxHolder.linhas[0].processResult).toBe('venda_criada');
+    });
+
+    it('módulo "vendas": histórico legível diz o que aconteceu, em português', async () => {
+      const { service, interactionLog } = criarService({
+        aplicarEventoVenda: jest.fn().mockResolvedValue({
+          resultado: 'venda_removida',
+          empresa: null,
+        }),
+      });
+
+      await service.handleEvent(
+        'matriz',
+        fakePayload({ module: 'vendas', action: 'deleted', codigo: 447 }),
+      );
+
+      expect(interactionLog.registrar).toHaveBeenCalledWith(
+        expect.anything(),
+        'ws-1',
+        expect.objectContaining({
+          action: 'webhook_venda_processado',
+          summary:
+            'Webhook vendas.deleted recebido (venda 447, Matriz) — venda excluída ou cancelada no eGestor — removida do histórico de compras.',
+        }),
+      );
     });
 
     it('eco (escrita do próprio CRM): marca processado como eco, sem chamar planejamento/processamento', async () => {
@@ -496,7 +564,7 @@ describe('EgestorWebhookService', () => {
     it('módulo não suportado: NÃO registra no histórico legível (fora do escopo hoje)', async () => {
       const { service, interactionLog } = criarService({});
 
-      await service.handleEvent('matriz', fakePayload({ module: 'vendas' }));
+      await service.handleEvent('matriz', fakePayload({ module: 'produtos' }));
 
       expect(interactionLog.registrar).not.toHaveBeenCalled();
     });

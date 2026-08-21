@@ -102,6 +102,39 @@ enum EgestorContatoStatus {
   ambos_diferentes
 }
 
+// Qual das duas contas eGestor da Gama (Matriz/Filial) originou o
+// registro. Já existia como union type em TypeScript
+// (src/integrations/egestor/egestor.types.ts); virou enum de banco em
+// 2026-08-20 porque `sales_history` passou a precisar dele como parte da
+// chave única — o código da venda é numeração POR CONTA, então a origem
+// é o que distingue duas vendas homônimas. `egestor_webhook_events`
+// segue com a coluna como texto solto de propósito: lá é log cru do que
+// chegou, não chave de nada.
+enum Estabelecimento {
+  matriz
+  filial
+}
+
+// Item de venda: o eGestor separa o que é mercadoria do que é mão de obra
+// (`tipoProd` no relatório de vendas detalhadas, `tipo` no detalhe da
+// venda). É essa divisão que sustenta as abas "ABC de Produtos" e
+// "Serviços" da ficha da empresa.
+enum TipoItemVenda {
+  produto
+  servico
+}
+
+// Classe da curva ABC de clientes — A são os que somam os primeiros 80% do
+// faturamento, B os 15% seguintes, C o restante. Gravada em Company por um
+// cálculo explícito (botão "Calcular curva ABC"), nunca na hora da
+// leitura: classe que muda sozinha a cada venda não serve pra decidir
+// prioridade de atendimento.
+enum CurvaAbc {
+  A
+  B
+  C
+}
+
 // Módulo de Leads/Triagem (SPEC-CRM-GAMA.md, §3.1).
 enum RawLeadStatus {
   novo
@@ -152,6 +185,7 @@ model Workspace {
   activities    Activity[]
   rawLeads      RawLead[]
   salesHistory  SalesHistory[]
+  salesHistoryItems SalesHistoryItem[]
   contacts      Contact[]
   companyAccess CompanyAccess[]
   egestorContatos EgestorContatoConsolidado[]
@@ -245,6 +279,11 @@ model Company {
   // qualquer tela/proposta comercial.
   emRecuperacaoJudicial Boolean @default(false) @map("em_recuperacao_judicial")
 
+  // Curva ABC (2026-08-21). Nulo = empresa sem compra, ou cálculo nunca
+  // rodado. A data é o que a tela usa pra dizer de quando é a foto.
+  curvaAbc            CurvaAbc? @map("curva_abc")
+  curvaAbcCalculadaEm DateTime? @map("curva_abc_calculada_em")
+
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -261,6 +300,7 @@ model Company {
   // de novo depois de já ter virado empresa.
   originLeads   RawLead[]
   salesHistory  SalesHistory[]
+  salesHistoryItems SalesHistoryItem[]
   contacts      Contact[]
   accessGrants  CompanyAccess[]
   egestorContato EgestorContatoConsolidado?
@@ -368,19 +408,68 @@ model SalesHistory {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId String    @map("workspace_id") @db.Uuid
   companyId   String    @map("company_id") @db.Uuid
-  codVenda    String?   @map("cod_venda")
+  // Numeração POR CONTA no eGestor — só é única junto com
+  // `estabelecimento` (ver @@unique abaixo).
+  codVenda    String    @map("cod_venda")
+  estabelecimento Estabelecimento
   dtVenda     DateTime  @map("dt_venda") @db.Date
   valorTotal  Decimal   @map("valor_total") @db.Decimal(14, 2)
   situacaoOs  String?   @map("situacao_os")
+  // Vendedor da venda (`codVendedor` no payload de /v1/vendas), resolvido
+  // pra membro do CRM por e-mail via GET /v1/usuarios. Fica AQUI e não em
+  // `Company.ownerUserId` de propósito: quem enxerga qual empresa é
+  // decisão de carteira, não efeito colateral de import de histórico.
+  // `vendedorUserId` nulo = vendedor do eGestor sem membro correspondente
+  // no CRM; `vendedorNome` preserva o nome original pra exibição.
+  codVendedor    String? @map("cod_vendedor")
+  vendedorNome   String? @map("vendedor_nome")
+  vendedorUserId String? @map("vendedor_user_id") @db.Uuid
   fonte       String    @default("egestor")
   createdAt   DateTime  @default(now()) @map("created_at")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
   company   Company   @relation(fields: [companyId], references: [id])
+  itens     SalesHistoryItem[]
 
+  @@unique([workspaceId, estabelecimento, codVenda])
   @@index([workspaceId])
   @@index([companyId])
   @@map("sales_history")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SalesHistoryItem — o que foi vendido dentro de cada venda, separado
+// entre produto e serviço. Alimenta as abas "ABC de Produtos" e
+// "Serviços" da ficha da empresa; não aparece em nenhum cálculo de LTV
+// (esse continua saindo do total da venda, pra não somar duas vezes).
+//
+// `valorTotal`/`custoTotal` são sempre TOTAIS do item (quantidade ×
+// unitário) — as duas fontes do eGestor divergem nesse ponto e a
+// normalização acontece na entrada, nunca na leitura (ver
+// EgestorVendaSyncService).
+// ─────────────────────────────────────────────────────────────────────────
+
+model SalesHistoryItem {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId    String        @map("workspace_id") @db.Uuid
+  salesHistoryId String        @map("sales_history_id") @db.Uuid
+  companyId      String        @map("company_id") @db.Uuid
+  tipo           TipoItemVenda
+  codProduto     String?       @map("cod_produto")
+  descricao      String
+  quantidade     Decimal       @db.Decimal(14, 4)
+  valorTotal     Decimal       @map("valor_total") @db.Decimal(14, 2)
+  custoTotal     Decimal?      @map("custo_total") @db.Decimal(14, 2)
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id])
+  salesHistory SalesHistory @relation(fields: [salesHistoryId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id])
+
+  @@index([workspaceId])
+  @@index([companyId, tipo])
+  @@index([salesHistoryId])
+  @@map("sales_history_item")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

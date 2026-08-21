@@ -28,6 +28,7 @@ export const PERMISSION_MODULES = [
   "empresas_timeline",
   "empresas_tarefas",
   "empresas_oportunidades",
+  "empresas_vendas",
   "empresas_posvenda",
   "oportunidades",
   "tarefas",
@@ -46,6 +47,7 @@ export const MODULE_LABELS: Record<PermissionModule, string> = {
   empresas_timeline: "Timeline",
   empresas_tarefas: "Tarefas (nesta empresa)",
   empresas_oportunidades: "Oportunidades (nesta empresa)",
+  empresas_vendas: "Vendas, ABC de Produtos e Serviços",
   empresas_posvenda: "Pós-venda",
   oportunidades: "Oportunidades",
   tarefas: "Tarefas",
@@ -63,6 +65,7 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   empresas_timeline: "Empresas",
   empresas_tarefas: "Empresas",
   empresas_oportunidades: "Empresas",
+  empresas_vendas: "Empresas",
   empresas_posvenda: "Empresas",
   oportunidades: null,
   tarefas: null,
@@ -78,6 +81,8 @@ export const MODULE_HINTS: Partial<Record<PermissionModule, string>> = {
     "Só \"Ver\" controla algo aqui (a aba aparecer + a lista desta empresa). Criar/editar/excluir de uma tarefa sempre seguem o módulo Tarefas (geral).",
   empresas_oportunidades:
     "Só \"Ver\" controla algo aqui (a aba aparecer + a lista desta empresa). Criar/editar/excluir de uma oportunidade sempre seguem o módulo Oportunidades (geral).",
+  empresas_vendas:
+    "Cobre as três abas de faturamento da ficha: Vendas, ABC de Produtos e Serviços. Vem DESLIGADO para representante — o histórico de compra do cliente é informação de gestão.",
 };
 
 export const ACTION_LABELS: Record<PermissionAction, string> = {
@@ -98,6 +103,7 @@ export const MODULE_ACTIONS: Record<PermissionModule, readonly PermissionAction[
   empresas_timeline: ["ver"],
   empresas_tarefas: PERMISSION_ACTIONS,
   empresas_oportunidades: PERMISSION_ACTIONS,
+  empresas_vendas: ["ver"],
   empresas_posvenda: ["ver"],
   oportunidades: PERMISSION_ACTIONS,
   tarefas: PERMISSION_ACTIONS,
@@ -137,6 +143,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: allTrue,
     empresas_oportunidades: allTrue,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: allTrue,
     tarefas: allTrue,
@@ -150,6 +157,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: allTrue,
     empresas_oportunidades: allTrue,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: allTrue,
     tarefas: allTrue,
@@ -163,6 +171,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: allTrue,
     empresas_oportunidades: allTrue,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: allTrue,
     tarefas: allTrue,
@@ -176,6 +185,10 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: noDelete,
     empresas_oportunidades: noDelete,
+    // Espelha o backend (src/policy/permission-catalog.ts): único módulo
+    // que nasce desligado pro representante — diretriz do usuário,
+    // 2026-08-20.
+    empresas_vendas: { ver: false },
     empresas_posvenda: viewOnly,
     oportunidades: noDelete,
     tarefas: noDelete,
@@ -189,6 +202,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: viewOnly,
     empresas_oportunidades: viewOnly,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: viewOnly,
     tarefas: viewOnly,

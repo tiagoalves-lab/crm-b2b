@@ -7,6 +7,7 @@ import { createActivity } from "@/lib/api/activities";
 import { createContact, deleteContact, updateContact } from "@/lib/api/contacts";
 import type { Activity, Contact, PessoaTipo } from "@/lib/api/types";
 import {
+  calcularCurvaAbc,
   createCompany,
   deleteCompany,
   getCompany,
@@ -153,6 +154,27 @@ export async function restoreCompanyAction(formData: FormData) {
 
   revalidatePath("/dashboard/empresas");
   redirectWithMessage("/dashboard/empresas", "Empresa restaurada");
+}
+
+// Botão "Calcular curva ABC" (pedido do usuário, 2026-08-21). Recalcula
+// a classe de TODOS os clientes de uma vez e grava — por isso é uma ação
+// explícita, não um cálculo de tela: a classe precisa ficar estável entre
+// uma revisão e outra.
+export async function calcularCurvaAbcAction() {
+  const token = await getServerAccessToken();
+
+  let resumo;
+  try {
+    resumo = await calcularCurvaAbc(token);
+  } catch (error) {
+    redirectWithError("/dashboard/empresas", error);
+  }
+
+  revalidatePath("/dashboard/empresas");
+  redirectWithMessage(
+    "/dashboard/empresas",
+    `Curva ABC recalculada: ${resumo.a} cliente(s) classe A, ${resumo.b} classe B e ${resumo.c} classe C${resumo.semCompra > 0 ? `; ${resumo.semCompra} empresa(s) sem compra ficaram sem classe` : ""}.`,
+  );
 }
 
 // Modal "Editar empresa" (aberto a partir da ficha) — reusa o mesmo

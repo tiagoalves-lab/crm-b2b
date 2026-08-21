@@ -226,3 +226,23 @@ export function restoreCompany(token: string, id: string): Promise<Company> {
     token,
   });
 }
+
+// Recalcula a curva ABC de todos os clientes e grava a classe em cada
+// empresa. Só owner/admin (o backend rejeita os demais com 403) — é uma
+// reclassificação da carteira inteira, não uma edição de registro.
+export interface CurvaAbcResumo {
+  classificadas: number;
+  a: number;
+  b: number;
+  c: number;
+  semCompra: number;
+  faturamentoTotal: string;
+  calculadaEm: string;
+}
+
+export function calcularCurvaAbc(token: string): Promise<CurvaAbcResumo> {
+  return apiFetch<CurvaAbcResumo>("/companies/curva-abc/calcular", {
+    method: "POST",
+    token,
+  });
+}

@@ -131,20 +131,111 @@ curl --include \
 
 | Campo eGestor | Campo `SalesHistory` | Observação |
 |---|---|---|
-| `codigo` | `codVenda` (convertido pra string) | Chave de idempotência junto com `estabelecimento` — `@@unique([workspaceId, estabelecimento, codVenda])`. |
-| `codContato` | `companyId` | Resolvido via `CompanyExternalRef` (lookup `codContato` → `companyId`, gravado durante o import de Contatos). **Pré-requisito**: sync de Contatos precisa rodar antes do de Vendas, senão venda de cliente ainda não importado fica órfã. |
+| `codigo` | `codVenda` (convertido pra string) | Chave de idempotência junto com `estabelecimento` — `@@unique([workspaceId, estabelecimento, codVenda])`, criada na migration `20260820120000_sales_history_estabelecimento_vendedor`. |
+| `codContato` | `companyId` | Resolvido pela tabela espelho `egestor_contatos_consolidado` (`codigoMatriz`/`codigoFilial` da linha já promovida → `companyId`). **Pré-requisito**: sync de Contatos + promoção precisam ter rodado antes, senão venda de cliente ainda não promovido fica órfã (contada e reportada, nunca descartada em silêncio). |
 | `dtVenda` | `dtVenda` | 1:1. |
 | `valorTotal` | `valorTotal` | 1:1 (`Decimal`). |
 | `situacaoOS` | `situacaoOs` | 1:1. |
 | — | `estabelecimento` | **Não vem no payload** — inferido por qual conta/token (Matriz ou Filial) foi usado pra fazer a chamada, mesmo critério já usado em Contatos. |
 | — | `fonte` | Fixo `"egestor"` (já é o default da coluna). |
-| `situacao` | — | Só usado como filtro (`tipo=50`) pra excluir orçamento, não persiste. |
-| `dtEntrega`, `dtCad`, `valorFrete`, `valorFinanc`, `valorEntrada`, `numParcelas`, `codsNFe`, `clienteFinal`, `codVendedor`, `nomeContato`, `tags` | — | Sem coluna correspondente em `SalesHistory` hoje. Fora do import nesta rodada, a menos que peça pra guardar algo (`codVendedor`, por ex., poderia virar atribuição de vendedor — fora de escopo do pedido atual). |
+| `situacao` | — | Só usado como filtro (`tipo=50`) pra excluir orçamento, não persiste. No webhook, é reconferido no registro fresco: `situacao != 50` → evento ignorado. |
+| `codVendedor` | `codVendedor` | Numeração por conta, igual a tudo no eGestor. |
+| `nomeVendedor` | `vendedorNome` | Prefere o nome vindo de `GET /v1/usuarios` (cadastro oficial); cai pra este quando aquela chamada falha. |
+| — | `vendedorUserId` | Membro do CRM correspondente ao vendedor, resolvido por e-mail (depois login, depois nome) contra `auth.users` — ver "Vendedor → membro do CRM" abaixo. Nulo quando não há correspondente. |
+| `dtEntrega`, `dtCad`, `valorFrete`, `valorFinanc`, `valorEntrada`, `numParcelas`, `codsNFe`, `clienteFinal`, `nomeContato`, `tags` | — | Sem coluna correspondente em `SalesHistory` hoje. |
+
+## Vendedor → membro do CRM (`GET /v1/usuarios`)
+
+O cadastro de **contato** do eGestor não diz quem atende o cliente — essa
+informação só existe na venda (`codVendedor`). O nome/login/e-mail de cada
+vendedor vem de `GET /v1/usuarios?vendedor=1` (paginado igual ao resto).
+
+Campos da resposta: `codigo`, `nome`, `login`, `email`, `tags`,
+`usuarioSistema`, `vendedor`, `comisProd`, `comisServ`, `comisFin`.
+
+**Casamento com o membro do CRM**: por **e-mail** primeiro (único e estável
+dos dois lados), depois `login`, depois `nome` — nessa ordem, cada um só
+entrando quando o anterior falhou. Vendedor sem correspondente fica com
+`vendedorUserId` nulo e **aparece nomeado no resumo da sincronização**;
+nenhum vínculo é inventado, porque um de-para errado viraria comissão e
+curva ABC atribuídas à pessoa errada.
+
+**O vínculo mora na venda, nunca em `companies.owner_user_id`** — quem
+enxerga qual empresa é decisão de carteira (diretriz de acesso do
+representante), e não pode ser efeito colateral de um import de histórico.
+
+## `GET /api/v1/vendas/{codigo}` — Detalhar uma venda
+
+Existe (confirmado contra a API real, 2026-08-20) e é o que o webhook usa
+pra buscar o registro fresco depois de receber o aviso. Devolve bem mais
+que a listagem: `codigo, codContato, nomeContato, codVendedor,
+nomeVendedor, dtVenda, dtEntrega, dtCad, valorTotal, valorFinanc,
+valorEntrada, valorFrete, numParcelas, codsNFe, codsNFSe, customizado,
+clienteFinal, situacao, situacaoOS, tags, publicURL, ativo, produtos,
+financeiros, despesas`.
+
+Dois campos decidem o tratamento no webhook:
+- **`situacao`** — `10` (orçamento) é ignorado; só `50` entra.
+- **`ativo: false`** — venda cancelada no eGestor. O CRM **remove** a
+  linha do histórico (cancelada ali quer dizer cadastro feito errado, não
+  devolução — ver "Perguntas em aberto").
+
+`financeiros`/`despesas` (forma de pagamento, despesas acessórias) não são
+persistidos. `produtos` **é** — ver abaixo.
+
+## `POST /api/v1/relatorios/vendasDetalhadas` — itens de todas as vendas
+
+Fonte dos itens (`sales_history_item`), que sustentam as abas "ABC de
+Produtos" e "Serviços" da ficha da empresa. **Não é paginado e devolve o
+histórico inteiro numa chamada** — 607 KB / 1.001 vendas na Matriz e
+40 KB / 87 na Filial, em menos de 400 ms (medido em 2026-08-21). Por isso
+o sync faz uma chamada por conta em vez de buscar venda a venda.
+
+Corpo usado pelo sync (as datas são **obrigatórias** aqui, diferente da
+listagem de vendas — por isso a janela larga):
+
+```json
+{ "tipoData": "dtVenda", "de": "2000-01-01", "ate": "2100-12-31",
+  "mostrarvendasConcluidas": 1, "mostrarOrcamentos": 0 }
+```
+
+Cada venda vem com `codVenda`, `dtCad`, `dtVenda`, `cliente`, `cpfcnpj`,
+`vendedor` e `vendasItens[]`. Cada item: `codProd`, `produto`,
+`tipoProd`, `quant`, `outros`, `custoUni`, `custo`, `venda`, `lucro`.
+
+### Totais x unitários — a pegadinha das duas fontes
+
+| Campo | No relatório (`vendasItens`) | No detalhe da venda (`produtos`) |
+|---|---|---|
+| Identificação | `codProd`, `produto` | `codProduto`, `descricao` |
+| Tipo | `tipoProd` | `tipo` |
+| Valor | `venda` — **já é o total do item** | `preco` — **unitário**; total = `quant × preco − vDesc` |
+| Custo | `custo` — **já é o total** | `custo` — **unitário**; total = `quant × custo` |
+
+Conferido item a item contra a mesma venda (2026-08-21): as duas contas
+batem. A normalização acontece na entrada — `sales_history_item` guarda
+**sempre o total**.
+
+`tipoProd`/`tipo` só assumem `produto` e `servico`. Qualquer outro valor
+faz o item ficar de fora e ser contado no resumo: chutar um dos dois lados
+estragaria em silêncio justamente a divisão que a curva ABC mostra.
+
+### A soma dos itens nem sempre fecha com o total da venda
+
+Medido na carga real (2026-08-21): de 1.081 vendas, 86 têm soma dos itens
+**menor** que o total (frete e despesas acessórias, que não são item) e 15
+têm soma **maior** (desconto aplicado na venda inteira, não item a item).
+Diferença líquida de R$ 3.494,90 em R$ 27,3 milhões — 0,01%.
+
+Não é erro de import: é como o eGestor compõe o total. Por isso **LTV e
+"total comprado" continuam saindo do total da venda**, nunca da soma dos
+itens; os itens servem pra ranquear o que a empresa compra, não pra
+refazer o faturamento.
 
 ## Perguntas em aberto
 
 1. ~~Paginação~~ — **resolvido**: mesmo parâmetro `page` de Contatos, confirmado contra a API real (`/v1/vendas?page=1...` funciona, `last_page` retorna corretamente).
 2. ~~Valores de `situacaoOS`~~ — **resolvido, ver amostra acima**. Falta só a decisão de produto (quais valores contam pra `SalesHistory`, ver acima).
 3. ~~`listarCanceladas`~~ — **resolvido pelo usuário (2026-08-07)**: default (parâmetro omitido) **exclui** canceladas — confirma a suposição inicial, não precisa passar o parâmetro no sync. Contexto de negócio importante que o usuário deu junto: "cancelada" no eGestor é **cadastro feito errado** (erro de digitação/duplicata), **diferente de devolução de venda** — uma venda devolvida não é "cancelada" nesse sistema, é outra coisa (situação/mecanismo ainda não identificado nos valores de `situacaoOS` testados — nenhum dos vistos soa como devolução).
-   - ❓ **DÚVIDA** — como uma venda devolvida aparece na API? Sem exemplo real ainda; precisa saber antes de desenhar o tratamento (valor negativo? outro `situacaoOS`? campo booleano à parte?). Trava o item "Import de Vendas → SalesHistory" do roadmap.
-4. **Limite de `dtIni`/`dtFim`** — não testado (só chamadas sem filtro de data até agora). Testar quando for implementar a carga incremental de verdade.
+   - ❓ **DÚVIDA** — como uma venda devolvida aparece na API? Sem exemplo real ainda (valor negativo? outro `situacaoOS`? campo à parte?). **Não trava mais o import** (feito em 2026-08-20): o efeito de não tratar devolução é só o total comprado de um cliente ficar um pouco acima do real, e o ajuste é uma rodada de sincronização depois que aparecer o primeiro caso concreto.
+4. ~~**Limite de `dtIni`/`dtFim`**~~ — **resolvido (2026-08-20)**: a listagem **sem** filtro de data devolve o histórico inteiro, mesmo total de uma janela `2000-01-01`→`2026-12-31` explícita (1.001 vendas na Matriz, 87 na Filial). O sync não passa filtro de data; carga incremental não é necessária enquanto o webhook mantiver em dia.

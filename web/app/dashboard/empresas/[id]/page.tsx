@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { companyDisplayName } from "@/lib/api/companies";
-import { loadFicha } from "../_ficha/load";
+import { hasPermission } from "@/lib/api/permission-catalog";
+import { contagensDaFicha, loadFicha } from "../_ficha/load";
 import FichaTabs, { currentAbaOf } from "../_ficha/ficha-tabs";
 import FichaBody from "../_ficha/ficha-body";
 
@@ -19,7 +20,13 @@ export default async function EmpresaFichaPage({
   const { aba, error } = await searchParams;
   const token = await getServerAccessToken();
   const data = await loadFicha(token, id);
-  const { company, activities, tasks, opportunities, contacts } = data;
+  const { company, me } = data;
+  const podeVerVendas = hasPermission(
+    me.membership.role,
+    me.membership.permissions,
+    "empresas_vendas",
+    "ver",
+  );
   // Mesmo critério da lista (web/app/dashboard/empresas/page.tsx#tipoOf):
   // tag "cliente" (dado real da importação), não presença de Opportunity
   // "won" — pipeline novo começou do zero, sem negócio pros clientes já
@@ -54,12 +61,8 @@ export default async function EmpresaFichaPage({
         <FichaTabs
           companyId={id}
           aba={aba}
-          counts={{
-            timeline: activities.length,
-            tarefas: tasks.length,
-            negocios: opportunities.length,
-            contatos: contacts.length,
-          }}
+          counts={contagensDaFicha(data)}
+          podeVerVendas={podeVerVendas}
         />
       </div>
 

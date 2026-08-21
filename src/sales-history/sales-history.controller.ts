@@ -26,4 +26,23 @@ export class SalesHistoryController {
       (tx) => this.salesHistory.findAll(tx, membership, query.companyId),
     );
   }
+
+  // Itens das vendas (produto/serviço) — abas "ABC de Produtos" e
+  // "Serviços" da ficha da empresa. Rota separada da de vendas de
+  // propósito: a lista de Empresas só precisa do total por venda, e
+  // carregar item a item de 1.000 vendas ali seria peso puro.
+  @Get('itens')
+  findItems(
+    @CurrentMembership() membership: MembershipContext,
+    @Query() query: ListSalesHistoryQueryDto,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.salesHistory.findItems(tx, membership, query.companyId),
+    );
+  }
 }

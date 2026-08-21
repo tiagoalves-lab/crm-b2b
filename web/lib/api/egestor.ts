@@ -183,3 +183,27 @@ export function propagarCompanyParaEgestor(
 export function listEgestorInteractionLog(token: string): Promise<EgestorInteractionLog[]> {
   return apiFetch<EgestorInteractionLog[]>("/integrations/egestor/interaction-log", { token });
 }
+
+// Carga do histórico de vendas das duas contas (raia "Vendas histórico")
+// — alimenta LTV/última compra/aba Pós-venda. Só owner/admin; o backend
+// rejeita os demais papéis com 403.
+export interface SyncVendasResult {
+  totalMatriz: number;
+  totalFilial: number;
+  descartadas: number;
+  vendedoresSemMembro: string[];
+  gravadas: number;
+  novas: number;
+  removidas: number;
+  orfas: number;
+  orfasCodContatos: string[];
+  empresasComVenda: number;
+  semVendedorVinculado: number;
+}
+
+export function syncEgestorVendas(token: string): Promise<SyncVendasResult> {
+  return apiFetch<SyncVendasResult>("/integrations/egestor/sync/vendas", {
+    method: "POST",
+    token,
+  });
+}

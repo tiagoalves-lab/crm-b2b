@@ -12,6 +12,7 @@ import type {
   CompletarResult,
 } from './egestor-contato-correction.service';
 import { EgestorInteractionLogService } from './egestor-interaction-log.service';
+import { EgestorVendaSyncService } from './egestor-venda-sync.service';
 import { EgestorWebhookEchoService } from './egestor-webhook-echo.service';
 import { EgestorWebhookProcessingService } from './egestor-webhook-processing.service';
 import {
@@ -39,6 +40,31 @@ const DEFAULT_WORKSPACE_SLUG = 'gama';
 // valida formato estrito de UUID v1-5 — versão/variante setadas
 // manualmente pra passar, resto zerado.
 const SYSTEM_ACTOR_USER_ID = '00000000-0000-4000-8000-000000000000';
+
+// Módulos do eGestor que têm pipeline de processamento aqui. Qualquer
+// outro é registrado e encerrado como "modulo_nao_suportado" — o cadastro
+// do webhook nas duas contas mantém produtos/usuários/financeiro
+// desligados, isto é só a rede de segurança.
+const MODULOS_SUPORTADOS = new Set(['contatos', 'vendas']);
+
+// Tradução das chaves curtas de `processResult` pro texto que o usuário lê
+// no botão "Histórico de requisições". Mesmo espírito de
+// construirResumoWebhook (contatos): o histórico é lido por quem não abre
+// o código.
+const DESCRICAO_RESULTADO_VENDA: Record<string, string> = {
+  venda_criada: 'venda registrada no histórico de compras da empresa.',
+  venda_atualizada: 'venda já existente atualizada no histórico de compras.',
+  venda_removida:
+    'venda excluída ou cancelada no eGestor — removida do histórico de compras.',
+  venda_inexistente_ignorada:
+    'venda não constava no histórico do CRM — nada a remover.',
+  orcamento_ignorado:
+    'registro é orçamento, não venda — ignorado (orçamento não entra no total comprado do cliente).',
+  cliente_sem_empresa_no_crm:
+    'cliente desta venda ainda não tem empresa correspondente no CRM — venda não registrada (promova o contato e sincronize as vendas).',
+  venda_sem_dados_minimos:
+    'venda veio sem código, cliente ou data utilizável — ignorada.',
+};
 
 // Handler operacional do webhook de contatos (2026-08-12; regra de
 // hierarquia recalibrada em 2026-08-13 — ver docs/webhook-egestor.md,
@@ -90,6 +116,7 @@ export class EgestorWebhookService {
     private readonly processing: EgestorWebhookProcessingService,
     private readonly interactionLog: EgestorInteractionLogService,
     private readonly cartaoCnpj: EgestorCartaoCnpjService,
+    private readonly vendas: EgestorVendaSyncService,
   ) {}
 
   // Comparação em tempo constante — não é senha de usuário, mas é o único
@@ -186,10 +213,11 @@ export class EgestorWebhookService {
         };
       }
 
-      // Escopo atual: só o módulo "contatos" tem pipeline de
-      // processamento (Vendas/Produtos/Usuários/Financeiro nem estão
-      // habilitados no cadastro do webhook, ver docs/webhook-egestor.md).
-      if (payload.module !== 'contatos') {
+      // Escopo atual: "contatos" (desde 2026-08-12) e "vendas" (desde
+      // 2026-08-20, raia Vendas histórico). Produtos/Usuários/Financeiro
+      // continuam desligados no cadastro do webhook das duas contas — ver
+      // docs/webhook-egestor.md.
+      if (!MODULOS_SUPORTADOS.has(payload.module)) {
         await tx.egestorWebhookEvent.update({
           where: { id: evento.id },
           data: {
@@ -202,6 +230,13 @@ export class EgestorWebhookService {
           encerrar: true as const,
           processResult: 'modulo_nao_suportado',
         };
+      }
+
+      // Eco só existe pro módulo de contatos: o CRM escreve contato de
+      // volta no eGestor (correção/consolidação/completar), mas nunca
+      // escreve venda — nenhum evento de venda pode ser eco nosso.
+      if (payload.module === 'vendas') {
+        return { eventoId: evento.id, encerrar: false as const };
       }
 
       const ehEco = await this.echo.consumirSeEco(
@@ -248,6 +283,20 @@ export class EgestorWebhookService {
 
     if (decisao.encerrar) {
       return { processResult: decisao.processResult };
+    }
+
+    // Venda tem pipeline próprio (bem mais curto que o de contato: não há
+    // consolidação Matriz×Filial, correção automática nem eco) — desvia
+    // aqui em vez de encher as fases abaixo de `if (module === ...)`.
+    if (payload.module === 'vendas') {
+      return this.processarEventoVenda(
+        ctx,
+        workspaceId,
+        estabelecimento,
+        codigo,
+        payload.action,
+        decisao.eventoId,
+      );
     }
 
     // Fase 2 — fora de tx, chamada de rede pro eGestor.
@@ -373,6 +422,59 @@ export class EgestorWebhookService {
         limparDocumento(contatoFresco.cpfcnpj),
       );
     }
+
+    return { processResult };
+  }
+
+  // Pipeline do módulo "vendas" — duas fases só (busca fora de tx,
+  // escrita dentro). Sem consolidação Matriz×Filial, sem correção
+  // automática e sem eco: a venda é espelho de mão única (eGestor → CRM),
+  // o CRM nunca lança venda de volta (regra 4.2 das regras de negócio).
+  //
+  // O lock por venda (`estabelecimento:codigo`) existe pelo mesmo motivo
+  // do lock por contato: o eGestor reenvia o evento até 5x e duas
+  // tentativas podem chegar quase juntas.
+  private async processarEventoVenda(
+    ctx: { userId: string; workspaceId: string; role: 'owner' },
+    workspaceId: string,
+    estabelecimento: Estabelecimento,
+    codigo: string,
+    action: string,
+    eventoId: string,
+  ): Promise<{ processResult: string }> {
+    const vendaFresca = await this.vendas.buscarVendaFresca(
+      estabelecimento,
+      action,
+      codigo,
+    );
+
+    const processResult = await this.tenantContext.run(
+      ctx,
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`venda:${estabelecimento}:${codigo}`})::bigint)`;
+
+        const { resultado, empresa } = await this.vendas.aplicarEventoWebhook(
+          tx,
+          workspaceId,
+          estabelecimento,
+          codigo,
+          action,
+          vendaFresca,
+        );
+
+        await tx.egestorWebhookEvent.update({
+          where: { id: eventoId },
+          data: { processedAt: new Date(), processResult: resultado },
+        });
+        await this.interactionLog.registrar(tx, workspaceId, {
+          origin: origemDoEstabelecimento(estabelecimento),
+          action: 'webhook_venda_processado',
+          summary: `Webhook vendas.${action} recebido (venda ${codigo}, ${nomeDoEstabelecimento(estabelecimento)}) — ${DESCRICAO_RESULTADO_VENDA[resultado] ?? resultado}${empresa ? ` Empresa: ${empresa}.` : ''}`,
+        });
+        return resultado;
+      },
+      { timeoutMs: 30_000 },
+    );
 
     return { processResult };
   }

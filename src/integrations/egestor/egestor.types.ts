@@ -167,3 +167,88 @@ export function nomeDaLinha(row: {
 }): string | null {
   return row.nomeMatriz?.trim() || row.nomeFilial?.trim() || null;
 }
+
+// ---------------------------------------------------------------------
+// Vendas / Usuários (raia "Vendas histórico", docs/api-egestor-vendas.md)
+// ---------------------------------------------------------------------
+
+// `tipo=50` = Venda; `10` = Orçamento. O sync SEMPRE filtra por 50 — sem
+// isso a listagem viria misturada com orçamento em aberto, que não é
+// histórico de compra e inflaria o LTV do cliente.
+export const TIPO_VENDA = '50';
+
+// Pedidos explicitamente no `fields=` de toda chamada a /vendas. O default
+// da API já traz quase tudo, mas não traz `situacaoOS` (o andamento da
+// venda) — que é diferente de `situacao` (que é só "venda ou orçamento").
+export const CAMPOS_VENDA = [
+  'codigo',
+  'codContato',
+  'codVendedor',
+  'nomeVendedor',
+  'dtVenda',
+  'valorTotal',
+  'situacao',
+  'situacaoOS',
+] as const;
+
+export type EgestorVendaRaw = Record<string, unknown> & {
+  codigo: number | string;
+  codContato?: number | string;
+  codVendedor?: number | string;
+  nomeVendedor?: string;
+  dtVenda?: string;
+  valorTotal?: number | string;
+  situacaoOS?: string;
+};
+
+export type EgestorUsuarioRaw = Record<string, unknown> & {
+  codigo: number | string;
+  nome?: string;
+  login?: string;
+  email?: string;
+  vendedor?: boolean;
+};
+
+// Chave "conta + código" — todo código do eGestor (contato, venda,
+// vendedor) é numeração POR CONTA, então o mesmo número existe na Matriz
+// e na Filial apontando pra coisas diferentes. Nunca indexar só pelo
+// código.
+export function chavePorConta(
+  estabelecimento: Estabelecimento,
+  codigo: string | number,
+): string {
+  return `${estabelecimento}:${codigo}`;
+}
+
+// Uma venda no relatório POST /v1/relatorios/vendasDetalhadas — é de onde
+// saem os ITENS (o que foi vendido), que a listagem de /v1/vendas não
+// traz. No relatório, `venda` e `custo` do item já são TOTAIS
+// (quantidade × unitário); no detalhe de UMA venda (GET /v1/vendas/{cod},
+// campo `produtos`) vêm unitários. Conferido contra a API real,
+// 2026-08-21 — ver docs/api-egestor-vendas.md.
+export type EgestorVendaDetalhadaRaw = Record<string, unknown> & {
+  codVenda: number | string;
+  vendasItens?: EgestorVendaItemRaw[];
+};
+
+export type EgestorVendaItemRaw = Record<string, unknown> & {
+  codProd?: number | string;
+  produto?: string;
+  tipoProd?: string;
+  quant?: number | string;
+  venda?: number | string;
+  custo?: number | string;
+};
+
+// Formato do item no detalhe de uma venda (`produtos` de
+// GET /v1/vendas/{codigo}) — usado pelo webhook, que atualiza uma venda
+// por vez e não tem por que puxar o relatório inteiro.
+export type EgestorVendaProdutoRaw = Record<string, unknown> & {
+  codProduto?: number | string;
+  tipo?: string;
+  descricao?: string;
+  quant?: number | string;
+  preco?: number | string;
+  custo?: number | string;
+  vDesc?: number | string;
+};

@@ -123,7 +123,7 @@ function ActivityItem({
 // moldura em volta (ver empresas/[id]/page.tsx e
 // @drawer/(.)empresas/[id]/page.tsx).
 export default function FichaBody({ data, aba }: { data: FichaData; aba?: string }) {
-  const { me, company, activities, tasks, opportunities, salesHistory, contacts } = data;
+  const { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts } = data;
   const currentAba = currentAbaOf(aba);
   const abaHref = (a: string) => `/dashboard/empresas/${company.id}?aba=${a}`;
   // Editar/Remover contato: vem da matriz granular de permissões (módulo
@@ -495,6 +495,113 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
     );
   }
 
+  // Vendas — o que o eGestor registrou de compra desta empresa. Colunas
+  // pedidas pelo usuário (2026-08-21): Cód., Estabelecimento, Vendedor,
+  // Data e Total.
+  if (currentAba === "vendas") {
+    if (salesHistory.length === 0) {
+      return <p className="sub">Nenhuma venda registrada no eGestor para esta empresa.</p>;
+    }
+    const total = salesHistory.reduce((s, v) => s + Number(v.valorTotal), 0);
+    return (
+      <>
+        <div className="ov-stat green" style={{ marginBottom: 16 }}>
+          <div className="ov-stat-l">Total comprado</div>
+          <div className="ov-stat-v">{brl(total)}</div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Cód.</th>
+                <th>Estabelecimento</th>
+                <th>Vendedor</th>
+                <th>Data</th>
+                <th style={COL_NUM}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {salesHistory.map((v) => (
+                <tr key={v.id}>
+                  <td>{v.codVenda}</td>
+                  <td>{v.estabelecimento === "matriz" ? "Matriz" : "Filial"}</td>
+                  <td>{v.vendedorNome ?? "—"}</td>
+                  <td>{fmtDate(v.dtVenda)}</td>
+                  <td style={COL_NUM}>{brl(Number(v.valorTotal))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
+
+  // ABC de Produtos / Serviços — mesma tabela, muda só o tipo do item e
+  // se a classe A/B/C aparece. Ver curvaAbc() no fim do arquivo.
+  if (currentAba === "abc" || currentAba === "servicos") {
+    const ehAbc = currentAba === "abc";
+    const linhas = curvaAbc(salesItems.filter((i) => i.tipo === (ehAbc ? "produto" : "servico")));
+    if (linhas.length === 0) {
+      return (
+        <p className="sub">
+          {ehAbc
+            ? "Nenhum produto vendido para esta empresa."
+            : "Nenhum serviço prestado para esta empresa."}
+        </p>
+      );
+    }
+    const total = linhas.reduce((s, l) => s + l.valor, 0);
+    return (
+      <>
+        <div className="ov-stat green" style={{ marginBottom: 16 }}>
+          <div className="ov-stat-l">{ehAbc ? "Total em produtos" : "Total em serviços"}</div>
+          <div className="ov-stat-v">{brl(total)}</div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                {ehAbc && <th>Classe</th>}
+                <th>{ehAbc ? "Produto" : "Serviço"}</th>
+                <th style={COL_NUM}>Qtd.</th>
+                <th style={COL_NUM}>Total</th>
+                <th style={COL_NUM}>% do total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((l) => (
+                <tr key={l.chave}>
+                  {ehAbc && (
+                    <td>
+                      <span
+                        className={
+                          l.classe === "A"
+                            ? "pill pill-green"
+                            : l.classe === "B"
+                              ? "pill pill-amber"
+                              : "pill pill-blue"
+                        }
+                      >
+                        {l.classe}
+                      </span>
+                    </td>
+                  )}
+                  <td>{l.descricao}</td>
+                  <td style={COL_NUM}>
+                    {l.quantidade.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}
+                  </td>
+                  <td style={COL_NUM}>{brl(l.valor)}</td>
+                  <td style={COL_NUM}>{l.percentual.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
+
   // posvenda
   return (
     <>
@@ -527,4 +634,58 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
       )}
     </>
   );
+}
+
+// Coluna numérica (quantidade, valor, percentual). `nowrap` é o que
+// impede "R$ 1.700.367,23" de quebrar em duas linhas quando a descrição do
+// produto é longa; `width: 1%` faz a coluna encolher até o tamanho exato
+// do conteúdo, sobrando o resto da largura pra descrição — sem isso a
+// tabela distribui espaço igual e espreme justamente o valor.
+const COL_NUM = { textAlign: "right", whiteSpace: "nowrap", width: "1%" } as const;
+
+// Curva ABC clássica: agrupa os itens iguais, ordena do que mais pesa em
+// dinheiro pro que menos pesa e classifica pelo acumulado — A até 80% do
+// valor, B até 95%, C o resto. Agrupa por código do produto quando ele
+// existe (o nome pode variar entre vendas) e cai pra descrição quando não.
+//
+// Aqui e não no backend porque é conta de exibição sobre uma lista que a
+// tela já tem na mão — não vale uma rota nova nem um cálculo guardado que
+// envelhece a cada venda nova.
+interface LinhaAbc {
+  chave: string;
+  descricao: string;
+  quantidade: number;
+  valor: number;
+  percentual: number;
+  classe: "A" | "B" | "C";
+}
+
+function curvaAbc(
+  itens: Array<{ codProduto: string | null; descricao: string; quantidade: string; valorTotal: string }>,
+): LinhaAbc[] {
+  const agrupado = new Map<string, { descricao: string; quantidade: number; valor: number }>();
+  for (const item of itens) {
+    const chave = item.codProduto ?? `d:${item.descricao}`;
+    const atual = agrupado.get(chave) ?? { descricao: item.descricao, quantidade: 0, valor: 0 };
+    atual.quantidade += Number(item.quantidade);
+    atual.valor += Number(item.valorTotal);
+    agrupado.set(chave, atual);
+  }
+
+  const linhas = [...agrupado.entries()].sort((a, b) => b[1].valor - a[1].valor);
+  const total = linhas.reduce((s, [, v]) => s + v.valor, 0);
+  // Total zero (venda inteiramente bonificada, por exemplo) não pode virar
+  // divisão por zero: nesse caso todo mundo é C, que é o que a curva quer
+  // dizer de qualquer forma.
+  let acumulado = 0;
+
+  return linhas.map(([chave, v]) => {
+    const percentual = total > 0 ? (v.valor / total) * 100 : 0;
+    // Classe pelo acumulado ANTES deste item — quem atravessa a linha dos
+    // 80% ainda é A. Olhando o acumulado depois, o último item da lista
+    // cairia sempre em C (e um produto único seria C sozinho).
+    const classe: LinhaAbc["classe"] = acumulado < 80 ? "A" : acumulado < 95 ? "B" : "C";
+    acumulado += percentual;
+    return { chave, descricao: v.descricao, quantidade: v.quantidade, valor: v.valor, percentual, classe };
+  });
 }

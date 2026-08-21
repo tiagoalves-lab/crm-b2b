@@ -85,6 +85,13 @@ export interface Company {
   // src/common/sanitize-razao-social.ts no backend. razaoSocial já vem
   // sem esse texto quando true.
   emRecuperacaoJudicial: boolean;
+  // Curva ABC de clientes (2026-08-21): A/B/C pelo peso da empresa no
+  // faturamento acumulado. Gravada por um cálculo explícito (botão
+  // "Calcular curva ABC" na tela Empresas), não na hora da leitura — por
+  // isso vem com a data da última apuração. null = empresa sem compra, ou
+  // curva nunca calculada.
+  curvaAbc: "A" | "B" | "C" | null;
+  curvaAbcCalculadaEm: string | null;
   // Campos fiscais estaduais (IE + indicador de IE) — dado que a Receita
   // não fornece, preenchimento manual (SPEC-CRM-GAMA.md §3.4/§4.1). Chaves
   // usadas: inscricao_estadual/indicador_ie. `indicador_ie` guarda só o
@@ -222,11 +229,20 @@ export interface PaginatedResult<T> {
 export interface SalesHistory {
   id: string;
   companyId: string;
-  codVenda: string | null;
+  codVenda: string;
+  // De qual conta do eGestor a venda veio — o código da venda é numeração
+  // por conta, só é único junto com isto.
+  estabelecimento: "matriz" | "filial";
   dtVenda: string;
   // Prisma Decimal serializa como string no JSON — nunca number direto.
   valorTotal: string;
   situacaoOs: string | null;
+  // Vendedor da venda no eGestor. `vendedorUserId` nulo = vendedor sem
+  // membro correspondente no CRM (ex.: quem já saiu) — o nome continua
+  // valendo pra exibição.
+  codVendedor: string | null;
+  vendedorNome: string | null;
+  vendedorUserId: string | null;
   fonte: string;
   createdAt: string;
 }
@@ -360,4 +376,21 @@ export interface EgestorInteractionLog {
   origin: EgestorInteractionOrigin;
   action: string;
   summary: string;
+}
+
+// Um item dentro de uma venda — o que de fato foi comprado. `tipo` separa
+// mercadoria de mão de obra, que é o que sustenta as abas "ABC de
+// Produtos" e "Serviços" da ficha da empresa.
+export interface SalesHistoryItem {
+  id: string;
+  salesHistoryId: string;
+  companyId: string;
+  tipo: "produto" | "servico";
+  codProduto: string | null;
+  descricao: string;
+  // Prisma Decimal serializa como string no JSON — nunca number direto.
+  quantidade: string;
+  valorTotal: string;
+  custoTotal: string | null;
+  createdAt: string;
 }

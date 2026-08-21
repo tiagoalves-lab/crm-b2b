@@ -641,6 +641,52 @@ a {
   white-space: nowrap;
 }
 
+/* Cabeçalho clicável pra ordenar (Empresas, 2026-08-21). O botão herda
+   toda a tipografia do <th> — visualmente continua sendo o título da
+   coluna, só passa a responder a clique e a teclado. A seta fica sempre
+   presente (cinza clara quando a coluna não é a ordenada) pra não
+   deslocar o texto ao alternar. */
+.data-table th:has(.th-sort) {
+  padding: 0;
+}
+
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+}
+
+.data-table th[style*="right"] .th-sort {
+  justify-content: flex-end;
+}
+
+.th-sort:hover {
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.th-sort-seta {
+  font-size: 10px;
+  opacity: 0.35;
+  line-height: 1;
+}
+
+.th-sort-seta.ativa {
+  opacity: 1;
+  color: var(--text-secondary);
+}
+
+
 .data-table td {
   padding: 11px 14px;
   border-bottom: 1px solid var(--border);

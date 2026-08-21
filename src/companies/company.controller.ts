@@ -13,6 +13,7 @@ import { ListQueryDto } from '../common/dto/list-query.dto';
 import { CurrentMembership } from '../tenancy/current-membership.decorator';
 import { TenantContextService } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
+import { CompanyAbcService } from './company-abc.service';
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
@@ -22,7 +23,28 @@ export class CompanyController {
   constructor(
     private readonly companies: CompanyService,
     private readonly tenantContext: TenantContextService,
+    private readonly abc: CompanyAbcService,
   ) {}
+
+  // Recalcula a curva ABC de clientes do workspace inteiro e grava a
+  // classe em cada empresa (botão "Calcular curva ABC" na tela Empresas).
+  // Rota fixa ANTES de `@Get(':id')`/`@Post(':id/restore')` na ordem do
+  // arquivo não importa aqui (é POST em caminho próprio), mas o nome com
+  // hífen evita qualquer chance de colidir com um uuid.
+  @Post('curva-abc/calcular')
+  calcularCurvaAbc(@CurrentMembership() membership: MembershipContext) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.abc.calcular(tx, membership),
+      // Varre vendas + oportunidades e escreve em ~300 empresas numa
+      // transação só; o timeout padrão é curto demais pra isso.
+      { timeoutMs: 60_000 },
+    );
+  }
 
   @Post()
   create(

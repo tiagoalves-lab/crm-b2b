@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { loadFicha } from "@/app/dashboard/empresas/_ficha/load";
+import { contagensDaFicha, loadFicha } from "@/app/dashboard/empresas/_ficha/load";
 import FichaTabs from "@/app/dashboard/empresas/_ficha/ficha-tabs";
 import FichaBody from "@/app/dashboard/empresas/_ficha/ficha-body";
 import OverlayDrawer from "@/app/dashboard/_overlay/overlay-drawer";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { companyDisplayName } from "@/lib/api/companies";
+import { hasPermission } from "@/lib/api/permission-catalog";
 
 export default async function EmpresaFichaDrawer({
   params,
@@ -17,7 +18,13 @@ export default async function EmpresaFichaDrawer({
   const { aba, error } = await searchParams;
   const token = await getServerAccessToken();
   const data = await loadFicha(token, id);
-  const { company, activities, tasks, opportunities, contacts } = data;
+  const { company, me } = data;
+  const podeVerVendas = hasPermission(
+    me.membership.role,
+    me.membership.permissions,
+    "empresas_vendas",
+    "ver",
+  );
   // Mesmo critério da lista (web/app/dashboard/empresas/page.tsx#tipoOf):
   // tag "cliente" (dado real da importação), não presença de Opportunity
   // "won" — pipeline novo começou do zero, sem negócio pros clientes já
@@ -49,12 +56,8 @@ export default async function EmpresaFichaDrawer({
         <FichaTabs
           companyId={id}
           aba={aba}
-          counts={{
-            timeline: activities.length,
-            tarefas: tasks.length,
-            negocios: opportunities.length,
-            contatos: contacts.length,
-          }}
+          counts={contagensDaFicha(data)}
+          podeVerVendas={podeVerVendas}
         />
       }
     >

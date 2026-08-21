@@ -45,6 +45,7 @@ export const PERMISSION_MODULES = [
   'empresas_timeline',
   'empresas_tarefas',
   'empresas_oportunidades',
+  'empresas_vendas',
   'empresas_posvenda',
   'oportunidades',
   'tarefas',
@@ -78,6 +79,7 @@ export const MODULE_ACTIONS: Record<
   empresas_timeline: ['ver'],
   empresas_tarefas: PERMISSION_ACTIONS,
   empresas_oportunidades: PERMISSION_ACTIONS,
+  empresas_vendas: ['ver'],
   empresas_posvenda: ['ver'],
   oportunidades: PERMISSION_ACTIONS,
   tarefas: PERMISSION_ACTIONS,
@@ -94,6 +96,7 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   empresas_timeline: 'Empresas',
   empresas_tarefas: 'Empresas',
   empresas_oportunidades: 'Empresas',
+  empresas_vendas: 'Empresas',
   empresas_posvenda: 'Empresas',
   oportunidades: null,
   tarefas: null,
@@ -147,6 +150,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: allTrue,
     empresas_oportunidades: allTrue,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: allTrue,
     tarefas: allTrue,
@@ -160,6 +164,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: allTrue,
     empresas_oportunidades: allTrue,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: allTrue,
     tarefas: allTrue,
@@ -179,6 +184,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: allTrue,
     empresas_oportunidades: allTrue,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: allTrue,
     tarefas: allTrue,
@@ -195,6 +201,13 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: noDelete,
     empresas_oportunidades: noDelete,
+    // Único módulo que nasce DESLIGADO pro representante (diretriz do
+    // usuário, 2026-08-20: "os representantes não visualizam o histórico
+    // de venda"). São as abas Vendas / ABC de Produtos / Serviços da
+    // ficha da empresa — faturamento por cliente é informação de gestão.
+    // Continua sendo um checkbox: dá pra liberar membro a membro na
+    // subpágina de Permissões.
+    empresas_vendas: { ver: false },
     empresas_posvenda: viewOnly,
     oportunidades: noDelete,
     tarefas: noDelete,
@@ -210,6 +223,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     empresas_timeline: viewOnly,
     empresas_tarefas: viewOnly,
     empresas_oportunidades: viewOnly,
+    empresas_vendas: viewOnly,
     empresas_posvenda: viewOnly,
     oportunidades: viewOnly,
     tarefas: viewOnly,

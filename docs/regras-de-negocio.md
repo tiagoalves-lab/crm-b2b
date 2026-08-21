@@ -147,6 +147,55 @@ outras.
   distribui a partir daí; o lead nunca nasce sem dono.
 - Fonte → Decisão do usuário, 2026-08-14.
 
+**3.5**
+- Decisão → O **histórico de compras** de cada cliente vem do eGestor, das
+  duas contas. Só entra venda de verdade — orçamento em aberto fica de
+  fora, para não inflar o quanto o cliente já comprou. É esse histórico
+  que alimenta o total comprado, a data da última compra e a aba
+  Pós-venda; ele nunca vira negócio no Pipeline.
+- Fonte → Decisão do usuário, 2026-08-07; carga executada em 2026-08-20.
+
+**3.6**
+- Decisão → Venda **cancelada** no eGestor sai do CRM. "Cancelada" ali
+  quer dizer cadastro feito errado (digitação, duplicata), não devolução
+  de mercadoria.
+- Fonte → Decisão do usuário, 2026-08-07.
+
+**3.7**
+- Decisão → O **vendedor de cada venda** fica registrado na própria venda,
+  e é reconhecido pelo e-mail que ele tem nos dois sistemas. Isso serve
+  para relatório e comissão; **não muda quem enxerga qual empresa** — a
+  carteira continua sendo decisão à parte. Vendedor do eGestor sem
+  cadastro no CRM aparece nomeado no resumo da sincronização, e a venda
+  entra do mesmo jeito, com o nome dele.
+- Fonte → Decisão do usuário, 2026-08-20.
+
+**3.8**
+- Decisão → A ficha da empresa tem três abas de faturamento: **Vendas**
+  (código, estabelecimento, vendedor, data e total de cada compra),
+  **ABC de Produtos** (o que ela mais compra, classificado A/B/C pelo peso
+  em dinheiro) e **Serviços** (o que foi prestado a ela). Produto e
+  serviço vêm separados do próprio eGestor.
+- Fonte → Pedido do usuário, 2026-08-21.
+- Detalhe → As três abas **não aparecem para representante**. É a única
+  permissão que nasce desligada para esse papel; pode ser liberada membro
+  a membro na tela de Permissões. A aba **Pós-venda** é assunto separado,
+  e vai ser ligada na integração com a Auvo.
+
+**3.9**
+- Decisão → A lista de Empresas mostra a **classe da curva ABC** de cada
+  cliente no lugar da antiga coluna Status (que só repetia o Tipo, sem
+  informação própria). A é quem forma os primeiros 80% do faturamento
+  acumulado, B os 15% seguintes, C o restante. Empresa sem compra fica
+  **sem classe** — não é "classe D" nem é empurrada para C.
+- Fonte → Pedido do usuário, 2026-08-21.
+- Detalhe → A classe é **gravada por um cálculo explícito** (botão
+  "Calcular curva ABC", só administrador), nunca recalculada ao abrir a
+  tela: classe que muda sozinha a cada venda nova não serve para decidir
+  prioridade de atendimento. A tela mostra a data da última apuração. A
+  base do cálculo é a mesma do LTV — venda importada do eGestor mais
+  oportunidade ganha no pipeline.
+
 ---
 
 ## O que o CRM nunca faz sozinho

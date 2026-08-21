@@ -1,31 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { companyRazaoSocialName } from "@/lib/api/companies";
 import type { Company } from "@/lib/api/types";
 import { formatDateBR } from "@/lib/format-date";
 import { deleteCompanyAction, restoreCompanyAction } from "./actions";
 import SubmitButton from "@/app/_components/submit-button";
 
-export type Status = "ativo" | "negociando";
 export type Tipo = "lead" | "cliente";
+export type Classe = "A" | "B" | "C";
 
 export interface EmpresaRow {
   company: Company;
   tipo: Tipo;
-  status: Status;
+  // Classe da curva ABC gravada na empresa. null = sem compra, ou curva
+  // nunca calculada (o botão "Calcular curva ABC" é quem preenche).
+  classe: Classe | null;
   ltv: number;
   ultimaCompra: string | null;
 }
 
-const STATUS_LABEL: Record<Status, string> = {
-  ativo: "ativo",
-  negociando: "negociando",
-};
-const STATUS_PILL: Record<Status, string> = {
-  ativo: "pill pill-green",
-  negociando: "pill pill-amber",
+// A é quem sustenta o faturamento e C é a ponta longa — as cores seguem
+// essa leitura (verde/âmbar/azul), não um juízo de "bom/ruim".
+const CLASSE_PILL: Record<Classe, string> = {
+  A: "pill pill-green",
+  B: "pill pill-amber",
+  C: "pill pill-blue",
 };
 
 function brl(value: number): string {
@@ -36,6 +37,90 @@ function brl(value: number): string {
 // usa c.razao) — ver companyRazaoSocialName em lib/api/companies.ts.
 function primaryName(company: Company): string {
   return companyRazaoSocialName(company);
+}
+
+// ── Ordenação (pedido do usuário, 2026-08-21) ────────────────────────────
+// Clicar no título da coluna ordena por ela; clicar de novo inverte. Fica
+// no navegador (não na querystring) porque a lista inteira já vem pro
+// client — mesmo critério da busca por nome logo acima.
+type SortKey = "empresa" | "tipo" | "egestor" | "cidade" | "classe" | "ltv" | "ultimaCompra";
+
+// Colunas de dinheiro e data começam DECRESCENTES no primeiro clique: quem
+// clica em "LTV" quer ver quem mais comprou, não quem menos comprou.
+const PRIMEIRO_CLIQUE_DESC = new Set<SortKey>(["ltv", "ultimaCompra"]);
+
+// `null` aqui quer dizer "célula vazia" (o traço na tela) — essas linhas
+// vão sempre pro fim, nas duas direções. Empresa sem cidade no meio da
+// lista de cidades só atrapalha a leitura.
+function valorDaColuna(row: EmpresaRow, key: SortKey): string | number | null {
+  switch (key) {
+    case "empresa":
+      return primaryName(row.company).toLowerCase();
+    case "tipo":
+      return row.tipo;
+    case "egestor":
+      return row.company.egestorContato ? 0 : 1;
+    case "cidade":
+      return row.company.cidade
+        ? `${row.company.cidade}${row.company.uf ?? ""}`.toLowerCase()
+        : null;
+    case "classe":
+      return row.classe;
+    case "ltv":
+      return row.ltv > 0 ? row.ltv : null;
+    case "ultimaCompra":
+      return row.ultimaCompra;
+  }
+}
+
+// Cabeçalho clicável. Fora do componente da tabela de propósito: definido
+// dentro, o React o trataria como um tipo novo a cada render e remontaria
+// os <th> a cada clique — o foco do teclado se perderia logo depois de
+// ordenar. O <button> por dentro é o que faz a coluna responder ao teclado
+// também, não só ao mouse; `aria-sort` é o que o leitor de tela anuncia.
+function ThOrdenavel({
+  coluna,
+  label,
+  sort,
+  onOrdenar,
+  alinharDireita,
+  title,
+}: {
+  coluna: SortKey;
+  label: string;
+  sort: { key: SortKey; dir: "asc" | "desc" };
+  onOrdenar: (coluna: SortKey) => void;
+  alinharDireita?: boolean;
+  title?: string;
+}) {
+  const ativa = sort.key === coluna;
+  return (
+    <th
+      title={title}
+      aria-sort={ativa ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      style={{ textAlign: alinharDireita ? "right" : undefined }}
+    >
+      <button type="button" className="th-sort" onClick={() => onOrdenar(coluna)}>
+        {label}
+        <span className={ativa ? "th-sort-seta ativa" : "th-sort-seta"}>
+          {ativa ? (sort.dir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
+function ordenar(rows: EmpresaRow[], key: SortKey, dir: "asc" | "desc"): EmpresaRow[] {
+  const fator = dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = valorDaColuna(a, key);
+    const vb = valorDaColuna(b, key);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * fator;
+    return String(va).localeCompare(String(vb), "pt-BR") * fator;
+  });
 }
 
 // Toolbar (seg + busca) e tabela vivem no mesmo client component porque a
@@ -58,11 +143,42 @@ export default function EmpresasTable({
   canDelete: boolean;
 }) {
   const [query, setQuery] = useState("");
+  // Começa como a lista já chegava do servidor: alfabética pela empresa.
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "empresa",
+    dir: "asc",
+  });
 
   const q = query.trim().toLowerCase();
-  const visible = q
+  const filtradas = q
     ? rows.filter((r) => primaryName(r.company).toLowerCase().includes(q))
     : rows;
+  const visible = useMemo(
+    () => ordenar(filtradas, sort.key, sort.dir),
+    [filtradas, sort.key, sort.dir],
+  );
+
+  const alternarOrdem = (key: SortKey) =>
+    setSort((atual) =>
+      atual.key === key
+        ? { key, dir: atual.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: PRIMEIRO_CLIQUE_DESC.has(key) ? "desc" : "asc" },
+    );
+
+  const th = (
+    coluna: SortKey,
+    label: string,
+    opcoes: { alinharDireita?: boolean; title?: string } = {},
+  ) => (
+    <ThOrdenavel
+      key={coluna}
+      coluna={coluna}
+      label={label}
+      sort={sort}
+      onOrdenar={alternarOrdem}
+      {...opcoes}
+    />
+  );
 
   const filtroHref = (f: "todas" | "lead" | "cliente") =>
     `/dashboard/empresas?filtro=${f}${showDeleted ? "&includeDeleted=1" : ""}`;
@@ -104,18 +220,20 @@ export default function EmpresasTable({
       <table className="data-table">
         <thead>
           <tr>
-            <th>Empresa</th>
-            <th>Tipo</th>
-            <th title="Tem vínculo com o eGestor (Matriz e/ou Filial)">eGestor</th>
-            <th>Cidade</th>
-            <th>Status</th>
-            <th style={{ textAlign: "right" }}>LTV</th>
-            <th>Última compra</th>
+            {th("empresa", "Empresa")}
+            {th("tipo", "Tipo")}
+            {th("egestor", "eGestor", {
+              title: "Tem vínculo com o eGestor (Matriz e/ou Filial)",
+            })}
+            {th("cidade", "Cidade")}
+            {th("classe", "Classe")}
+            {th("ltv", "LTV", { alinharDireita: true })}
+            {th("ultimaCompra", "Última compra")}
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {visible.map(({ company, tipo, status, ltv, ultimaCompra }) => (
+          {visible.map(({ company, tipo, classe, ltv, ultimaCompra }) => (
             <tr key={company.id} className="row-clickable">
               <td>
                 <Link href={`/dashboard/empresas/${company.id}`} className="t-co">
@@ -143,7 +261,16 @@ export default function EmpresasTable({
                 {company.cidade ? `${company.cidade}${company.uf ? `/${company.uf}` : ""}` : "—"}
               </td>
               <td>
-                <span className={STATUS_PILL[status]}>{STATUS_LABEL[status]}</span>
+                {classe ? (
+                  <span
+                    className={CLASSE_PILL[classe]}
+                    title="Curva ABC — peso desta empresa no faturamento acumulado"
+                  >
+                    {classe}
+                  </span>
+                ) : (
+                  <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                )}
               </td>
               <td
                 style={{

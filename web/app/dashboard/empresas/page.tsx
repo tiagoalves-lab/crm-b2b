@@ -5,7 +5,10 @@ import { getMe } from "@/lib/api/me";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listSalesHistory } from "@/lib/api/sales-history";
 import type { Company } from "@/lib/api/types";
+import { formatDateTimeBR } from "@/lib/format-date";
+import ConfirmSubmitButton from "../membros/confirm-submit-button";
 import EmpresasTable, { type EmpresaRow } from "./empresas-table";
+import { calcularCurvaAbcAction } from "./actions";
 
 type Filtro = "todas" | "lead" | "cliente";
 
@@ -32,6 +35,9 @@ export default async function EmpresasPage({
   // 2026-08-06, ver PolicyService#can) — botão escondido aqui pra não
   // oferecer uma ação que o backend vai rejeitar de qualquer forma.
   const canDelete = me.membership.role !== "sales_rep";
+  // Recalcular reclassifica a carteira inteira — mesma régua das outras
+  // ações administrativas (o backend rejeita os demais papéis com 403).
+  const podeCalcularAbc = me.membership.role === "owner" || me.membership.role === "admin";
 
   // Company-lead ainda em triagem (SPEC-CRM-GAMA.md §4.4) não é uma
   // empresa de verdade até ser aprovada — fica de fora daqui, mesmo
@@ -47,13 +53,14 @@ export default async function EmpresasPage({
   const tipoOf = (c: Company): "lead" | "cliente" =>
     c.tags.includes("cliente") ? "cliente" : "lead";
 
-  // Status espelha o Tipo (protótipo só usa "ativo"/"negociando", nunca
-  // "inativo" — gama-crm-mvp.html, DB.clientes). LTV/última compra somam
-  // Opportunity "won" de verdade (pipeline novo, começou do zero) com
-  // sales_history (histórico de vendas importado do eGestor, sem dono nem
-  // ligação com Opportunity de propósito — ver migration
-  // 20260801230000_sales_history).
-  type CompanyStats = { status: "ativo" | "negociando"; ltv: number; ultimaCompra: string | null };
+  // LTV/última compra somam Opportunity "won" de verdade (pipeline novo,
+  // começou do zero) com sales_history (histórico de vendas importado do
+  // eGestor, sem dono nem ligação com Opportunity de propósito — ver
+  // migration 20260801230000_sales_history). A coluna "Status" saiu em
+  // 2026-08-21: ela só espelhava o Tipo (cliente → "ativo", lead →
+  // "negociando"), sem informação própria. No lugar entrou a classe da
+  // curva ABC, que vem gravada na empresa.
+  type CompanyStats = { ltv: number; ultimaCompra: string | null };
   const statsByCompany = new Map<string, CompanyStats>();
   for (const company of companies) {
     const won = opportunities.filter((o) => o.companyId === company.id && !o.deletedAt && o.status === "won");
@@ -68,11 +75,7 @@ export default async function EmpresasPage({
       (latest, d) => (!latest || d > latest ? d : latest),
       null,
     );
-    statsByCompany.set(company.id, {
-      status: tipoOf(company) === "cliente" ? "ativo" : "negociando",
-      ltv,
-      ultimaCompra,
-    });
+    statsByCompany.set(company.id, { ltv, ultimaCompra });
   }
 
   const currentFiltro: Filtro = filtro === "lead" || filtro === "cliente" ? filtro : "todas";
@@ -87,6 +90,7 @@ export default async function EmpresasPage({
     .map((company) => ({
       company,
       tipo: tipoOf(company),
+      classe: company.curvaAbc,
       ...statsByCompany.get(company.id)!,
     }))
     .sort((a, b) =>
@@ -96,6 +100,14 @@ export default async function EmpresasPage({
       ),
     );
 
+  // Data da última apuração da curva ABC (é a mesma pra todas as empresas
+  // — o cálculo carimba todo mundo de uma vez). Serve pra deixar claro na
+  // tela de quando é a foto que a coluna Classe está mostrando.
+  const curvaCalculadaEm = companies.reduce<string | null>(
+    (max, c) => (c.curvaAbcCalculadaEm && (!max || c.curvaAbcCalculadaEm > max) ? c.curvaAbcCalculadaEm : max),
+    null,
+  );
+
   return (
     <>
       <div className="topbar">
@@ -104,11 +116,28 @@ export default async function EmpresasPage({
           <div className="page-sub">
             {visible.length} de {companies.length} empresa(s)
             {showDeleted ? " (incluindo excluídas)" : ""}
+            {curvaCalculadaEm
+              ? ` — curva ABC calculada em ${formatDateTimeBR(curvaCalculadaEm)}`
+              : " — curva ABC nunca calculada"}
           </div>
         </div>
-        <Link href="/dashboard/empresas/nova" className="btn btn-primary">
-          + Nova empresa
-        </Link>
+        <div style={{ display: "flex", gap: 8 }}>
+          {podeCalcularAbc && (
+            <form>
+              <ConfirmSubmitButton
+                className="btn btn-ghost"
+                confirmMessage="Recalcular a curva ABC de todos os clientes? A classe A/B/C de cada empresa será atualizada pelo faturamento acumulado."
+                formAction={calcularCurvaAbcAction}
+                pendingLabel="Calculando…"
+              >
+                Calcular curva ABC
+              </ConfirmSubmitButton>
+            </form>
+          )}
+          <Link href="/dashboard/empresas/nova" className="btn btn-primary">
+            + Nova empresa
+          </Link>
+        </div>
       </div>
 
       <div className="content">

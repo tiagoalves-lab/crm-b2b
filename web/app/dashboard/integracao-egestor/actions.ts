@@ -12,6 +12,7 @@ import {
   correctEgestorContatoSefaz,
   promoteEgestorContatos,
   syncEgestorContatos,
+  syncEgestorVendas,
   type CompletarContatoResult,
   type CorrecaoDirecao,
   type CorrigirContatoResult,
@@ -61,6 +62,38 @@ export async function promoteEgestorAction() {
   redirectWithMessage(
     LISTA,
     `Promovidas ${resumo.promovidas} empresa(s) (${resumo.criadasNovas} novas, ${resumo.vinculadasExistente} vinculadas a cadastro existente), ${resumo.contatosCriados} contato(s) criado(s)${estaduais}${erros}.`,
+  );
+}
+
+// Carga do histórico de vendas (raia "Vendas histórico"). Mais rápida que
+// a de contatos — 23 páginas nas duas contas contra ~45 — mas segue o
+// mesmo formato: síncrona, sem progresso, só o resumo no fim.
+//
+// Revalida Empresas junto: é lá que o efeito aparece (total comprado,
+// última compra e o selo Cliente saem daqui).
+export async function syncEgestorVendasAction() {
+  const token = await getServerAccessToken();
+
+  let resumo;
+  try {
+    resumo = await syncEgestorVendas(token);
+  } catch (error) {
+    redirectWithError(LISTA, error);
+  }
+
+  revalidatePath(LISTA);
+  revalidatePath("/dashboard/empresas");
+  const orfas =
+    resumo.orfas > 0
+      ? `; ${resumo.orfas} cliente(s) do eGestor ainda sem empresa no CRM ficaram de fora`
+      : "";
+  const semVendedor =
+    resumo.vendedoresSemMembro.length > 0
+      ? `; sem membro correspondente no CRM: ${resumo.vendedoresSemMembro.join(", ")}`
+      : "";
+  redirectWithMessage(
+    LISTA,
+    `Vendas sincronizadas: ${resumo.gravadas} venda(s) de ${resumo.empresasComVenda} empresa(s) (${resumo.novas} nova(s), ${resumo.removidas} que não existem mais no eGestor)${orfas}${semVendedor}.`,
   );
 }
 

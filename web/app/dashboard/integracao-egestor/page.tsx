@@ -6,7 +6,7 @@ import type { EgestorContatoStatus } from "@/lib/api/types";
 import { formatDateTimeBR } from "@/lib/format-date";
 import ConfirmSubmitButton from "../membros/confirm-submit-button";
 import EgestorTable from "./egestor-table";
-import { promoteEgestorAction, syncEgestorAction } from "./actions";
+import { promoteEgestorAction, syncEgestorAction, syncEgestorVendasAction } from "./actions";
 
 // Relatório de auditoria + correção Matriz×Filial (docs/roadmap.md, itens
 // 9.3/9.6/9.9) — menu "Integração eGestor" em Administração, só
@@ -79,6 +79,16 @@ export default async function IntegracaoEgestorPage({
               pendingLabel="Promovendo…"
             >
               Promover contatos limpos
+            </ConfirmSubmitButton>
+          </form>
+          <form>
+            <ConfirmSubmitButton
+              className="btn btn-ghost"
+              confirmMessage="Trazer o histórico de vendas das duas contas do eGestor (Matriz e Filial)? Só entram vendas de clientes que já existem no CRM."
+              formAction={syncEgestorVendasAction}
+              pendingLabel="Trazendo vendas…"
+            >
+              Sincronizar vendas
             </ConfirmSubmitButton>
           </form>
           <form>

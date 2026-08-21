@@ -15,10 +15,18 @@ CRM sempre que um registro é criado/editado/excluído.
 - Módulos disponíveis: **Produtos, Contatos, Vendas, Usuários,
   Financeiro**. No cadastro, cada módulo é ligado/desligado
   individualmente (`produtos`/`contatos`/`vendas`/`usuarios`/
-  `financeiro`, booleano). Pro CRM, o que interessa hoje é
-  **`contatos`** (webhook de contatos, roadmap) e depois
-  **`vendas`** (quando a seção Vendas sair de adiada) — os demais
-  (produtos/usuários/financeiro) ficam desligados.
+  `financeiro`, booleano). O CRM processa **`contatos`** (desde
+  2026-08-12) e **`vendas`** (desde 2026-08-20). Qualquer outro módulo
+  é registrado e encerrado como `modulo_nao_suportado`, sem efeito.
+  - **Estado real das duas contas (conferido em 2026-08-20)**: os
+    **cinco** módulos estão ligados, não só os dois que interessam.
+    Nenhum evento de produtos/usuários/financeiro chegou até hoje, mas
+    se chegar vira linha inútil na tabela de eventos — vale desligar os
+    três no cadastro quando houver oportunidade.
+  - Venda é espelho de **mão única** (eGestor → CRM): o CRM nunca lança
+    venda de volta (regra 4.2 das regras de negócio), então nenhum
+    evento de venda pode ser eco da própria escrita — a checagem de eco
+    só existe no fluxo de contatos.
 - **`securityToken`**: gerado pelo eGestor no momento do cadastro
   (não é algo que a gente escolhe) — vem no `POST /webhooks` de
   resposta. É diferente do `personal_token`/`access_token` já usados
