@@ -191,7 +191,12 @@ describe('EgestorVendaSyncService', () => {
         vendedores: new Map([
           [
             'matriz:3',
-            { codigo: '3', nome: 'Fulano', userId: 'user-1', casadoPor: 'email' },
+            {
+              codigo: '3',
+              nome: 'Fulano',
+              userId: 'user-1',
+              casadoPor: 'email',
+            },
           ],
           [
             'filial:9',
@@ -202,8 +207,12 @@ describe('EgestorVendaSyncService', () => {
 
       const resultado = await service.fetch(['user-1']);
 
-      const matriz = resultado.vendas.find((v) => v.estabelecimento === 'matriz');
-      const filial = resultado.vendas.find((v) => v.estabelecimento === 'filial');
+      const matriz = resultado.vendas.find(
+        (v) => v.estabelecimento === 'matriz',
+      );
+      const filial = resultado.vendas.find(
+        (v) => v.estabelecimento === 'filial',
+      );
       expect(matriz?.vendedorUserId).toBe('user-1');
       expect(filial?.vendedorUserId).toBeNull();
       expect(filial?.vendedorNome).toBe('Beltrano');
@@ -480,9 +489,9 @@ describe('EgestorVendaSyncService', () => {
     it('action deleted: remove a venda do histórico', async () => {
       const { service } = criarService();
       const { tx, deleteMany } = criarTx();
-      (
-        tx.salesHistory.deleteMany as unknown as jest.Mock
-      ).mockResolvedValue({ count: 1 });
+      (tx.salesHistory.deleteMany as unknown as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
 
       const r = await service.aplicarEventoWebhook(
         tx,
@@ -495,7 +504,11 @@ describe('EgestorVendaSyncService', () => {
 
       expect(r.resultado).toBe('venda_removida');
       expect(deleteMany).toHaveBeenCalledWith({
-        where: { workspaceId: 'ws-1', estabelecimento: 'matriz', codVenda: '447' },
+        where: {
+          workspaceId: 'ws-1',
+          estabelecimento: 'matriz',
+          codVenda: '447',
+        },
       });
     });
 
@@ -535,9 +548,9 @@ describe('EgestorVendaSyncService', () => {
     it('venda cancelada no eGestor (ativo=false) sai do histórico', async () => {
       const { service } = criarService();
       const { tx } = criarTx();
-      (
-        tx.salesHistory.deleteMany as unknown as jest.Mock
-      ).mockResolvedValue({ count: 1 });
+      (tx.salesHistory.deleteMany as unknown as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
 
       const r = await service.aplicarEventoWebhook(
         tx,
@@ -613,29 +626,36 @@ describe('EgestorVendaSyncService', () => {
       const { service } = criarService();
       const { tx, itemCreateMany, itemDeleteMany } = criarTx();
 
-      await service.aplicarEventoWebhook(tx, 'ws-1', 'matriz', '447', 'updated', {
-        ...VENDA_OK,
-        produtos: [
-          {
-            codProduto: 335,
-            tipo: 'produto',
-            descricao: 'CHAPA DE ACO',
-            quant: 2,
-            preco: 85,
-            custo: 11.83,
-            vDesc: 0,
-          },
-          {
-            codProduto: 900,
-            tipo: 'servico',
-            descricao: 'MONTAGEM',
-            quant: 1,
-            preco: 500,
-            custo: 0,
-            vDesc: 50,
-          },
-        ],
-      });
+      await service.aplicarEventoWebhook(
+        tx,
+        'ws-1',
+        'matriz',
+        '447',
+        'updated',
+        {
+          ...VENDA_OK,
+          produtos: [
+            {
+              codProduto: 335,
+              tipo: 'produto',
+              descricao: 'CHAPA DE ACO',
+              quant: 2,
+              preco: 85,
+              custo: 11.83,
+              vDesc: 0,
+            },
+            {
+              codProduto: 900,
+              tipo: 'servico',
+              descricao: 'MONTAGEM',
+              quant: 1,
+              preco: 500,
+              custo: 0,
+              vDesc: 50,
+            },
+          ],
+        },
+      );
 
       // Apaga antes de gravar: item removido da venda no eGestor precisa
       // sumir daqui também.

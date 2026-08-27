@@ -22,7 +22,10 @@ function criarTx(dados: {
   const tx = {
     company: {
       findMany: jest.fn().mockResolvedValue(
-        dados.empresas.map((e) => ({ id: e.id, tags: e.tags ?? ['cliente'] })),
+        dados.empresas.map((e) => ({
+          id: e.id,
+          tags: e.tags ?? ['cliente'],
+        })),
       ),
       updateMany,
     },
@@ -70,7 +73,13 @@ describe('CompanyAbcService', () => {
     // 0, 20, 40, 60, 80 — os quatro primeiros ainda estão abaixo da linha
     // dos 80% (A) e o quinto entra logo depois dela (B).
     const { tx, updateMany } = criarTx({
-      empresas: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }, { id: 'c4' }, { id: 'c5' }],
+      empresas: [
+        { id: 'c1' },
+        { id: 'c2' },
+        { id: 'c3' },
+        { id: 'c4' },
+        { id: 'c5' },
+      ],
       vendas: [
         { companyId: 'c1', total: 100 },
         { companyId: 'c2', total: 100 },
@@ -80,12 +89,21 @@ describe('CompanyAbcService', () => {
       ],
     });
 
-    const resumo = await new CompanyAbcService().calcular(tx, membership('owner'));
+    const resumo = await new CompanyAbcService().calcular(
+      tx,
+      membership('owner'),
+    );
 
     const classes = classesGravadas(updateMany);
     expect(classes).toEqual({ c1: 'A', c2: 'A', c3: 'A', c4: 'A', c5: 'B' });
     expect(resumo).toEqual(
-      expect.objectContaining({ classificadas: 5, a: 4, b: 1, c: 0, semCompra: 0 }),
+      expect.objectContaining({
+        classificadas: 5,
+        a: 4,
+        b: 1,
+        c: 0,
+        semCompra: 0,
+      }),
     );
   });
 
@@ -135,7 +153,10 @@ describe('CompanyAbcService', () => {
       vendas: [{ companyId: 'comprou', total: 500 }],
     });
 
-    const resumo = await new CompanyAbcService().calcular(tx, membership('owner'));
+    const resumo = await new CompanyAbcService().calcular(
+      tx,
+      membership('owner'),
+    );
 
     expect(classesGravadas(updateMany)).toEqual({ comprou: 'A', nunca: null });
     expect(resumo.semCompra).toBe(1);
@@ -151,7 +172,10 @@ describe('CompanyAbcService', () => {
       ],
     });
 
-    const resumo = await new CompanyAbcService().calcular(tx, membership('owner'));
+    const resumo = await new CompanyAbcService().calcular(
+      tx,
+      membership('owner'),
+    );
 
     expect(classesGravadas(updateMany)).toEqual({ cliente: 'A' });
     expect(resumo.faturamentoTotal).toBe('500.00');
@@ -160,7 +184,10 @@ describe('CompanyAbcService', () => {
   it('rodada sem nenhuma empresa não escreve nada', async () => {
     const { tx, updateMany } = criarTx({ empresas: [] });
 
-    const resumo = await new CompanyAbcService().calcular(tx, membership('owner'));
+    const resumo = await new CompanyAbcService().calcular(
+      tx,
+      membership('owner'),
+    );
 
     expect(updateMany).not.toHaveBeenCalled();
     expect(resumo.classificadas).toBe(0);

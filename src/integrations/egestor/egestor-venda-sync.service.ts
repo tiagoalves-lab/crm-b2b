@@ -233,7 +233,12 @@ export class EgestorVendaSyncService {
       // pra reencontrar o que acabou de ser inserido.
       const criadas = await tx.salesHistory.createManyAndReturn({
         data: paraGravar,
-        select: { id: true, companyId: true, estabelecimento: true, codVenda: true },
+        select: {
+          id: true,
+          companyId: true,
+          estabelecimento: true,
+          codVenda: true,
+        },
       });
 
       const itens = criadas.flatMap((venda) =>

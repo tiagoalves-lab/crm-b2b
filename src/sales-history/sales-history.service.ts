@@ -30,7 +30,9 @@ export class SalesHistoryService {
       !this.policy.canModule(membership, 'empresas_vendas', 'ver') &&
       !this.policy.canModule(membership, 'empresas_posvenda', 'ver')
     ) {
-      throw new ForbiddenException('Sem permissão para ver o histórico de vendas.');
+      throw new ForbiddenException(
+        'Sem permissão para ver o histórico de vendas.',
+      );
     }
     return tx.salesHistory.findMany({
       where: companyId ? { companyId } : undefined,
