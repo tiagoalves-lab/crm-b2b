@@ -295,16 +295,49 @@ Usuários → Usuários do sistema:
 Vantagem sobre o token pessoal, além de não expirar: não quebra quando a
 pessoa que autorizou sai da empresa.
 
+## Teste ponta a ponta — feito pela metade (2026-08-21)
+
+O caminho **dentro do CRM está provado**. Um lead de teste criado por
+`POST /{form-id}/test_leads` foi processado com sucesso: assinatura HMAC
+validada, evento gravado, `GET /{leadgen_id}` na Graph API trazendo as
+respostas reais, e `RawLead` + `Contact` criados na carteira do gerente
+(`process_result = 'raw_lead_e_contato_criados'`, visível na tela de
+Prospecção).
+
+O que **não** foi provado é a entrega automática: a Meta nunca chamou o
+webhook. A entrega teve que ser simulada por fora, assinando o payload com
+o `META_APP_SECRET` e postando na URL de produção.
+
+**Causa, confirmada na doc oficial (2026-08-21):** App em **modo
+desenvolvimento** não recebe dado de produção — só o disparo do botão
+"Testar" do painel. Com anúncio no ar, o lead ficaria parado na Central de
+Leads.
+
+A configuração da Meta em si está correta e foi conferida por API: a
+assinatura do App aponta pro objeto `page`, ativa, com a URL certa e o
+campo `leadgen@v26.0`; e a Página está com o App instalado.
+
+Ao retomar, lembrar que a Meta permite **um** lead de teste por formulário
+e o nosso já foi consumido (`leadgen_id` 2463292117488309). Pra repetir o
+teste é preciso apagar o lead de teste antes, ou usar um lead real.
+
 ## O que falta
 
-1. **Teste ponta a ponta.** `POST /{form-id}/test_leads` cria um lead de
-   teste que dispara o webhook de verdade e permite acompanhar o caminho
-   até a tela de Prospecção. A Meta permite **um** lead de teste por
-   formulário. Ainda não feito.
-2. **Modo desenvolvimento.** O App ainda está em modo desenvolvimento.
-   Falta confirmar se receber lead de anúncio no ar exige passar por App
-   Review, e fazer o pedido se exigir.
-3. **Qualidade do lead.** O único formulário ativo pede só nome e
+1. **Publicar a Política de Privacidade — é o bloqueio atual.** Virar a
+   chave "Ao vivo" falha com "URL da Política de Privacidade inválido";
+   sem ela o App não sai do modo desenvolvimento. O site da Gama
+   (`gamabrasil.com.br`) roda WordPress e **não tem** essa página hoje —
+   nem link no rodapé. Rascunho do texto já escrito, com os pontos que
+   dependem de decisão jurídica marcados (CNPJ, endereço, prazos de
+   guarda, encarregado de dados, canal de privacidade). Falta identificar
+   quem tem acesso de administrador do WordPress e publicar.
+2. **Categoria do App.** Também está vazia nas configurações básicas, ao
+   lado de política de privacidade e termos de uso. Provável segunda
+   exigência da mesma tela.
+3. **Acesso avançado / App Review.** O próprio painel avisa que, além de
+   publicar o App, dados de usuário final podem exigir permissões em
+   acesso avançado. Só dá pra confirmar depois de virar a chave.
+4. **Qualidade do lead.** O único formulário ativo pede só nome e
    e-mail — sem empresa, telefone ou CNPJ, o lead nasce magro pro que um
    CRM B2B precisa. Revisar o formulário é decisão de marketing, já está
    no Kanban.
