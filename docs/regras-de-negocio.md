@@ -196,6 +196,19 @@ outras.
   base do cálculo é a mesma do LTV — venda importada do eGestor mais
   oportunidade ganha no pipeline.
 
+**3.10**
+- Decisão → Cadastro de cliente feito no **app de cotações** entra direto
+  no registro de Empresas, **sem tag nenhuma** — aparece com o selo Lead
+  até ganhar a tag `cliente` pelo fluxo normal — e **não passa pela
+  Prospecção**. O envio é estilo webhook (como o eGestor): o app de
+  cotações não consulta antes de mandar; o CRM casa por CNPJ ao receber e,
+  se a empresa já existe, devolve a existente sem duplicar e sem
+  sobrescrever. A base de clientes das cotações vira espelho
+  somente-leitura do CRM.
+- Fonte → Decisão do usuário, 2026-08-28 (plano mestre em
+  `gama-webapp/planejamento/integracao-crm.md`; doc técnico em
+  `integracao-cotacoes.md`).
+
 ---
 
 ## O que o CRM nunca faz sozinho

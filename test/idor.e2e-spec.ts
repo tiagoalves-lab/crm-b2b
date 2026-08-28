@@ -31,6 +31,7 @@ import { createFakeAuthApp, withTenant } from './utils/fake-auth';
 // camada bloqueou.
 process.env.META_APP_SECRET = 'app-secret-de-teste-idor';
 process.env.META_VERIFY_TOKEN = 'verify-token-de-teste-idor';
+process.env.COTACOES_API_TOKEN = 'token-cotacoes-de-teste-idor';
 
 const prisma = new PrismaClient();
 
@@ -89,6 +90,12 @@ const ROTAS_PUBLICAS = [
   // público neste backend", e o teste do controle substituto (assinatura
   // HMAC) está logo abaixo.
   '/integrations/meta-leads/webhook',
+  // App de cotações (2026-08-28) — idem: rotas sem `:id`, declaradas pela
+  // documentação executável. Controle substituto: token estático
+  // COTACOES_API_TOKEN no Authorization (Bearer), comparação em tempo
+  // constante (CotacoesService#assertTokenValido). Teste logo abaixo do
+  // bloco do Meta.
+  '/integrations/cotacoes/',
 ];
 
 describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP', () => {
@@ -444,6 +451,59 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       expect(res.text).not.toContain('desafio-123');
       expect((res.body as { message?: string }).message).toBe(
         'hub.verify_token inválido.',
+      );
+    }, 20000);
+  });
+
+  describe('rota pública (integração cotações) — sem JWT, autentica por token estático', () => {
+    // @Public() como os webhooks acima; o controle substituto é o token
+    // COTACOES_API_TOKEN no Authorization (Bearer), comparado em tempo
+    // constante (CotacoesService#assertTokenValido). Se essa checagem cair,
+    // vira endpoint aberto na internet expondo a carteira de empresas
+    // inteira e aceitando cadastro de qualquer um.
+    //
+    // Payload VÁLIDO de propósito (mesmo gotcha dos blocos acima): corpo
+    // inválido morre no ValidationPipe com 400 antes do token ser conferido,
+    // e o teste passaria verde sem exercitar o controle. O caminho feliz
+    // (token correto) não é testado aqui de propósito: leria/gravaria no
+    // banco real fora do CI — a lógica de upsert tem spec unitário próprio
+    // (cotacoes.service.spec.ts).
+    const payloadValido = {
+      cnpj: '00000000000191',
+      razao_social: 'Empresa de Teste IDOR',
+    };
+
+    it('recusa leitura sem Authorization nenhum', async () => {
+      const res = await request(app.getHttpServer()).get(
+        '/integrations/cotacoes/companies',
+      );
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Authorization ausente ou mal formado.',
+      );
+    }, 20000);
+
+    it('recusa token forjado na leitura', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/integrations/cotacoes/companies')
+        .set('Authorization', 'Bearer token-forjado-de-proposito');
+      expect(res.status).toBe(401);
+      // A mensagem prova QUAL camada recusou: tem que ser a comparação do
+      // token — não "não configurado" (o env está fixado no topo deste
+      // arquivo) nem "mal formado".
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
+    it('recusa gravação de cadastro com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/clientes')
+        .set('Authorization', 'Bearer token-forjado-de-proposito')
+        .send(payloadValido);
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
       );
     }, 20000);
   });

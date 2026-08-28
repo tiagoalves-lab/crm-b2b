@@ -46,6 +46,13 @@ export default () => ({
   // gerente" — ver docs/roadmap.md decisão 1.2/1.3). Copiar o id de
   // `/dashboard/membros`.
   metaLeadsDefaultOwnerUserId: process.env.META_LEADS_DEFAULT_OWNER_USER_ID,
+  // Integração com o app de cotações (gama-webapp, docs/integracao-cotacoes.md)
+  // — token estático conferido nas rotas públicas de /integrations/cotacoes
+  // (CotacoesService#assertTokenValido). Gerado pelo GAS (crm_config_instalar
+  // no editor do Apps Script) e copiado pra cá. Opcional (não entra em
+  // REQUIRED_VARS), mesmo raciocínio dos tokens eGestor/Meta: só essas rotas
+  // usam, resto do app funciona sem isso configurado.
+  cotacoesApiToken: process.env.COTACOES_API_TOKEN,
   // Aceita uma ou mais origens separadas por vírgula (ex.: URL da Vercel +
   // domínio próprio coexistindo, caso 2026-08-06 — crm.gamabrasil.com.br
   // adicionado ao lado de web-gamma-olive-80.vercel.app) — sem isso,

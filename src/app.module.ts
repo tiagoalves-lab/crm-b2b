@@ -10,6 +10,7 @@ import { CountsModule } from './counts/counts.module';
 import configuration from './config/configuration';
 import { validate } from './config/env.validation';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { CotacoesModule } from './integrations/cotacoes/cotacoes.module';
 import { EgestorModule } from './integrations/egestor/egestor.module';
 import { MetaLeadsModule } from './integrations/meta-leads/meta-leads.module';
 import { MeController } from './me/me.controller';
@@ -63,6 +64,7 @@ import { UserThrottlerGuard } from './common/throttler/user-throttler.guard';
     SearchModule,
     EgestorModule,
     MetaLeadsModule,
+    CotacoesModule,
     CountsModule,
   ],
   controllers: [AppController, MeController],

@@ -58,8 +58,8 @@ mudar depois, muda-se a diretriz.
 
 Referência sob demanda: `arquitetura-dados.md` (modelo de dados),
 `geracao-qualificacao-leads.md`, `memorial-do-projeto.md` (histórico),
-`api-egestor-*.md`, `webhook-egestor.md`, `webhook-meta-leads.md` (docs
-técnicos das integrações).
+`api-egestor-*.md`, `webhook-egestor.md`, `webhook-meta-leads.md`,
+`integracao-cotacoes.md` (docs técnicos das integrações).
 
 **Regra**: arquivo `.md` novo entra nesta lista no mesmo commit que o
 cria. Se não está aqui, não existe pro agente.
