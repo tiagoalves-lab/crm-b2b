@@ -184,6 +184,67 @@ describe('CotacoesService', () => {
         }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('grava indicador_ie/inscricao_estadual em custom_fields ao criar', async () => {
+      const { service, deps } = montar();
+      await service.upsertCliente({
+        ...dtoNovo,
+        indicador_ie: '2',
+        inscricao_estadual: ' 554131437111 ',
+      });
+
+      const data = (deps.tx.company.create.mock.calls as unknown[][])[0][0] as {
+        data: { customFields: Record<string, unknown> };
+      };
+      // Trim aplicado; chaves iguais às do eGestor.
+      expect(data.data.customFields).toEqual({
+        indicador_ie: '2',
+        inscricao_estadual: '554131437111',
+      });
+    });
+
+    it('mescla campos fiscais na edição sem perder as demais chaves; vazio remove', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(
+        companyFake({
+          customFields: {
+            indicador_ie: '1',
+            inscricao_estadual: '123456789',
+            cnpj_lookup: { situacao: 'ATIVA' },
+          },
+        }),
+      );
+
+      await service.upsertCliente({
+        ...dtoNovo,
+        crm_company_id: COMPANY_ID,
+        indicador_ie: '9',
+        inscricao_estadual: '',
+      });
+
+      const data = (deps.tx.company.update.mock.calls as unknown[][])[0][0] as {
+        data: { customFields: Record<string, unknown> };
+      };
+      expect(data.data.customFields).toEqual({
+        indicador_ie: '9',
+        cnpj_lookup: { situacao: 'ATIVA' },
+      });
+    });
+
+    it('não mexe em custom_fields quando os campos fiscais não vêm no payload', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(companyFake());
+
+      await service.upsertCliente({ ...dtoNovo, crm_company_id: COMPANY_ID });
+
+      const data = (deps.tx.company.update.mock.calls as unknown[][])[0][0] as {
+        data: { customFields: Record<string, unknown> };
+      };
+      expect(data.data.customFields).toEqual({
+        indicador_ie: '1',
+        inscricao_estadual: '123456789',
+      });
+    });
   });
 
   describe('listCompanies', () => {

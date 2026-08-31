@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -56,6 +57,22 @@ export class UpsertClienteDto {
   @IsOptional()
   @Matches(/^\d{8}$/, { message: 'cep deve ter exatamente 8 dígitos.' })
   cep?: string;
+
+  // Dados estaduais — vão pra companies.custom_fields com as MESMAS chaves
+  // que o eGestor usa (egestor-contato-correction.service.ts): indicador_ie
+  // é o enum do eGestor (1 = Contribuinte, 2 = Isento de IE, 9 = Não
+  // contribuinte). String vazia é válida e significa "limpar o valor" —
+  // no write-through do app de cotações o formulário é a verdade.
+  @IsOptional()
+  @IsIn(['', '1', '2', '9'], {
+    message: 'indicador_ie deve ser 1, 2 ou 9 (ou vazio).',
+  })
+  indicador_ie?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  inscricao_estadual?: string;
 
   // Presente quando é edição de um cliente já vinculado: atualiza esta
   // company específica (mesmo que o CNPJ tenha sido corrigido no

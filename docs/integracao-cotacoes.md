@@ -71,8 +71,17 @@ Resposta:
 Body (`UpsertClienteDto`, snake_case espelhando as colunas de lá): `cnpj`
 (14 dígitos, obrigatório), `razao_social` (obrigatório), `fantasia`,
 `logradouro`, `numero`, `complemento`, `bairro`, `cidade`, `uf`, `cep`,
-`crm_company_id` (opcional — presente quando é edição de cliente já
-vinculado).
+`indicador_ie` (enum eGestor: 1/2/9, ou vazio), `inscricao_estadual`
+(máx 30), `crm_company_id` (opcional — presente quando é edição de cliente
+já vinculado).
+
+`indicador_ie`/`inscricao_estadual` (desde 2026-08-31) são gravados em
+`companies.custom_fields` com as mesmas chaves que o eGestor usa, em
+**merge** (as demais chaves, ex. `cnpj_lookup`, ficam intactas). Campo
+ausente no body não mexe na chave; enviado **vazio remove** — no
+write-through o formulário da cotação é a verdade, limpar lá limpa aqui.
+Esses campos não vêm de API pública (Receita não fornece IE) — são
+digitados à mão na cotação, consultando o SINTEGRA da UF.
 
 Comportamento (regra 3.10):
 

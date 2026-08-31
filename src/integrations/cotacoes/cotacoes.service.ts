@@ -152,6 +152,10 @@ export class CotacoesService {
             cidade: vazioViraNull(dto.cidade),
             uf: vazioViraNull(dto.uf),
             cep: vazioViraNull(dto.cep),
+            customFields: mesclarCamposFiscais(
+              atual.customFields,
+              dto,
+            ) as Prisma.InputJsonValue,
           },
         });
         return { company: this.paraCotacoes(salvo), ja_existia: true };
@@ -190,6 +194,10 @@ export class CotacoesService {
           cidade: vazioViraNull(dto.cidade),
           uf: vazioViraNull(dto.uf),
           cep: vazioViraNull(dto.cep),
+          customFields: mesclarCamposFiscais(
+            null,
+            dto,
+          ) as Prisma.InputJsonValue,
           dtCad: new Date(),
         },
       });
@@ -248,6 +256,29 @@ export class CotacoesService {
 function vazioViraNull(valor: string | undefined): string | null {
   const t = (valor ?? '').trim();
   return t.length > 0 ? t : null;
+}
+
+// indicador_ie/inscricao_estadual moram em companies.custom_fields (mesmas
+// chaves do eGestor — egestor-contato-correction.service.ts). Merge por cima
+// do que a company já tem pra preservar as demais chaves (cnpj_lookup etc.).
+// Campo ausente no DTO não mexe na chave; enviado vazio remove (write-through:
+// o formulário da cotação é a verdade, limpar lá limpa aqui).
+function mesclarCamposFiscais(
+  atuais: Prisma.JsonValue | null | undefined,
+  dto: UpsertClienteDto,
+): Record<string, unknown> {
+  const base: Record<string, unknown> =
+    atuais && typeof atuais === 'object' && !Array.isArray(atuais)
+      ? { ...(atuais as Record<string, unknown>) }
+      : {};
+  for (const chave of ['indicador_ie', 'inscricao_estadual'] as const) {
+    const valor = dto[chave];
+    if (valor === undefined) continue;
+    const t = valor.trim();
+    if (t.length > 0) base[chave] = t;
+    else delete base[chave];
+  }
+  return base;
 }
 
 // custom_fields é jsonb livre — só string/número contam como valor; objeto,
