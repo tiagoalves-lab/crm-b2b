@@ -323,14 +323,29 @@ teste é preciso apagar o lead de teste antes, ou usar um lead real.
 
 ## O que falta
 
+0. **O App está com o acesso à API bloqueado (conferido 2026-08-31).**
+   Qualquer chamada à Graph API com as credenciais do App — token da
+   Página ou app access token — volta `"API access blocked"`
+   (`OAuthException`, code 200). Não é rede nem token expirado: a mesma
+   Graph API responde normalmente a chamadas sem credencial, com erro
+   diferente. É restrição no App em si, provavelmente decorrente das
+   pendências abaixo (política de privacidade e categoria vazias).
+   Conferir o aviso no painel do App antes de qualquer outra tentativa —
+   enquanto isso não sair, nem o webhook nem a busca das respostas do
+   lead funcionam.
 1. **Publicar a Política de Privacidade — é o bloqueio atual.** Virar a
    chave "Ao vivo" falha com "URL da Política de Privacidade inválido";
    sem ela o App não sai do modo desenvolvimento. O site da Gama
    (`gamabrasil.com.br`) roda WordPress e **não tem** essa página hoje —
-   nem link no rodapé. Rascunho do texto já escrito, com os pontos que
-   dependem de decisão jurídica marcados (CNPJ, endereço, prazos de
-   guarda, encarregado de dados, canal de privacidade). Falta identificar
-   quem tem acesso de administrador do WordPress e publicar.
+   nem link no rodapé. **Texto final pronto em 2026-08-31**, em duas
+   versões na Área de Trabalho do usuário
+   (`politica-de-privacidade-gama.html`, pra colar como bloco HTML, e
+   `politica-de-privacidade-gama-TEXTO.txt`): controladora, CNPJ e
+   endereço preenchidos com a matriz, cookies/transferência
+   internacional/prazos fechados. Sobra confirmar o canal de privacidade
+   (`privacidade@gamabrasil.com.br` precisa existir ou redirecionar) e o
+   encarregado. Falta identificar quem tem acesso de administrador do
+   WordPress e publicar.
 2. **Categoria do App.** Também está vazia nas configurações básicas, ao
    lado de política de privacidade e termos de uso. Provável segunda
    exigência da mesma tela.

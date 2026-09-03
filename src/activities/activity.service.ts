@@ -60,16 +60,13 @@ export class ActivityService {
       const company = await tx.company.findFirst({
         where: { id: dto.companyId, workspaceId: membership.workspaceId },
       });
+      // canReadCompany(), não can(): mesma regra da ficha/Timeline (ver
+      // ActivityQueryService.assertEntityVisible) — nota registrada de
+      // dentro da ficha tem que valer em toda empresa que a ficha abre.
       if (
         !company ||
         company.deletedAt ||
-        !(await this.policy.can(
-          tx,
-          membership,
-          'read',
-          company,
-          'empresas_cadastro',
-        ))
+        !(await this.policy.canReadCompany(tx, membership, company.id))
       ) {
         throw new NotFoundException('Empresa não encontrada.');
       }

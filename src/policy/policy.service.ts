@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import {
@@ -120,6 +121,73 @@ export class PolicyService {
       return { ownerUserId: { in: [membership.userId, ...subordinateIds] } };
     }
     return { ownerUserId: membership.userId };
+  }
+
+  // Visibilidade de LEITURA de Company — mais larga que scopeFilter() e
+  // que can() de propósito, e única fonte da regra: a lista de Empresas,
+  // a ficha (CompanyService) e tudo que "pendura" numa empresa (Timeline
+  // e nota da aba Timeline, em ActivityQueryService/ActivityService)
+  // precisam responder a MESMA pergunta, senão a lista mostra uma empresa
+  // que a ficha não consegue abrir — foi exatamente o bug de 2026-09-02:
+  // manager via todas as empresas na lista (regra abaixo), mas a Timeline
+  // ainda usava can(), que só conhece dono direto/hierarquia, e devolvia
+  // 404 pra toda empresa sem dono (as vindas do eGestor), derrubando a
+  // ficha inteira.
+  //
+  // Hierarquia de níveis, ver docs/arquitetura-dados.md §4a: níveis 1-3
+  // (owner/admin/manager) sem filtro (`{}`) — veem todas as empresas do
+  // workspace. `manager` é tratado igual a owner/admin AQUI de propósito
+  // (pedido do usuário, 2026-08-13): em todo o resto do sistema
+  // (oportunidades, tarefas, leads, contatos) `manager` continua restrito
+  // à própria equipe via scopeFilter() — não generalizar esse bypass pra
+  // lá sem pedido explícito. Nível 4 (sales_rep/readonly) mantém a lógica
+  // antiga: dono direto OU oportunidade própria OU CompanyAccess (empresa
+  // compartilhada, 2026-08-06), dentro da própria hierarquia.
+  async companyReadFilter(
+    tx: TenantTx,
+    membership: MembershipContext,
+  ): Promise<Prisma.CompanyWhereInput> {
+    if (membership.role === 'manager') {
+      return {};
+    }
+    const scope = await this.scopeFilter(tx, membership);
+    if (scope.ownerUserId === undefined) {
+      return {};
+    }
+    const ownerCondition = scope.ownerUserId;
+    const userIds =
+      typeof ownerCondition === 'string' ? [ownerCondition] : ownerCondition.in;
+    return {
+      OR: [
+        { ownerUserId: ownerCondition },
+        { opportunities: { some: { ownerUserId: ownerCondition } } },
+        { accessGrants: { some: { userId: { in: userIds } } } },
+      ],
+    };
+  }
+
+  // Versão pontual de companyReadFilter() pra quem já tem o id da Company
+  // na mão (ficha, timeline, nota): mesma regra, mesma resposta que a
+  // lista. Quem chama traduz `false` em 404 (não 403) — não confirma pra
+  // quem não enxerga a empresa que ela existe (docs/seguranca.md, decisão
+  // 4.2).
+  async canReadCompany(
+    tx: TenantTx,
+    membership: MembershipContext,
+    companyId: string,
+  ): Promise<boolean> {
+    if (!this.canModule(membership, 'empresas_cadastro', 'ver')) {
+      return false;
+    }
+    const filter = await this.companyReadFilter(tx, membership);
+    if (Object.keys(filter).length === 0) {
+      return true;
+    }
+    const visible = await tx.company.findFirst({
+      where: { id: companyId, workspaceId: membership.workspaceId, ...filter },
+      select: { id: true },
+    });
+    return visible !== null;
   }
 
   private async getSubordinateUserIds(

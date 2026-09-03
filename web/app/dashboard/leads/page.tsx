@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { listContactsByCompanyIds } from "@/lib/api/contacts";
 import type { Contact } from "@/lib/api/types";
-import { effectiveTier, listRawLeads, type ScoreTier } from "@/lib/api/raw-leads";
+import { effectiveTier, listRawLeads, TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
 import ImportContactsToggle from "./import-contacts-toggle";
 import LeadsTable from "./leads-table";
 import RescoreButton from "./rescore-button";
@@ -136,19 +136,19 @@ export default async function LeadsPage({
             <div className="fstat-v" style={{ color: "var(--green)" }}>
               {quenteCount}
             </div>
-            <div className="fstat-l">Quentes (≥70)</div>
+            <div className="fstat-l">{TIER_LABEL.quente} (≥70)</div>
           </div>
           <div className="fstat m">
             <div className="fstat-v" style={{ color: "var(--accent-secondary)" }}>
               {mornoCount}
             </div>
-            <div className="fstat-l">Mornos (45–69)</div>
+            <div className="fstat-l">{TIER_LABEL.morno} (45–69)</div>
           </div>
           <div className="fstat f">
             <div className="fstat-v" style={{ color: "var(--danger)" }}>
               {frioCount}
             </div>
-            <div className="fstat-l">Frios (&lt;45)</div>
+            <div className="fstat-l">{TIER_LABEL.frio} (&lt;45)</div>
           </div>
           <div className="fstat">
             <div className="fstat-v" style={{ color: "var(--text-secondary)" }}>
@@ -164,13 +164,13 @@ export default async function LeadsPage({
               Todos ({novos.length})
             </Link>
             <Link href={tabHref("quente")} className={currentTier === "quente" ? "active" : undefined}>
-              Quentes ({quenteCount})
+              {TIER_LABEL.quente} ({quenteCount})
             </Link>
             <Link href={tabHref("morno")} className={currentTier === "morno" ? "active" : undefined}>
-              Mornos ({mornoCount})
+              {TIER_LABEL.morno} ({mornoCount})
             </Link>
             <Link href={tabHref("frio")} className={currentTier === "frio" ? "active" : undefined}>
-              Frios ({frioCount})
+              {TIER_LABEL.frio} ({frioCount})
             </Link>
             <Link href={tabHref("fila")} className={currentTier === "fila" ? "active" : undefined}>
               Fila ({novos.length})

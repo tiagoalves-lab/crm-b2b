@@ -169,6 +169,11 @@ outras.
   cadastro no CRM aparece nomeado no resumo da sincronização, e a venda
   entra do mesmo jeito, com o nome dele.
 - Fonte → Decisão do usuário, 2026-08-20.
+- Detalhe → As empresas trazidas do eGestor ficam **sem dono** de
+  propósito. Dar dono a elas abriria a carteira inteira de clientes para
+  o representante, o contrário da regra 3.8 — a ideia de mapear o
+  vendedor da venda para o dono da empresa foi **descartada** pelo
+  usuário em 2026-08-31.
 
 **3.8**
 - Decisão → A ficha da empresa tem três abas de faturamento: **Vendas**

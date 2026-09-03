@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { RawLead } from "@/lib/api/types";
-import type { ScoreTier } from "@/lib/api/raw-leads";
+import { TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
 import { setLeadSegmentoAction, setLeadTagsAction, setLeadTierAction } from "./actions";
 
 // "" = não alterar (padrão); "auto" = limpa a classificação manual e volta
@@ -138,9 +138,9 @@ export default function BulkEditModal({
               <select value={tier} onChange={(e) => setTier(e.target.value as TierChoice)} disabled={busy}>
                 <option value="">Não alterar</option>
                 <option value="auto">Automático (score calculado)</option>
-                <option value="quente">Quente</option>
-                <option value="morno">Morno</option>
-                <option value="frio">Frio</option>
+                <option value="quente">{TIER_LABEL.quente}</option>
+                <option value="morno">{TIER_LABEL.morno}</option>
+                <option value="frio">{TIER_LABEL.frio}</option>
               </select>
             </label>
           </div>

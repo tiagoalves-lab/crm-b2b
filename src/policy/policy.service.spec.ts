@@ -17,12 +17,20 @@ function membership(
   };
 }
 
-function fakeTx(subordinateUserIds: string[] = []): TenantTx {
+function fakeTx(
+  subordinateUserIds: string[] = [],
+  companyVisible = false,
+): TenantTx {
   return {
     membership: {
       findMany: jest
         .fn()
         .mockResolvedValue(subordinateUserIds.map((userId) => ({ userId }))),
+    },
+    company: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue(companyVisible ? { id: 'company-1' } : null),
     },
   } as unknown as TenantTx;
 }
@@ -372,6 +380,64 @@ describe('PolicyService', () => {
       await expect(policy.scopeFilter(tx, m)).resolves.toEqual({
         ownerUserId: { in: ['user-1', 'subordinado-1', 'subordinado-2'] },
       });
+    });
+  });
+
+  // Bug de 2026-09-02: manager via a empresa na lista, mas a Timeline da
+  // ficha ainda usava can() e devolvia 404 pra empresa sem dono (as
+  // vindas do eGestor) — a ficha inteira caía. canReadCompany() é a regra
+  // única de leitura de Company, a mesma da lista.
+  describe('canReadCompany', () => {
+    it('manager enxerga qualquer empresa do workspace, sem consultar o banco', async () => {
+      const tx = fakeTx();
+      const m = membership({ role: 'manager', userId: 'user-1' });
+      await expect(policy.canReadCompany(tx, m, 'company-1')).resolves.toBe(
+        true,
+      );
+      expect(tx.company.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('owner e admin enxergam qualquer empresa', async () => {
+      for (const role of ['owner', 'admin'] as const) {
+        await expect(
+          policy.canReadCompany(fakeTx(), membership({ role }), 'company-1'),
+        ).resolves.toBe(true);
+      }
+    });
+
+    it('sales_rep depende do filtro: dono, oportunidade própria ou acesso concedido', async () => {
+      const m = membership({ role: 'sales_rep', userId: 'user-1' });
+      await expect(
+        policy.canReadCompany(fakeTx([], true), m, 'company-1'),
+      ).resolves.toBe(true);
+
+      const txInvisivel = fakeTx([], false);
+      await expect(
+        policy.canReadCompany(txInvisivel, m, 'company-1'),
+      ).resolves.toBe(false);
+      expect(txInvisivel.company.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: 'company-1',
+            workspaceId: 'workspace-1',
+            OR: [
+              { ownerUserId: 'user-1' },
+              { opportunities: { some: { ownerUserId: 'user-1' } } },
+              { accessGrants: { some: { userId: { in: ['user-1'] } } } },
+            ],
+          },
+        }),
+      );
+    });
+
+    it('sem "ver" em empresas_cadastro ninguém enxerga, nem manager', async () => {
+      const m = membership({
+        role: 'manager',
+        permissions: { empresas_cadastro: { ver: false } },
+      });
+      await expect(
+        policy.canReadCompany(fakeTx([], true), m, 'company-1'),
+      ).resolves.toBe(false);
     });
   });
 });

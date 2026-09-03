@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import type { Activity } from "@/lib/api/types";
-import { effectiveTier, scoreReasons } from "@/lib/api/raw-leads";
+import { effectiveTier, scoreReasons, TIER_LABEL } from "@/lib/api/raw-leads";
 import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
 import type { LeadFicha } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
@@ -211,7 +211,7 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
         <dt>Score</dt>
         <dd>
           <span className={`tier-tag tier-${tier}`}>
-            {lead.score} — {tier}
+            {lead.score} — {TIER_LABEL[tier]}
           </span>
         </dd>
         <dt>Cálculo</dt>

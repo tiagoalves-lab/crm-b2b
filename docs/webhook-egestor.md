@@ -13,16 +13,19 @@ CRM sempre que um registro é criado/editado/excluído.
   cadastro de webhook, com o próprio `endpoint` e o próprio
   `securityToken` — não existe um cadastro único que cubra as duas.
 - Módulos disponíveis: **Produtos, Contatos, Vendas, Usuários,
-  Financeiro**. No cadastro, cada módulo é ligado/desligado
-  individualmente (`produtos`/`contatos`/`vendas`/`usuarios`/
-  `financeiro`, booleano). O CRM processa **`contatos`** (desde
-  2026-08-12) e **`vendas`** (desde 2026-08-20). Qualquer outro módulo
-  é registrado e encerrado como `modulo_nao_suportado`, sem efeito.
-  - **Estado real das duas contas (conferido em 2026-08-20)**: os
-    **cinco** módulos estão ligados, não só os dois que interessam.
-    Nenhum evento de produtos/usuários/financeiro chegou até hoje, mas
-    se chegar vira linha inútil na tabela de eventos — vale desligar os
-    três no cadastro quando houver oportunidade.
+  Financeiro** — e, no retorno real da API (conferido 2026-08-31),
+  também `nfe` e `nfce`, que a doc oficial não lista. No cadastro, cada
+  módulo é ligado/desligado individualmente (booleano). O CRM processa
+  **`contatos`** (desde 2026-08-12) e **`vendas`** (desde 2026-08-20).
+  Qualquer outro módulo é registrado e encerrado como
+  `modulo_nao_suportado`, sem efeito.
+  - **Estado real das duas contas (2026-08-31)**: só `contatos` e
+    `vendas` ligados; `produtos`, `usuarios`, `financeiro`, `nfe` e
+    `nfce` desligados. Antes disso os cinco primeiros estavam ligados e
+    geraram 150 eventos `modulo_nao_suportado` (de 369 no total) entre
+    12/08 e 31/08 — lixo puro na tabela de eventos. O `POST` que
+    desligou devolveu o **mesmo** `securityToken` das duas contas, como
+    a doc previa: o webhook não precisou ser reconfigurado.
   - Venda é espelho de **mão única** (eGestor → CRM): o CRM nunca lança
     venda de volta (regra 4.2 das regras de negócio), então nenhum
     evento de venda pode ser eco da própria escrita — a checagem de eco

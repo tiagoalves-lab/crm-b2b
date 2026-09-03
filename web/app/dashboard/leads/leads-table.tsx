@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Contact, RawLead } from "@/lib/api/types";
-import { effectiveTier, scoreReasons, scoreTier, type ScoreTier } from "@/lib/api/raw-leads";
+import { effectiveTier, scoreReasons, scoreTier, TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
 import { approveOneLeadAction, bulkApproveLeadsAction, bulkDiscardLeadsAction, discardOneLeadAction, setLeadTierAction } from "./actions";
 import BulkEditModal from "./bulk-edit-modal";
 import LeadSegmentoEditor from "./lead-segmento-editor";
@@ -206,10 +206,10 @@ export default function LeadsTable({
                       title="Classificação manual — sobrepõe o cálculo automático por score"
                       style={{ marginTop: 6 }}
                     >
-                      <option value="">Automático ({scoreTier(lead.score)})</option>
-                      <option value="quente">Quente</option>
-                      <option value="morno">Morno</option>
-                      <option value="frio">Frio</option>
+                      <option value="">Automático ({TIER_LABEL[scoreTier(lead.score)]})</option>
+                      <option value="quente">{TIER_LABEL.quente}</option>
+                      <option value="morno">{TIER_LABEL.morno}</option>
+                      <option value="frio">{TIER_LABEL.frio}</option>
                     </select>
                   </td>
                   <td style={{ textAlign: "right" }}>

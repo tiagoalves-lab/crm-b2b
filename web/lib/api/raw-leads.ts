@@ -3,6 +3,16 @@ import type { Company, LeadFonte, PaginatedResult, RawLead, RawLeadStatus } from
 
 export type ScoreTier = "quente" | "morno" | "frio";
 
+// Rótulo de exibição dos tiers (pedido do usuário, 2026-09-01): a UI fala
+// em prazo de abordagem — Curto/Médio/Longo Prazo — em vez de
+// Quente/Morno/Frio. Só troca o texto na tela; o valor interno
+// ("quente"/"morno"/"frio") continua o mesmo no banco, na API e na URL.
+export const TIER_LABEL: Record<ScoreTier, string> = {
+  quente: "Curto Prazo",
+  morno: "Médio Prazo",
+  frio: "Longo Prazo",
+};
+
 // Espelha LeadScoringService#tier no backend (src/raw-leads/lead-scoring.service.ts)
 // — só pra exibição (o score em si já vem calculado do backend).
 export function scoreTier(score: number): ScoreTier {

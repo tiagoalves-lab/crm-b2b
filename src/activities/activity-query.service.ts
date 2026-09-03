@@ -84,10 +84,13 @@ export class ActivityQueryService {
   }
 
   // A visibilidade da timeline segue a visibilidade da entidade
-  // referenciada — repete a mesma checagem pontual que Company/
-  // OpportunityService já fazem (não reusa os services diretamente pra
-  // não criar import circular com ActivityModule, que eles já importam
-  // pra escrita).
+  // referenciada — mesma checagem pontual que Company/OpportunityService
+  // fazem, via PolicyService (não reusa os services diretamente pra não
+  // criar import circular com ActivityModule, que eles já importam pra
+  // escrita). Company usa canReadCompany(), não can(): a lista/ficha de
+  // Empresas enxerga mais que dono direto/hierarquia (manager vê todas,
+  // sales_rep vê também empresa compartilhada/com oportunidade própria),
+  // e a Timeline tem que abrir em toda empresa que a ficha abre.
   private async assertEntityVisible(
     tx: TenantTx,
     membership: MembershipContext,
@@ -116,13 +119,7 @@ export class ActivityQueryService {
       if (
         !company ||
         company.deletedAt ||
-        !(await this.policy.can(
-          tx,
-          membership,
-          'read',
-          company,
-          'empresas_cadastro',
-        ))
+        !(await this.policy.canReadCompany(tx, membership, company.id))
       ) {
         throw new NotFoundException('Empresa não encontrada.');
       }

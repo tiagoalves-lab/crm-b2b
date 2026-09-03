@@ -248,7 +248,7 @@ export class CompanyService {
     if (!this.policy.canModule(membership, 'empresas_cadastro', 'ver')) {
       throw new ForbiddenException('Sem permissão para ver empresas.');
     }
-    const visibilityWhere = await this.companyVisibilityFilter(tx, membership);
+    const visibilityWhere = await this.policy.companyReadFilter(tx, membership);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const where: Prisma.CompanyWhereInput = {
@@ -543,8 +543,10 @@ export class CompanyService {
   // uma oportunidade própria na empresa (regra original do SPEC-CRM-GAMA.md
   // §7.5) ou um CompanyAccess concedido (empresa compartilhada, pedido do
   // usuário 2026-08-06, ver create()/attachToExisting() acima) TAMBÉM dão
-  // acesso ao PERFIL — por isso o ramo 'read' usa companyVisibilityFilter()
-  // em vez de policy.can() puro. Escrita (editar/excluir o cadastro em si)
+  // acesso ao PERFIL — por isso o ramo 'read' usa PolicyService.
+  // canReadCompany() (mesma regra da lista e da Timeline, ver
+  // companyReadFilter() lá) em vez de policy.can() puro. Escrita (editar/
+  // excluir o cadastro em si)
   // continua restrita ao critério clássico — CompanyAccess/oportunidade não
   // fazem o segundo representante virar dono do cadastro.
   private async mustBeVisible(
@@ -576,57 +578,15 @@ export class CompanyService {
       return company;
     }
 
-    if (!this.policy.canModule(membership, 'empresas_cadastro', 'ver')) {
-      throw new NotFoundException('Empresa não encontrada.');
-    }
-
-    const visibilityWhere = await this.companyVisibilityFilter(tx, membership);
-    const visible = await tx.company.findFirst({
-      where: {
-        id: company.id,
-        workspaceId: membership.workspaceId,
-        ...visibilityWhere,
-      },
-      select: { id: true },
-    });
-    if (!visible) {
+    if (!(await this.policy.canReadCompany(tx, membership, company.id))) {
       throw new NotFoundException('Empresa não encontrada.');
     }
     return company;
   }
 
-  // Mesmo critério pra findAll (lista) e mustBeVisible (registro único) —
-  // ver comentário de mustBeVisible acima sobre por que isso é mais largo
-  // que PolicyService.scopeFilter puro. Hierarquia de níveis, ver
-  // docs/arquitetura-dados.md §4a: níveis 1-3 (owner/admin/manager) sem
-  // filtro (`{}`) — veem todas as empresas do workspace. `manager` é
-  // tratado igual a owner/admin AQUI de propósito (pedido do usuário,
-  // 2026-08-13): em todo o resto do sistema (oportunidades, tarefas,
-  // leads, contatos) `manager` continua restrito à própria equipe via
-  // PolicyService.scopeFilter — não generalizar esse bypass pra lá sem
-  // pedido explícito. Nível 4 (sales_rep/readonly) mantém a lógica
-  // antiga: dono direto OU oportunidade própria OU CompanyAccess, dentro
-  // da própria hierarquia.
-  private async companyVisibilityFilter(
-    tx: TenantTx,
-    membership: MembershipContext,
-  ): Promise<Prisma.CompanyWhereInput> {
-    if (membership.role === 'manager') {
-      return {};
-    }
-    const scope = await this.policy.scopeFilter(tx, membership);
-    if (scope.ownerUserId === undefined) {
-      return {};
-    }
-    const ownerCondition = scope.ownerUserId;
-    const userIds =
-      typeof ownerCondition === 'string' ? [ownerCondition] : ownerCondition.in;
-    return {
-      OR: [
-        { ownerUserId: ownerCondition },
-        { opportunities: { some: { ownerUserId: ownerCondition } } },
-        { accessGrants: { some: { userId: { in: userIds } } } },
-      ],
-    };
-  }
+  // A regra de visibilidade de leitura (mesma pra findAll e mustBeVisible)
+  // mora em PolicyService.companyReadFilter()/canReadCompany() desde
+  // 2026-09-02 — a Timeline (ActivityQueryService/ActivityService) também
+  // precisa dela, e ficar aqui obrigava a duplicar (foi o que fez a ficha
+  // quebrar pra manager).
 }

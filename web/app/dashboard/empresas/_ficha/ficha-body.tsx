@@ -6,6 +6,7 @@ import type { FichaData } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
 import { refreshCnpjDataAction, updateCustomFieldsAction } from "../actions";
 import AddNoteForm from "./add-note-form";
+import VendasTable from "./vendas-table";
 import ContactItem from "./contact-item";
 import AddContactForm from "./add-contact-form";
 import SubmitButton from "@/app/_components/submit-button";
@@ -497,7 +498,8 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
 
   // Vendas — o que o eGestor registrou de compra desta empresa. Colunas
   // pedidas pelo usuário (2026-08-21): Cód., Estabelecimento, Vendedor,
-  // Data e Total.
+  // Data e Total. Clicar numa venda expande os itens dela logo abaixo
+  // (pedido de 2026-09-01) — ver vendas-table.tsx.
   if (currentAba === "vendas") {
     if (salesHistory.length === 0) {
       return <p className="sub">Nenhuma venda registrada no eGestor para esta empresa.</p>;
@@ -509,30 +511,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
           <div className="ov-stat-l">Total comprado</div>
           <div className="ov-stat-v">{brl(total)}</div>
         </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Cód.</th>
-                <th>Estabelecimento</th>
-                <th>Vendedor</th>
-                <th>Data</th>
-                <th style={COL_NUM}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {salesHistory.map((v) => (
-                <tr key={v.id}>
-                  <td>{v.codVenda}</td>
-                  <td>{v.estabelecimento === "matriz" ? "Matriz" : "Filial"}</td>
-                  <td>{v.vendedorNome ?? "—"}</td>
-                  <td>{fmtDate(v.dtVenda)}</td>
-                  <td style={COL_NUM}>{brl(Number(v.valorTotal))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <VendasTable vendas={salesHistory} itens={salesItems} />
       </>
     );
   }

@@ -165,8 +165,9 @@ papel:
 aos níveis acima (mesmo escopo de visibilidade do nível 4, sem edição),
 não um 5º nível.
 
-Regra específica do menu de Empresas (S9.x, ver `company.service.ts`
-`companyVisibilityFilter()`): níveis 1–3 (owner/admin/manager) enxergam
+Regra específica de Empresas (S9.x, ver `PolicyService.companyReadFilter()`
+/`canReadCompany()` — uma regra só, usada pela lista, pela ficha e pela
+Timeline/nota da empresa): níveis 1–3 (owner/admin/manager) enxergam
 **todas** as empresas do workspace sem filtro; a lógica antiga de
 ownership/hierarquia de time (dono direto, oportunidade própria na
 empresa, ou `CompanyAccess` concedido) vale só pro nível 4
