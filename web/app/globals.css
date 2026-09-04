@@ -3162,11 +3162,12 @@ a.tag-chip.active {
 }
 
 /* Prévia do anexo (2026-09-04): sobe por cima do modal da ficha, que
-   já é z-index 100 no .overlay — por isso 200 aqui. */
+   já é z-index 100 no .overlay; 150 fica acima dele e abaixo do toast
+   (200), que precisa continuar visível. */
 .attach-viewer {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 150;
   background: rgba(20, 24, 29, 0.72);
   display: flex;
   align-items: center;
