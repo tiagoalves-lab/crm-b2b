@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { CONTACT_REQUIRED_ACTIVITY_SUBTIPOS } from "@/lib/api/activities";
 import type { Contact } from "@/lib/api/types";
 import { createContactInlineAction } from "../../tarefas/actions";
@@ -41,7 +41,7 @@ export default function AddNoteForm({
   contacts: Contact[];
   placeholder: string;
 }) {
-  const router = useRouter();
+  const refresh = useRefresh();
   const [subtipo, setSubtipo] = useState(subtipoOptions[0]?.value ?? "nota");
   const [texto, setTexto] = useState("");
   const [localContacts, setLocalContacts] = useState<Contact[]>(contacts);
@@ -117,7 +117,7 @@ export default function AddNoteForm({
     }
     setTexto("");
     setSelectedContactId("");
-    router.refresh();
+    refresh();
   }
 
   return (

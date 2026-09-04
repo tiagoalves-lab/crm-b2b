@@ -27,6 +27,8 @@ export interface CreateOpportunityInput {
   amount: number;
   currency: string;
   expectedCloseDate?: string;
+  // Lista lateral de itens digitada já no cadastro (2026-09-04).
+  items?: string[];
 }
 
 export function createOpportunity(
@@ -44,11 +46,16 @@ export interface UpdateOpportunityInput {
   version: number;
   stageId?: string;
   pipelineId?: string;
+  // Representante da oportunidade (2026-09-04) — precisa ser membro ativo
+  // do workspace, checado no backend.
+  ownerUserId?: string;
   status?: OpportunityStatus;
   lostReason?: string;
   amount?: number;
   currency?: string;
   expectedCloseDate?: string;
+  // Detalhamento livre (2026-09-04) — string vazia limpa o campo.
+  description?: string;
 }
 
 export function updateOpportunity(

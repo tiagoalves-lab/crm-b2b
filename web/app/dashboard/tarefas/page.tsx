@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { buildCompanyLookup, companyDisplayName, listCompanies } from "@/lib/api/companies";
+import { companyDisplayName } from "@/lib/api/companies";
 import { listMemberships } from "@/lib/api/memberships";
-import { listOpportunities } from "@/lib/api/opportunities";
 import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
-import type { Company, Membership, Task } from "@/lib/api/types";
-import { dayKeyBR, formatDateBR } from "@/lib/format-date";
+import type { Membership, Task } from "@/lib/api/types";
+import { dayKeyBR, formatDateOnlyBR } from "@/lib/format-date";
 import CalendarView from "./calendar-view";
 import TarefasTable from "./tarefas-table";
+import TopbarFilter from "@/app/_components/topbar-filter";
 
 // Mesmo padrão de tarefas/_detail/detail-body.tsx e dashboard/page.tsx —
 // GET /memberships vem enriquecido com nome/login real via Supabase Auth
@@ -19,21 +19,12 @@ function memberDisplayName(userId: string, memberships: Membership[]): string {
 
 type ViewName = "tabela" | "calendario";
 
-function targetLabel(
-  task: Task,
-  companyMap: Map<string, Company>,
-  opportunities: { id: string; companyId: string; deletedAt: string | null }[],
-): string {
-  if (task.companyId) {
-    const company = companyMap.get(task.companyId);
-    return company ? companyDisplayName(company) : "—";
-  }
-  if (task.opportunityId) {
-    const opp = opportunities.find((o) => o.id === task.opportunityId);
-    const company = opp ? companyMap.get(opp.companyId) : undefined;
-    return company ? companyDisplayName(company) : "—";
-  }
-  return "—";
+// Vínculo da linha: empresa direta ou a empresa da oportunidade — vem
+// embutido em GET /tasks desde 2026-09-04 (antes a tela baixava a base
+// inteira de empresas e a lista de oportunidades só pra isto).
+function targetLabel(task: Task): string {
+  const company = task.company ?? task.opportunity?.company ?? null;
+  return company ? companyDisplayName(company) : "—";
 }
 
 function dueClass(task: Task): string {
@@ -62,26 +53,7 @@ export default async function TarefasPage({
   const token = await getServerAccessToken();
   const currentView: ViewName = view === "calendario" ? "calendario" : "tabela";
 
-  const [{ items: tasks }, { items: companies }, { items: opportunities }, memberships] = await Promise.all([
-    listTasks(token),
-    listCompanies(token),
-    listOpportunities(token),
-    listMemberships(token),
-  ]);
-
-  // Empresa com a tag "lead-triagem" não vem em GET /companies, mas uma
-  // tarefa pode apontar pra ela (criada antes da aprovação do lead) — sem
-  // o preenchimento individual o Vínculo sumia. Lógica compartilhada com o
-  // Painel desde 2026-08-13, ver buildCompanyLookup.
-  const referencedOpportunityIds = new Set(
-    tasks.map((t) => t.opportunityId).filter((id): id is string => !!id),
-  );
-  const companyMap = await buildCompanyLookup(token, companies, [
-    ...tasks.map((t) => t.companyId),
-    ...opportunities
-      .filter((o) => referencedOpportunityIds.has(o.id))
-      .map((o) => o.companyId),
-  ]);
+  const [{ items: tasks }, memberships] = await Promise.all([listTasks(token), listMemberships(token)]);
 
   const baseHref = `/dashboard/tarefas?view=${currentView}${month ? `&month=${month}` : ""}`;
   const viewHref = (v: ViewName) => `/dashboard/tarefas?view=${v}${month && v === "calendario" ? `&month=${month}` : ""}`;
@@ -104,12 +76,25 @@ export default async function TarefasPage({
     title: task.title,
     done: task.status === "done",
     tipoLabel: taskTypeLabel(task.tipo),
-    vinculoLabel: targetLabel(task, companyMap, opportunities),
+    vinculoLabel: targetLabel(task),
     assigneeLabel: memberDisplayName(task.assigneeUserId, memberships),
-    dueLabel: task.dueAt ? formatDateBR(task.dueAt) : "—",
+    dueLabel: task.dueAt ? formatDateOnlyBR(task.dueAt) : "—",
     dueClass: dueClass(task),
     nAnexos: task._count?.attachments ?? 0,
     nComentarios: task._count?.comments ?? 0,
+    tags: task.tags ?? [],
+  }));
+
+  // Calendário (client component com arrastar-e-soltar, 2026-09-04):
+  // além do título, o card mostra tipo, responsável e cliente.
+  const calendarRows = rows.map((task) => ({
+    id: task.id,
+    title: task.title,
+    dueAt: task.dueAt,
+    done: task.status === "done",
+    tipoLabel: taskTypeLabel(task.tipo),
+    assigneeLabel: memberDisplayName(task.assigneeUserId, memberships),
+    vinculoLabel: targetLabel(task),
   }));
 
   return (
@@ -119,6 +104,7 @@ export default async function TarefasPage({
           <div className="page-title">Tarefas</div>
           <div className="page-sub">Rotina consolidada</div>
         </div>
+        <TopbarFilter />
         <Link href="/dashboard/tarefas/nova" className="btn btn-primary">
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" />
@@ -148,7 +134,7 @@ export default async function TarefasPage({
         {currentView === "tabela" ? (
           <TarefasTable rows={tableRows} baseHref={baseHref} />
         ) : (
-          <CalendarView tasks={tasks} month={month} />
+          <CalendarView tasks={calendarRows} month={month} />
         )}
       </div>
     </>

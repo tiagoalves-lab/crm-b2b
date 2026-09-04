@@ -3,6 +3,7 @@ import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
 import { listRawLeads } from "@/lib/api/raw-leads";
 import type { LeadFonte } from "@/lib/api/types";
+import TopbarFilter from "@/app/_components/topbar-filter";
 
 function brl(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
@@ -93,6 +94,7 @@ export default async function RelatoriosPage() {
           <div className="page-title">Relatórios</div>
           <div className="page-sub">Conversão, ciclo e previsão</div>
         </div>
+        <TopbarFilter />
       </div>
 
       <div className="content">

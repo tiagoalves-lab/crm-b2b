@@ -10,6 +10,21 @@ import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { ListActivitiesQueryDto } from './dto/list-activities-query.dto';
+import {
+  COMPANY_REF_SELECT,
+  OPPORTUNITY_REF_SELECT,
+  type CompanyRef,
+  type OpportunityRef,
+} from '../companies/company-ref';
+
+// Item de GET /activities: a atividade + referências mínimas de empresa e
+// oportunidade (com a empresa dela), pro Painel rotular "Últimas
+// atividades" sem baixar a base inteira de empresas (2026-09-04, ver
+// company-ref.ts).
+export type ActivityListItem = Activity & {
+  company: CompanyRef | null;
+  opportunity: OpportunityRef | null;
+};
 
 @Injectable()
 export class ActivityQueryService {
@@ -19,7 +34,7 @@ export class ActivityQueryService {
     tx: TenantTx,
     membership: MembershipContext,
     query: ListActivitiesQueryDto,
-  ): Promise<PaginatedResult<Activity>> {
+  ): Promise<PaginatedResult<ActivityListItem>> {
     const hasEntityFilter =
       query.companyId !== undefined || query.opportunityId !== undefined;
 
@@ -76,6 +91,10 @@ export class ActivityQueryService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { occurredAt: 'desc' },
+        include: {
+          company: { select: COMPANY_REF_SELECT },
+          opportunity: { select: OPPORTUNITY_REF_SELECT },
+        },
       }),
       tx.activity.count({ where }),
     ]);

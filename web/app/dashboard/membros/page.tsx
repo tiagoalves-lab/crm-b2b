@@ -6,6 +6,7 @@ import type { Membership } from "@/lib/api/types";
 import { removeMemberAction } from "./actions";
 import ConfirmSubmitButton from "./confirm-submit-button";
 import { ROLE_LABELS, ROLE_PILL, memberEmail, memberLogin, memberName } from "./roles";
+import TopbarFilter from "@/app/_components/topbar-filter";
 
 export default async function MembrosPage({
   searchParams,
@@ -40,6 +41,7 @@ export default async function MembrosPage({
             gerente vê o próprio + o dos subordinados (definido aqui)
           </div>
         </div>
+        <TopbarFilter />
         {canCreate && (
           <Link href="/dashboard/membros/novo" className="btn btn-primary">
             + Novo membro

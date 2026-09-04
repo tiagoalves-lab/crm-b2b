@@ -16,6 +16,7 @@ import {
   updateCompany,
 } from "@/lib/api/companies";
 import { propagarCompanyParaEgestor } from "@/lib/api/egestor";
+import type { FormState } from "@/app/_components/action-form";
 
 // Propagação CRM → eGestor depois de salvar a ficha (decisão do usuário,
 // 2026-08-14: "eu altero no CRM e ao salvar ele propaga"). Só roda depois
@@ -177,42 +178,32 @@ export async function calcularCurvaAbcAction() {
   );
 }
 
-// Modal "Editar empresa" (aberto a partir da ficha) — reusa o mesmo
-// parser do create; o form já vem pré-preenchido, então razaoSocial/
-// fantasia só chegam vazios aqui se o usuário limpou os dois de propósito.
-export async function updateCompanyAction(formData: FormData) {
+// Edição (modal/página "Editar empresa"): devolve resultado, sem redirect
+// (2026-09-03) — company-form.tsx fecha o modal com router.back().
+export async function updateCompanyAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
-  const back = String(formData.get("back") ?? "/dashboard/empresas");
   const fields = parseCompanyFields(formData);
 
   if (!fields.razaoSocial && !fields.fantasia) {
-    redirectWithError(back, new Error("Preencha Razão social ou Fantasia."));
+    return { ok: false, message: "Preencha Razão social ou Fantasia." };
   }
 
   try {
     await updateCompany(token, id, fields);
   } catch (error) {
-    redirectWithError(back, error);
+    return { ok: false, message: errorMessage(error) };
   }
 
   const sufixo = await propagarSufixo(token, id);
-
-  revalidatePath("/dashboard/empresas");
-  redirectWithMessage(back, `Empresa atualizada${sufixo}`);
+  return { ok: true, message: `Empresa atualizada${sufixo}` };
 }
 
-// Campos fiscais estaduais (IE/contribuinte ICMS/situação) — vivem em
-// customFields (jsonb), preenchimento manual (Receita não fornece IE).
-// `customFields` é substituído por inteiro pelo Prisma (não faz merge —
-// ver src/companies/company.service.ts `update()`), então é preciso ler o
-// que já existe (ex.: o snapshot da busca de CNPJ salvo por
-// refreshCnpjDataAction) e mesclar aqui antes de salvar, senão cada save
-// desta aba apaga silenciosamente os outros campos de customFields.
-export async function updateCustomFieldsAction(formData: FormData) {
+// Aba "Dados cadastrais" do drawer: devolve resultado; ActionForm com
+// onSuccess="stay" faz o refresh no lugar (2026-09-03).
+export async function updateCustomFieldsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
-  const back = String(formData.get("back") ?? "/dashboard/empresas");
 
   try {
     const current = await getCompany(token, id);
@@ -223,24 +214,19 @@ export async function updateCustomFieldsAction(formData: FormData) {
         indicador_ie: indicadorIeFromForm(formData.get("indicador_ie")),
         // Campos que saíram do formulário em 2026-08-17: `contribuinte_icms`
         // (substituído pelo `indicador_ie` acima) e `situacao_cadastral`
-        // estadual (removido a pedido do usuário — a situação que interessa
-        // é a federal, que já vem da Receita em customFields.cnpj_lookup).
-        // Explicitados como undefined em vez de só apagados daqui: o spread
-        // de `current.customFields` acima traria a chave antiga de volta em
-        // qualquer empresa que já a tivesse gravada, e ela ficaria pra
-        // sempre num cadastro sem tela que a mostre.
+        // estadual (removido a pedido do usuário). Explicitados como
+        // undefined: o spread de `current.customFields` traria a chave
+        // antiga de volta em qualquer empresa que já a tivesse gravada.
         contribuinte_icms: undefined,
         situacao_cadastral: undefined,
       },
     });
   } catch (error) {
-    redirectWithError(back, error);
+    return { ok: false, message: errorMessage(error) };
   }
 
   const sufixo = await propagarSufixo(token, id);
-
-  revalidatePath("/dashboard/empresas");
-  redirectWithMessage(back, `Dados fiscais salvos${sufixo}`);
+  return { ok: true, message: `Dados fiscais salvos${sufixo}` };
 }
 
 // Aba "Dados cadastrais" — busca a Receita Federal (BrasilAPI, via proxy
@@ -249,10 +235,9 @@ export async function updateCustomFieldsAction(formData: FormData) {
 // customFields.cnpj_lookup com os campos só-leitura que a ficha exibe
 // (situação/CNAE/porte/natureza jurídica — SPEC-CRM-GAMA.md §4.1, cad-grid
 // do protótipo). Mesmo cuidado de merge do updateCustomFieldsAction acima.
-export async function refreshCnpjDataAction(formData: FormData) {
+export async function refreshCnpjDataAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
-  const back = String(formData.get("back") ?? "/dashboard/empresas");
   // Campo reusa company.cpfCnpj como defaultValue (ficha-body.tsx), que
   // pode estar salvo com pontuação — limpa aqui antes de repassar adiante
   // (lookupCnpj já limpa de novo por conta própria, mas mantém os dois
@@ -260,7 +245,7 @@ export async function refreshCnpjDataAction(formData: FormData) {
   const cnpj = String(formData.get("cnpj") ?? "").replace(/\D/g, "");
 
   if (cnpj.length !== 14) {
-    redirectWithError(back, new Error("Informe um CNPJ com 14 dígitos."));
+    return { ok: false, message: "Informe um CNPJ com 14 dígitos." };
   }
 
   try {
@@ -298,11 +283,10 @@ export async function refreshCnpjDataAction(formData: FormData) {
       },
     });
   } catch (error) {
-    redirectWithError(back, error);
+    return { ok: false, message: errorMessage(error) };
   }
 
-  revalidatePath("/dashboard/empresas");
-  redirectWithMessage(back, "Dados da Receita carregados");
+  return { ok: true, message: "Dados da Receita carregados" };
 }
 
 // Aba "Timeline" da ficha — registra uma interação manual (nota, ligação,
@@ -350,35 +334,6 @@ export async function createNoteRpcAction(
   }
 }
 
-// Aba "Contatos" da ficha (entre "Dados cadastrais" e "Timeline") —
-// reusada tal e qual na ficha de Leads (companyId = RawLead.
-// promotedCompanyId), feature nova fora do SPEC-CRM-GAMA.md original.
-export async function createContactAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const companyId = String(formData.get("companyId"));
-  const back = String(formData.get("back") ?? "/dashboard/empresas");
-  const nome = String(formData.get("nome") ?? "").trim();
-
-  if (!nome) {
-    redirectWithError(back, new Error("Informe o nome do contato."));
-  }
-
-  try {
-    await createContact(token, companyId, {
-      nome,
-      cargo: emptyToUndefined(formData.get("cargo")),
-      email: emptyToUndefined(formData.get("email")),
-      telefone: emptyToUndefined(formData.get("telefone")),
-      decisor: formData.get("decisor") === "on",
-    });
-  } catch (error) {
-    redirectWithError(back, error);
-  }
-
-  revalidatePath("/dashboard/empresas");
-  revalidatePath("/dashboard/leads");
-  redirectWithMessage(back, "Contato adicionado");
-}
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -451,19 +406,3 @@ export async function updateContactAction(
   }
 }
 
-export async function deleteContactAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const companyId = String(formData.get("companyId"));
-  const contactId = String(formData.get("contactId"));
-  const back = String(formData.get("back") ?? "/dashboard/empresas");
-
-  try {
-    await deleteContact(token, companyId, contactId);
-  } catch (error) {
-    redirectWithError(back, error);
-  }
-
-  revalidatePath("/dashboard/empresas");
-  revalidatePath("/dashboard/leads");
-  redirectWithMessage(back, "Contato removido");
-}

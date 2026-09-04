@@ -19,6 +19,7 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { BulkRawLeadsDto } from './dto/bulk-raw-leads.dto';
 import { CreateRawLeadDto } from './dto/create-raw-lead.dto';
 import { ListRawLeadsQueryDto } from './dto/list-raw-leads-query.dto';
+import { UpdateLeadCadastroDto } from './dto/update-lead-cadastro.dto';
 import { UpdateLeadSegmentoDto } from './dto/update-lead-segmento.dto';
 import { UpdateLeadTagsDto } from './dto/update-lead-tags.dto';
 import { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
@@ -264,6 +265,24 @@ export class RawLeadController {
         role: membership.role,
       },
       (tx) => this.rawLeads.setSegmento(tx, membership, id, dto),
+    );
+  }
+
+  // Completar o cadastro de um lead em triagem (CNPJ + dados da Receita) —
+  // ver RawLeadService#updateCadastro.
+  @Patch(':id/cadastro')
+  updateCadastro(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLeadCadastroDto,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.rawLeads.updateCadastro(tx, membership, id, dto),
     );
   }
 

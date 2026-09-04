@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
+import { REFRESH_SESSION_KEY, TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { CnpjLookupResult } from "@/lib/api/companies";
 import type { Company } from "@/lib/api/types";
 import { createCompanyAction, updateCompanyAction } from "./actions";
@@ -89,9 +89,23 @@ export default function CompanyForm({
   useEffect(() => {
     if (createState?.ok) {
       sessionStorage.setItem(TOAST_SESSION_KEY, "Empresa criada");
+      sessionStorage.setItem(REFRESH_SESSION_KEY, "1");
       router.back();
     }
   }, [createState, router]);
+
+  // Edição (2026-09-03): mesmo caminho do cadastro — a action devolve o
+  // resultado, o modal fecha com router.back() e a ficha de trás recebe
+  // refresh ao chegar (REFRESH_SESSION_KEY, ver toast.tsx). Antes era
+  // redirect(), que fechava e reabria o modal.
+  const [updateState, updateFormAction] = useActionState(updateCompanyAction, null);
+  useEffect(() => {
+    if (updateState?.ok) {
+      sessionStorage.setItem(TOAST_SESSION_KEY, updateState.message ?? "Empresa atualizada");
+      sessionStorage.setItem(REFRESH_SESSION_KEY, "1");
+      router.back();
+    }
+  }, [updateState, router]);
 
   const field = (name: keyof Fields) => ({
     value: fields[name],
@@ -155,6 +169,7 @@ export default function CompanyForm({
       </div>
       {lookupError && <div className="error-banner">{lookupError}</div>}
       {createState?.ok === false && <div className="error-banner">{createState.message}</div>}
+      {updateState?.ok === false && <div className="error-banner">{updateState.message}</div>}
       <p className="field-hint" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: -4, marginBottom: 12 }}>
         Puxa razão social, endereço e situação da Receita Federal (BrasilAPI). A Inscrição
         Estadual é dado da SEFAZ e entra à parte, na seção &ldquo;Dados fiscais estaduais&rdquo; abaixo.
@@ -164,7 +179,7 @@ export default function CompanyForm({
         cards do sistema.
       </p>
 
-      <form action={company ? updateCompanyAction : createFormAction} className="form-grid">
+      <form action={company ? updateFormAction : createFormAction} className="form-grid">
         {company && <input type="hidden" name="id" value={company.id} />}
         {backHref && <input type="hidden" name="back" value={backHref} />}
         <label>

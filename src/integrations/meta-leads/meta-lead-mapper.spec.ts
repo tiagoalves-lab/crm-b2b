@@ -1,4 +1,4 @@
-import { mapearLeadDoMeta } from './meta-lead-mapper';
+import { legivel, mapearLeadDoMeta } from './meta-lead-mapper';
 import type { MetaLeadDetail } from './meta-leads.types';
 
 function lead(
@@ -9,7 +9,7 @@ function lead(
 
 describe('mapearLeadDoMeta', () => {
   it('mapeia os campos padrão de um formulário de contato', () => {
-    const { rawLead, contato, camposNaoMapeados } = mapearLeadDoMeta(
+    const { rawLead, contato, respostasNaoMapeadas } = mapearLeadDoMeta(
       lead([
         { name: 'full_name', values: ['Joana Prado'] },
         { name: 'email', values: ['joana@exemplo.com.br'] },
@@ -29,7 +29,9 @@ describe('mapearLeadDoMeta', () => {
       uf: 'SP',
       emails: ['joana@exemplo.com.br'],
       fones: ['+55 11 90000-0000'],
-      tags: ['meta-leads'],
+      // Tag pedida pelo usuário (2026-09-04) — é por ela que a Prospecção
+      // filtra os leads do Meta.
+      tags: ['Meta Business'],
     });
     expect(contato).toEqual({
       nome: 'Joana Prado',
@@ -37,7 +39,7 @@ describe('mapearLeadDoMeta', () => {
       telefone: '+55 11 90000-0000',
       cargo: 'Gerente de Compras',
     });
-    expect(camposNaoMapeados).toEqual([]);
+    expect(respostasNaoMapeadas).toEqual([]);
   });
 
   it('usa o nome da pessoa como razão social quando o formulário não pede empresa', () => {
@@ -100,20 +102,76 @@ describe('mapearLeadDoMeta', () => {
     expect(truncado.rawLead.cnpj).toBeUndefined();
   });
 
-  it('reporta perguntas customizadas em vez de descartá-las em silêncio', () => {
-    const { camposNaoMapeados } = mapearLeadDoMeta(
+  it('reconhece a pergunta de CNPJ do formulário da Gama e completa zero à esquerda', () => {
+    // Nome do campo como a Meta manda (texto da pergunta com "_"), e valor
+    // como a planilha do Google devolve um número: sem o zero da frente.
+    const { rawLead, respostasNaoMapeadas } = mapearLeadDoMeta(
       lead([
+        { name: 'qual_o_cnpj_da_sua_empresa?', values: ['1234567000189'] },
         { name: 'full_name', values: ['Joana Prado'] },
-        { name: 'Qual produto te interessa?', values: ['Linha industrial'] },
       ]),
       '777',
     );
 
-    expect(camposNaoMapeados).toEqual(['qual produto te interessa?']);
+    expect(rawLead.cnpj).toBe('01234567000189');
+    // A pergunta de CNPJ é mapeada — não pode aparecer também como
+    // "pergunta customizada" na anotação.
+    expect(respostasNaoMapeadas).toEqual([]);
+  });
+
+  it('aceita qualquer campo cujo nome contenha "cnpj" quando não bate alias', () => {
+    const { rawLead } = mapearLeadDoMeta(
+      lead([{ name: 'Informe o CNPJ', values: ['12.345.678/0001-95'] }]),
+      '777',
+    );
+
+    expect(rawLead.cnpj).toBe('12345678000195');
+  });
+
+  it('devolve pergunta customizada com pergunta e resposta legíveis', () => {
+    // As 3 perguntas reais do formulário da Gama (levantadas na planilha,
+    // 2026-09-04) — a Meta troca espaço por "_" na pergunta e nas opções
+    // de múltipla escolha.
+    const { respostasNaoMapeadas } = mapearLeadDoMeta(
+      lead([
+        { name: 'full_name', values: ['Joana Prado'] },
+        {
+          name: 'qual_equipamento_você_procura?',
+          values: ['máquina_de_corte_a_laser_para_chapas'],
+        },
+        {
+          name: 'quando_pretende_adquirir_o_equipamento?',
+          values: ['imediatamente'],
+        },
+        {
+          name: 'sua_empresa_já_utiliza_máquinas_desse_tipo?',
+          values: ['sim,_queremos_ampliar_ou_substituir'],
+        },
+      ]),
+      '777',
+    );
+
+    expect(respostasNaoMapeadas).toEqual([
+      {
+        campo: 'qual_equipamento_você_procura?',
+        pergunta: 'Qual equipamento você procura?',
+        resposta: 'máquina de corte a laser para chapas',
+      },
+      {
+        campo: 'quando_pretende_adquirir_o_equipamento?',
+        pergunta: 'Quando pretende adquirir o equipamento?',
+        resposta: 'imediatamente',
+      },
+      {
+        campo: 'sua_empresa_já_utiliza_máquinas_desse_tipo?',
+        pergunta: 'Sua empresa já utiliza máquinas desse tipo?',
+        resposta: 'sim, queremos ampliar ou substituir',
+      },
+    ]);
   });
 
   it('ignora campo sem nome, sem valor ou com valor em branco', () => {
-    const { rawLead, camposNaoMapeados } = mapearLeadDoMeta(
+    const { rawLead, respostasNaoMapeadas } = mapearLeadDoMeta(
       lead([
         { name: '', values: ['x'] },
         { name: 'email', values: ['   '] },
@@ -125,6 +183,14 @@ describe('mapearLeadDoMeta', () => {
 
     expect(rawLead.emails).toBeUndefined();
     expect(rawLead.razaoSocial).toBe('Indústria Modelo Ltda');
-    expect(camposNaoMapeados).toEqual([]);
+    expect(respostasNaoMapeadas).toEqual([]);
+  });
+});
+
+describe('legivel', () => {
+  it('troca "_" por espaço só quando o texto não tem espaço nenhum', () => {
+    expect(legivel('máquina_de_corte')).toBe('máquina de corte');
+    // Texto livre digitado pela pessoa: o "_" pode ser legítimo.
+    expect(legivel('Ref. modelo_X 2000')).toBe('Ref. modelo_X 2000');
   });
 });

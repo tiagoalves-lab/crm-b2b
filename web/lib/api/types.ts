@@ -55,6 +55,23 @@ export interface MeResponse {
 
 export type PessoaTipo = "PF" | "PJ";
 
+// Referência mínima de empresa embutida nas listas (GET /tasks,
+// /opportunities, /activities — 2026-09-04): só o que rotula a linha.
+// null quando o usuário não enxerga a empresa (RLS) — a tela mostra "—".
+export interface CompanyRef {
+  id: string;
+  razaoSocial: string | null;
+  fantasia: string | null;
+  nomeParaContato: string | null;
+  deletedAt: string | null;
+}
+
+export interface OpportunityRef {
+  id: string;
+  companyId: string;
+  company: CompanyRef | null;
+}
+
 export interface Company {
   id: string;
   domain: string | null;
@@ -133,6 +150,8 @@ export type OpportunityStatus = "open" | "won" | "lost";
 export interface Opportunity {
   id: string;
   companyId: string;
+  // Só em GET /opportunities (lista): referência mínima da empresa pro card.
+  company?: CompanyRef | null;
   pipelineId: string;
   stageId: string;
   ownerUserId: string;
@@ -140,6 +159,8 @@ export interface Opportunity {
   amount: string;
   currency: string;
   expectedCloseDate: string | null;
+  // Detalhamento livre do que está sendo negociado (2026-09-04).
+  description: string | null;
   status: OpportunityStatus;
   lostReason: string | null;
   version: number;
@@ -155,11 +176,34 @@ export interface OpportunityComment {
   opportunityId: string;
   authorUserId: string;
   body: string;
+  // Carimbo de itens da oportunidade (2026-09-04) — nomes dos itens.
+  tags: string[];
+  // Mensagem espelhada de fora (2026-09-04): id na origem e nome de quem
+  // escreveu lá. Preenchidos só no espelho do chat do cartão do Trello —
+  // nulos em comentário escrito aqui dentro. `authorUserId` nesse caso é
+  // o usuário de sistema, e a tela mostra `externalAuthor` no lugar.
+  externalRef?: string | null;
+  externalAuthor?: string | null;
+  createdAt: string;
+}
+
+// Lista lateral de itens do card (2026-09-04) — o que está sendo
+// negociado; cada item vira tag pra comentários e tarefas.
+export interface OpportunityItem {
+  id: string;
+  opportunityId: string;
+  name: string;
+  // Valor do item (2026-09-04) — Decimal do Prisma, string no JSON.
+  // Nulo = item sem preço (rótulo). Havendo qualquer item com valor,
+  // a soma vira o valor da oportunidade (backend).
+  amount: string | null;
+  position: number;
   createdAt: string;
 }
 
 export interface OpportunityWithDetails extends Opportunity {
   comments: OpportunityComment[];
+  items: OpportunityItem[];
 }
 
 export type TaskStatus = "pending" | "done";
@@ -175,6 +219,13 @@ export interface Task {
   assigneeUserId: string;
   companyId: string | null;
   opportunityId: string | null;
+  // Só em GET /tasks (lista): empresa direta ou a oportunidade (com a
+  // empresa dela) pra rotular o Vínculo sem baixar a base de empresas.
+  company?: CompanyRef | null;
+  opportunity?: OpportunityRef | null;
+  // Carimbo de itens da oportunidade de origem (2026-09-04) — vazio em
+  // tarefa vinculada só a empresa.
+  tags: string[];
   status: TaskStatus;
   createdBy: string;
   createdAt: string;
@@ -212,6 +263,9 @@ export interface Activity {
   actorUserId: string | null;
   companyId: string | null;
   opportunityId: string | null;
+  // Só em GET /activities (lista) — rótulo de empresa em "Últimas atividades".
+  company?: CompanyRef | null;
+  opportunity?: OpportunityRef | null;
   // Contato vinculado (2026-08-05) — obrigatório no back quando
   // payload.subtipo é ligação/reunião/visita/e-mail; o nome pra exibição
   // já vem denormalizado em payload.contatoNome (sem precisar de JOIN).

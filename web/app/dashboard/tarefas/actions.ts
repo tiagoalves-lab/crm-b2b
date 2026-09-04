@@ -1,26 +1,21 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
-import {
-  createChecklistItem,
-  createComment,
-  deleteChecklistItem,
-  deleteComment,
-  updateChecklistItem,
-} from "@/lib/api/task-cards";
+import { createComment, deleteComment } from "@/lib/api/task-cards";
 import {
   createUploadUrl,
   deleteAttachment,
   getDownloadUrl,
+  listAttachments,
+  type TaskAttachment,
 } from "@/lib/api/task-attachments";
 import { createTask, deleteTask, updateTask } from "@/lib/api/tasks";
 import type { CreateTaskInput, UpdateTaskInput } from "@/lib/api/tasks";
 import { createContact, listContacts } from "@/lib/api/contacts";
 import type { CreateContactInput } from "@/lib/api/contacts";
-import type { Contact, Task } from "@/lib/api/types";
+import type { Contact, Task, TaskComment, TaskStatus } from "@/lib/api/types";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -59,6 +54,13 @@ export async function createContactInlineAction(
   }
 }
 
+// Carimbo de itens da oportunidade (2026-09-04): um <input type="hidden"
+// name="tags"> por chip marcado (TagPicker). Sem chip, não manda o campo.
+function tagsFrom(formData: FormData): string[] | undefined {
+  const tags = formData.getAll("tags").filter((t): t is string => typeof t === "string" && t.trim() !== "");
+  return tags.length > 0 ? tags : undefined;
+}
+
 // Toda action de formulário volta pra essa mesma URL (preserva view/card/
 // month via campo oculto `back`) — sem isso, um erro no card detail
 // mandaria o usuário de volta pra lista em vez do card que ele editava.
@@ -92,13 +94,14 @@ export async function createTaskModalAction(
       companyId: emptyToUndefined(formData.get("companyId")),
       opportunityId: emptyToUndefined(formData.get("opportunityId")),
       assigneeUserId: emptyToUndefined(formData.get("assigneeUserId")),
+      tags: tagsFrom(formData),
     });
   } catch (error) {
     return { ok: false, message: errorMessage(error) };
   }
 
   // Comentário inicial (opcional) — mesmo endpoint já usado no cartão de
-  // uma tarefa existente (createCommentAction), só que chamado uma vez
+  // uma tarefa existente (addTaskCommentAction), só que chamado uma vez
   // logo depois da criação, com o id que acabou de sair do POST acima.
   const comment = String(formData.get("comment") ?? "").trim();
   if (comment) {
@@ -110,26 +113,13 @@ export async function createTaskModalAction(
   }
 
   // Anexo inicial (opcional) — mesma dança de signed URL do upload no
-  // cartão de uma tarefa existente (uploadAttachmentAction): o binário
+  // cartão de uma tarefa existente (uploadTaskAttachmentAction): o binário
   // nunca passa pelo NestJS, só esta Server Action assina a URL e faz o
   // PUT direto no Storage do Supabase.
   const file = formData.get("file");
   if (file instanceof File && file.size > 0) {
     try {
-      const { uploadUrl } = await createUploadUrl(token, task.id, {
-        fileName: file.name,
-        mimeType: file.type || undefined,
-        sizeBytes: file.size,
-      });
-      const bytes = await file.arrayBuffer();
-      const res = await fetch(uploadUrl, {
-        method: "PUT",
-        body: bytes,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-      });
-      if (!res.ok) {
-        throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
-      }
+      await enviarArquivo(token, task.id, file);
     } catch (error) {
       return { ok: false, message: errorMessage(error) };
     }
@@ -138,6 +128,10 @@ export async function createTaskModalAction(
   revalidatePath("/dashboard/tarefas");
   return { ok: true };
 }
+
+// ---------- Lista de Tarefas (checkbox de concluir/reabrir) ----------
+// Aqui o redirect é seguro: a lista é página comum, sem modal interceptado,
+// e a ação volta pra mesma URL (?view/month preservados via `back`).
 
 export async function completeTaskAction(formData: FormData) {
   const token = await getServerAccessToken();
@@ -169,201 +163,187 @@ export async function reopenTaskAction(formData: FormData) {
   redirectWithMessage(back, "Tarefa reaberta");
 }
 
-export async function deleteTaskAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const id = String(formData.get("id"));
+// ---------- Ficha da tarefa (modal / página) ----------
+//
+// Reescrito em 2026-09-03 depois do botão "Concluindo…" travar pra sempre
+// dentro do modal: a versão antiga usava revalidatePath()+redirect() em
+// cada botão, e redirect de Server Action dentro de rota interceptada
+// (@modal) é o ponto frágil conhecido do Next (mesmo motivo de
+// createTaskModalAction acima não redirecionar). Agora TODA ação da ficha
+// devolve o resultado (ActionResult) e quem atualiza a tela é o client
+// component (tarefas/_detail/task-detail.tsx): a resposta aparece na hora
+// e um router.refresh() em transição põe a lista atrás em dia sem travar
+// nada. Sem revalidatePath aqui de propósito — com ele o Next re-renderiza
+// a rota inteira DENTRO da resposta da action e o client refaz de novo:
+// duas rodadas de ~15 chamadas ao backend por clique.
 
-  try {
-    await deleteTask(token, id);
-  } catch (error) {
-    redirectWithError(`/dashboard/tarefas/${id}`, error);
-  }
-
-  revalidatePath("/dashboard/tarefas");
-  redirectWithMessage("/dashboard/tarefas", "Tarefa excluída");
+function str(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
-// Edição da tarefa (título/descrição/prazo/responsável) — protótipo:
-// openTaskForm.
-export async function updateTaskDetailAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const id = String(formData.get("id"));
+function fail(error: unknown): { ok: false; message: string } {
+  return { ok: false, message: errorMessage(error) };
+}
 
+export async function setTaskStatusAction(
+  id: string,
+  status: TaskStatus,
+): Promise<ActionResult<Task>> {
+  if (status !== "pending" && status !== "done") {
+    return { ok: false, message: "Situação inválida." };
+  }
+  const token = await getServerAccessToken();
   try {
-    await updateTask(token, id, {
-      title: emptyToUndefined(formData.get("title")),
-      description: String(formData.get("description") ?? ""),
-      dueAt: emptyToUndefined(formData.get("dueAt")),
-      tipo: emptyToUndefined(formData.get("tipo")) as UpdateTaskInput["tipo"],
-      contactId: emptyToUndefined(formData.get("contactId")),
-      assigneeUserId: emptyToUndefined(formData.get("assigneeUserId")),
+    return { ok: true, data: await updateTask(token, String(id), { status }) };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+// Arrastar o card no calendário pra outro dia = mudar o prazo (2026-09-04).
+// Chamada direta do client component (calendar-view.tsx), devolve
+// resultado — mesmo padrão de moveOpportunityStageAction no Pipeline.
+export async function moveTaskDueDateAction(id: string, dayKey: string): Promise<ActionResult<Task>> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dayKey))) {
+    return { ok: false, message: "Data inválida." };
+  }
+  const token = await getServerAccessToken();
+  try {
+    const task = await updateTask(token, String(id), { dueAt: String(dayKey) });
+    revalidatePath("/dashboard/tarefas");
+    return { ok: true, data: task };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function saveTaskDetailAction(
+  id: string,
+  input: UpdateTaskInput,
+): Promise<ActionResult<Task>> {
+  const token = await getServerAccessToken();
+  try {
+    const task = await updateTask(token, String(id), {
+      title: str(input.title),
+      description: typeof input.description === "string" ? input.description : "",
+      dueAt: str(input.dueAt),
+      tipo: str(input.tipo) as UpdateTaskInput["tipo"],
+      contactId: str(input.contactId),
+      assigneeUserId: str(input.assigneeUserId),
+      // Lista inteira de carimbos (pode ser vazia = tirar todos); só vai
+      // quando a ficha mandou o campo.
+      tags: Array.isArray(input.tags) ? input.tags.map(String) : undefined,
     });
+    return { ok: true, data: task };
   } catch (error) {
-    redirectWithError(back, error);
+    return fail(error);
   }
-
-  revalidatePath("/dashboard/tarefas");
-  redirectWithMessage(`/dashboard/tarefas/${id}`, "Tarefa atualizada");
 }
 
-// ---------- Checklist ----------
-
-export async function createChecklistItemAction(formData: FormData) {
+export async function deleteTaskClientAction(id: string): Promise<ActionResult<null>> {
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
-  const text = String(formData.get("text") ?? "").trim();
-
-  if (text) {
-    try {
-      await createChecklistItem(token, taskId, text);
-    } catch (error) {
-      redirectWithError(back, error);
-    }
-  }
-
-  revalidatePath("/dashboard/tarefas");
-}
-
-export async function toggleChecklistItemAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
-  const itemId = String(formData.get("itemId"));
-  const done = formData.get("done") === "true";
-
   try {
-    await updateChecklistItem(token, taskId, itemId, { done: !done });
+    await deleteTask(token, String(id));
+    return { ok: true, data: null };
   } catch (error) {
-    redirectWithError(back, error);
+    return fail(error);
   }
-
-  revalidatePath("/dashboard/tarefas");
 }
 
-export async function deleteChecklistItemAction(formData: FormData) {
+export async function addTaskCommentAction(
+  taskId: string,
+  body: string,
+): Promise<ActionResult<TaskComment>> {
+  const text = str(body);
+  if (!text) return { ok: false, message: "Escreva o comentário antes de enviar." };
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
-  const itemId = String(formData.get("itemId"));
-
   try {
-    await deleteChecklistItem(token, taskId, itemId);
+    return { ok: true, data: await createComment(token, String(taskId), text) };
   } catch (error) {
-    redirectWithError(back, error);
+    return fail(error);
   }
-
-  revalidatePath("/dashboard/tarefas");
 }
 
-// ---------- Comentários ----------
-
-export async function createCommentAction(formData: FormData) {
+export async function removeTaskCommentAction(
+  taskId: string,
+  commentId: string,
+): Promise<ActionResult<null>> {
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
-  const body = String(formData.get("body") ?? "").trim();
-
-  if (body) {
-    try {
-      await createComment(token, taskId, body);
-    } catch (error) {
-      redirectWithError(back, error);
-    }
-  }
-
-  revalidatePath("/dashboard/tarefas");
-}
-
-export async function deleteCommentAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
-  const commentId = String(formData.get("commentId"));
-
   try {
-    await deleteComment(token, taskId, commentId);
+    await deleteComment(token, String(taskId), String(commentId));
+    return { ok: true, data: null };
   } catch (error) {
-    redirectWithError(back, error);
+    return fail(error);
   }
-
-  revalidatePath("/dashboard/tarefas");
 }
 
-// ---------- Anexos (SPEC-CRM-GAMA.md §3.2/§4.3, Fatia 8) ----------
-// O binário nunca passa pelo NestJS: o backend só assina a URL de
-// upload; quem faz o PUT do arquivo é este Server Action, direto no
-// Storage do Supabase — mesmo raciocínio de nunca expor a service role
-// key ao navegador (docs/seguranca.md).
+// O binário nunca passa pelo NestJS: o backend só assina a URL de upload;
+// quem faz o PUT do arquivo é esta Server Action, direto no Storage do
+// Supabase — mesmo raciocínio de nunca expor a service role key ao
+// navegador (docs/seguranca.md).
+async function enviarArquivo(token: string, taskId: string, file: File): Promise<void> {
+  const { uploadUrl } = await createUploadUrl(token, taskId, {
+    fileName: file.name,
+    mimeType: file.type || undefined,
+    sizeBytes: file.size,
+  });
+  const bytes = await file.arrayBuffer();
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    body: bytes,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  if (!res.ok) {
+    throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
+  }
+}
 
-export async function uploadAttachmentAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
+// Recebe o FormData do <form> de anexo (campo "file") e devolve a lista
+// já atualizada, pra ficha mostrar o arquivo sem esperar o refresh.
+export async function uploadTaskAttachmentAction(
+  taskId: string,
+  formData: FormData,
+): Promise<ActionResult<TaskAttachment[]>> {
   const file = formData.get("file");
-
   if (!(file instanceof File) || file.size === 0) {
-    redirectWithError(back, new Error("Selecione um arquivo pra enviar."));
-    return;
+    return { ok: false, message: "Selecione um arquivo pra enviar." };
   }
-
+  const token = await getServerAccessToken();
   try {
-    const { uploadUrl } = await createUploadUrl(token, taskId, {
-      fileName: file.name,
-      mimeType: file.type || undefined,
-      sizeBytes: file.size,
-    });
-    const bytes = await file.arrayBuffer();
-    const res = await fetch(uploadUrl, {
-      method: "PUT",
-      body: bytes,
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-    });
-    if (!res.ok) {
-      throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
-    }
+    await enviarArquivo(token, String(taskId), file);
+    return { ok: true, data: await listAttachments(token, String(taskId)) };
   } catch (error) {
-    redirectWithError(back, error);
+    return fail(error);
   }
-
-  revalidatePath(back);
-  redirectWithMessage(back, "Anexo adicionado");
 }
 
-// Gera a signed URL só quando clicado (nunca antecipado na listagem) e
-// redireciona pra ela — evita assinar N URLs a cada carregamento da
-// página de detalhe.
-export async function downloadAttachmentAction(formData: FormData) {
+export async function removeTaskAttachmentAction(
+  taskId: string,
+  attachmentId: string,
+): Promise<ActionResult<TaskAttachment[]>> {
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
-  const attachmentId = String(formData.get("attachmentId"));
-
-  let url: string;
   try {
-    const result = await getDownloadUrl(token, taskId, attachmentId);
-    url = result.url;
+    await deleteAttachment(token, String(taskId), String(attachmentId));
+    return { ok: true, data: await listAttachments(token, String(taskId)) };
   } catch (error) {
-    redirectWithError(back, error);
-    return;
+    return fail(error);
   }
-
-  redirect(url);
 }
 
-export async function deleteAttachmentAction(formData: FormData) {
+// Gera a signed URL só quando clicado (nunca antecipado na listagem) —
+// evita assinar N URLs a cada carregamento da ficha. Quem abre a URL é o
+// navegador (task-detail.tsx), não um redirect daqui.
+export async function attachmentDownloadUrlAction(
+  taskId: string,
+  attachmentId: string,
+): Promise<ActionResult<string>> {
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const taskId = String(formData.get("taskId"));
-  const attachmentId = String(formData.get("attachmentId"));
-
   try {
-    await deleteAttachment(token, taskId, attachmentId);
+    const { url } = await getDownloadUrl(token, String(taskId), String(attachmentId));
+    return { ok: true, data: url };
   } catch (error) {
-    redirectWithError(back, error);
+    return fail(error);
   }
-
-  revalidatePath(back);
-  redirectWithMessage(back, "Anexo removido");
 }

@@ -38,6 +38,7 @@ export default async function NovaTarefaDoCardPage({
             initialContacts={initialContacts}
             initialCompanyId={data.company.id}
             assigneeOptions={assigneeOptions}
+            opportunityItems={data.opportunity.items.map((item) => item.name)}
           />
         </div>
       </div>

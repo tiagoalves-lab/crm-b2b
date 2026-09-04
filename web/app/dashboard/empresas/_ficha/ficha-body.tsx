@@ -1,7 +1,7 @@
 import { companyDisplayName } from "@/lib/api/companies";
 import { hasPermission } from "@/lib/api/permission-catalog";
-import type { Activity } from "@/lib/api/types";
-import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
+import type { Activity, Membership } from "@/lib/api/types";
+import { formatDateBR, formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
 import type { FichaData } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
 import { refreshCnpjDataAction, updateCustomFieldsAction } from "../actions";
@@ -10,6 +10,7 @@ import VendasTable from "./vendas-table";
 import ContactItem from "./contact-item";
 import AddContactForm from "./add-contact-form";
 import SubmitButton from "@/app/_components/submit-button";
+import ActionForm from "@/app/_components/action-form";
 
 const SUBTIPO_LABEL: Record<string, string> = {
   nota: "Anotação",
@@ -78,28 +79,44 @@ function fmtDate(value?: string | null): string {
   return formatDateBR(value);
 }
 
-// Pedido do usuário (2026-08-03): em vez de "Você", mostrar o nome real
-// de quem está logado. `currentUserName` vem do user_metadata.name do JWT
-// (ver web/lib/api/types.ts#AuthenticatedUser) — cai pra "Você" se o
-// usuário não tiver nome cadastrado (contas antigas, ou nunca preenchido).
+// Campo só-data (prazo, previsão, data de abertura) — ver formatDateOnlyBR.
+function fmtDia(value?: string | null): string {
+  if (!value) return "—";
+  return formatDateOnlyBR(value);
+}
+
+// Nome de quem registrou o item da Timeline.
+//
+// 2026-08-03: em vez de "Você", mostrar o nome real de quem está logado
+// (`currentUserName` vem do user_metadata.name do JWT, ver
+// web/lib/api/types.ts#AuthenticatedUser).
+// 2026-09-04: e o nome real de QUALQUER membro, não só o próprio —
+// `memberships` vem enriquecido com nome/login pelo GET /memberships.
+// Antes um registro feito por outra pessoa aparecia como um pedaço do id
+// (ex.: "cdf42f7f…"), que não diz nada pra quem lê a ficha. Mesmo molde
+// já usado na ficha de tarefa e no card de oportunidade.
 function memberLabel(
   userId: string | null,
   currentUserId: string,
-  currentUserName?: string | null,
+  currentUserName: string | null | undefined,
+  memberships: Membership[],
 ): string {
   if (!userId) return "Sistema";
   if (userId === currentUserId) return currentUserName?.trim() || "Você";
-  return `${userId.slice(0, 8)}…`;
+  const membro = memberships.find((m) => m.userId === userId);
+  return membro?.name?.trim() || membro?.login?.trim() || `${userId.slice(0, 8)}…`;
 }
 
 function ActivityItem({
   activity,
   currentUserId,
   currentUserName,
+  memberships,
 }: {
   activity: Activity;
   currentUserId: string;
   currentUserName?: string | null;
+  memberships: Membership[];
 }) {
   const payload = activity.payload as { texto?: string; subtipo?: string; contatoNome?: string };
   const subtipo =
@@ -109,7 +126,7 @@ function ActivityItem({
     <div className={`timeline-item type-${color}`}>
       <div className="timeline-item-head">
         <span className={`pill pill-${color}`}>{SUBTIPO_LABEL[subtipo] ?? subtipo}</span>
-        <span>{memberLabel(activity.actorUserId, currentUserId, currentUserName)}</span>
+        <span>{memberLabel(activity.actorUserId, currentUserId, currentUserName, memberships)}</span>
         {payload.contatoNome && <span>· {payload.contatoNome}</span>}
         <span>{formatDateTimeBR(activity.occurredAt)}</span>
       </div>
@@ -124,7 +141,7 @@ function ActivityItem({
 // moldura em volta (ver empresas/[id]/page.tsx e
 // @drawer/(.)empresas/[id]/page.tsx).
 export default function FichaBody({ data, aba }: { data: FichaData; aba?: string }) {
-  const { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts } = data;
+  const { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts, memberships } = data;
   const currentAba = currentAbaOf(aba);
   const abaHref = (a: string) => `/dashboard/empresas/${company.id}?aba=${a}`;
   // Editar/Remover contato: vem da matriz granular de permissões (módulo
@@ -173,7 +190,12 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
 
         <div className="drawer-section-title">Última atividade</div>
         {ultimaAtividade ? (
-          <ActivityItem activity={ultimaAtividade} currentUserId={me.user.id} currentUserName={me.user.name} />
+          <ActivityItem
+            activity={ultimaAtividade}
+            currentUserId={me.user.id}
+            currentUserName={me.user.name}
+            memberships={memberships}
+          />
         ) : (
           <p className="sub">Sem interações ainda.</p>
         )}
@@ -187,7 +209,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
                   {o.currency} {Number(o.amount).toLocaleString("pt-BR")}
                 </div>
                 <div className="dli-sub">
-                  {o.expectedCloseDate ? `previsão ${fmtDate(o.expectedCloseDate)}` : "sem previsão"}
+                  {o.expectedCloseDate ? `previsão ${fmtDia(o.expectedCloseDate)}` : "sem previsão"}
                 </div>
               </div>
             </div>
@@ -208,7 +230,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
     return (
       <>
         <div className="cnpj-search">
-          <form action={refreshCnpjDataAction} className="cnpj-search-row">
+          <ActionForm action={refreshCnpjDataAction} onSuccess="stay" className="cnpj-search-row">
             <input type="hidden" name="id" value={company.id} />
             <input type="hidden" name="back" value={abaHref("cadastro")} />
             <div className="field">
@@ -222,7 +244,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
               </svg>
               Buscar dados
             </SubmitButton>
-          </form>
+          </ActionForm>
           <div className="field-hint" style={{ marginTop: 8 }}>
             Puxa razão social, CNAE, endereço e situação da base da Receita Federal (via BrasilAPI). A
             Inscrição Estadual é dado da SEFAZ e entra à parte, abaixo.
@@ -281,7 +303,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
               </div>
               <div className="cad-cell">
                 <div className="cad-k">Abertura</div>
-                <div className="cad-v">{fmtDate(cad.dataAbertura)}</div>
+                <div className="cad-v">{fmtDia(cad.dataAbertura)}</div>
               </div>
               <div className="cad-cell">
                 <div className="cad-k">Porte</div>
@@ -374,7 +396,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
           </div>
         )}
 
-        <form action={updateCustomFieldsAction} className="form-grid" style={{ marginTop: 14 }}>
+        <ActionForm action={updateCustomFieldsAction} onSuccess="stay" className="form-grid" style={{ marginTop: 14 }}>
           <input type="hidden" name="id" value={company.id} />
           <input type="hidden" name="back" value={abaHref("cadastro")} />
           <label>
@@ -398,7 +420,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
           <SubmitButton className="btn btn-primary" pendingLabel="Salvando…">
             Salvar dados estaduais
           </SubmitButton>
-        </form>
+        </ActionForm>
       </>
     );
   }
@@ -439,7 +461,15 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
         </div>
         <div className="timeline">
           {activities.length > 0 ? (
-            activities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} currentUserName={me.user.name} />)
+            activities.map((a) => (
+              <ActivityItem
+                key={a.id}
+                activity={a}
+                currentUserId={me.user.id}
+                currentUserName={me.user.name}
+                memberships={memberships}
+              />
+            ))
           ) : (
             <p className="sub">Nenhuma interação registrada ainda.</p>
           )}
@@ -455,7 +485,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
           <div key={t.id} className="drawer-list-item">
             <div>
               <div className="dli-title">{t.title}</div>
-              <div className="dli-sub">{t.dueAt ? `prazo ${fmtDate(t.dueAt)}` : "sem prazo"}</div>
+              <div className="dli-sub">{t.dueAt ? `prazo ${fmtDia(t.dueAt)}` : "sem prazo"}</div>
             </div>
             <span className={t.status === "done" ? "pill pill-green" : "pill pill-gray"}>
               {t.status === "done" ? "Concluída" : "Pendente"}
@@ -478,7 +508,7 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
                 {o.currency} {Number(o.amount).toLocaleString("pt-BR")}
               </div>
               <div className="dli-sub">
-                {o.closedAt ? `encerrado ${fmtDate(o.closedAt)}` : `previsão ${fmtDate(o.expectedCloseDate)}`}
+                {o.closedAt ? `encerrado ${fmtDate(o.closedAt)}` : `previsão ${fmtDia(o.expectedCloseDate)}`}
               </div>
             </div>
             <span
@@ -600,7 +630,15 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
         </div>
       )}
       {posvendaActivities.length > 0 ? (
-        posvendaActivities.map((a) => <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} currentUserName={me.user.name} />)
+        posvendaActivities.map((a) => (
+          <ActivityItem
+            key={a.id}
+            activity={a}
+            currentUserId={me.user.id}
+            currentUserName={me.user.name}
+            memberships={memberships}
+          />
+        ))
       ) : (
         <div className="posvenda-empty">
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

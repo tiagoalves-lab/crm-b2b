@@ -62,64 +62,59 @@ export async function listCompanies(
   includeDeleted = false,
 ): Promise<PaginatedResult<Company>> {
   const pageSize = 100;
-  let page = 1;
-  let items: Company[] = [];
-  let total = 0;
-
-  for (;;) {
+  const fetchPage = (page: number) => {
     const query = new URLSearchParams({ pageSize: String(pageSize), page: String(page) });
     if (includeDeleted) query.set("includeDeleted", "true");
-    const result = await apiFetch<PaginatedResult<Company>>(`/companies?${query.toString()}`, {
-      token,
-    });
-    items = items.concat(result.items);
-    total = result.total;
-    if (items.length >= total || result.items.length === 0) break;
-    page += 1;
-  }
+    return apiFetch<PaginatedResult<Company>>(`/companies?${query.toString()}`, { token });
+  };
 
-  return { items, total, page: 1, pageSize: items.length };
+  // A 1ª página diz o total; as demais vão todas de uma vez (2026-09-03 —
+  // antes eram sequenciais, ~300 ms cada, em toda tela que rotula empresa).
+  const first = await fetchPage(1);
+  const totalPages = Math.max(1, Math.ceil(first.total / pageSize));
+  const rest =
+    totalPages > 1
+      ? await Promise.all(Array.from({ length: totalPages - 1 }, (_, i) => fetchPage(i + 2)))
+      : [];
+  const items = first.items.concat(...rest.map((r) => r.items));
+
+  return { items, total: first.total, page: 1, pageSize: items.length };
 }
 
-// Resolve nome de empresa em telas que listam OUTRA coisa (tarefas,
-// atividades) e só precisam da empresa pra rotular a linha.
-//
-// Existe porque `GET /companies` esconde de propósito as empresas ainda
-// com a tag "lead-triagem" — elas não são "empresa de verdade" até serem
-// aprovadas (company.service.ts#findAll). Só que uma tarefa ou uma
-// atividade PODE apontar pra uma delas, criada antes da aprovação: aí a
-// empresa existe, o vínculo existe, mas ela não vem na lista e a coluna
-// mostra "—" como se não houvesse vínculo nenhum. `GET /companies/:id`
-// não tem esse filtro, então resolve normalmente — daí o preenchimento
-// individual só do que faltou.
-//
-// Extraído de tarefas/page.tsx em 2026-08-13: a lógica existia lá e o
-// Painel nunca recebeu a mesma correção, então "Ações da semana" e
-// "Últimas atividades" continuavam mostrando "—" para tarefa de lead em
-// triagem. Ter isto num lugar só evita a terceira cópia divergir de novo.
-export async function buildCompanyLookup(
+// Uma linha da tela de Empresas, montada pelo backend (2026-09-04).
+// A tela antes precisava de 6 requisições pra isto: as 4 páginas de
+// listCompanies (com endereço, e-mails, telefones e campos extras que a
+// tabela nem mostra), mais as listas inteiras de oportunidades e de
+// vendas (1.093 linhas) só pra somar LTV e achar a última compra. Agora é
+// uma requisição, com as somas feitas pelo banco.
+export interface CompanyResumo {
+  id: string;
+  razaoSocial: string | null;
+  fantasia: string | null;
+  nomeParaContato: string | null;
+  cpfCnpj: string | null;
+  cidade: string | null;
+  uf: string | null;
+  tags: string[];
+  curvaAbc: "A" | "B" | "C" | null;
+  curvaAbcCalculadaEm: string | null;
+  deletedAt: string | null;
+  temEgestor: boolean;
+  ltv: number;
+  // Zerados (0 / null) quando o usuário não tem permissão de ver vendas —
+  // o backend omite o faturamento em vez de recusar a lista inteira.
+  ultimaCompra: string | null;
+}
+
+export function listCompaniesResumo(
   token: string,
-  companies: Company[],
-  requiredIds: Iterable<string | null | undefined>,
-): Promise<Map<string, Company>> {
-  const map = new Map(companies.map((c) => [c.id, c]));
-
-  const missing = new Set<string>();
-  for (const id of requiredIds) {
-    if (id && !map.has(id)) missing.add(id);
-  }
-  if (missing.size === 0) return map;
-
-  // `.catch(() => null)` por item: uma empresa que o usuário não pode ver
-  // (404/403 pelo escopo do PolicyService) não pode derrubar a tela —
-  // degrada pra "—" naquela linha só, que é o comportamento antigo.
-  const fetched = await Promise.all(
-    [...missing].map((id) => getCompany(token, id).catch(() => null)),
+  includeDeleted = false,
+): Promise<{ items: CompanyResumo[]; total: number }> {
+  const query = includeDeleted ? "?includeDeleted=true" : "";
+  return apiFetch<{ items: CompanyResumo[]; total: number }>(
+    `/companies/resumo${query}`,
+    { token },
   );
-  for (const company of fetched) {
-    if (company) map.set(company.id, company);
-  }
-  return map;
 }
 
 export interface CreateCompanyInput {

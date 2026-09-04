@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Contact, RawLead } from "@/lib/api/types";
 import { effectiveTier, scoreReasons, scoreTier, TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
 import { approveOneLeadAction, bulkApproveLeadsAction, bulkDiscardLeadsAction, discardOneLeadAction, setLeadTierAction } from "./actions";
@@ -10,6 +10,7 @@ import BulkEditModal from "./bulk-edit-modal";
 import LeadSegmentoEditor from "./lead-segmento-editor";
 import LeadTagsEditor from "./lead-tags-editor";
 import SubmitButton from "@/app/_components/submit-button";
+import { normalizeForFilter, useTopbarQuery } from "@/app/_components/topbar-filter";
 
 const TIER_COLOR: Record<ScoreTier, string> = {
   quente: "var(--green)",
@@ -41,6 +42,39 @@ export default function LeadsTable({
   const [tierBusy, setTierBusy] = useState<Set<string>>(new Set());
   const [showBulkEdit, setShowBulkEdit] = useState(false);
 
+  // Filtro do cabeçalho (TopbarFilter em modo contexto, 2026-09-03): a
+  // tabela filtra no estado, não por DOM, porque tem seleção em lote —
+  // uma linha marcada e escondida entraria em Aprovar/Descartar/Editar em
+  // lote sem o usuário ver. Por isso a seleção é zerada a cada mudança do
+  // texto e toda ação em lote parte de visibleRows.
+  const query = useTopbarQuery();
+  const visibleRows = useMemo(() => {
+    const needle = normalizeForFilter(query.trim());
+    if (!needle) return rows;
+    return rows.filter((lead) => {
+      const contatos = lead.promotedCompanyId ? (contactsByCompanyId[lead.promotedCompanyId] ?? []) : [];
+      const texto = [
+        lead.razaoSocial,
+        lead.cnpj,
+        lead.municipio,
+        lead.uf,
+        lead.cnaePrincipal,
+        lead.cnaeDescricao,
+        lead.porte,
+        lead.segmento,
+        lead.situacao,
+        ...lead.tags,
+        ...contatos.flatMap((c) => [c.nome, c.email, c.telefone, c.cargo]),
+      ]
+        .filter((v): v is string => typeof v === "string" && v.length > 0)
+        .join(" ");
+      return normalizeForFilter(texto).includes(needle);
+    });
+  }, [rows, query, contactsByCompanyId]);
+  useEffect(() => {
+    setSelected(new Set());
+  }, [query]);
+
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -51,7 +85,7 @@ export default function LeadsTable({
   }
 
   function selectAll(checked: boolean) {
-    setSelected(checked ? new Set(rows.map((r) => r.id)) : new Set());
+    setSelected(checked ? new Set(visibleRows.map((r) => r.id)) : new Set());
   }
 
   // Classificação manual — "" limpa a marcação e volta pro score
@@ -117,7 +151,7 @@ export default function LeadsTable({
             <tr>
               {!readOnly && (
                 <th className="checkcol">
-                  <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={(e) => selectAll(e.target.checked)} />
+                  <input type="checkbox" checked={visibleRows.length > 0 && selected.size === visibleRows.length} onChange={(e) => selectAll(e.target.checked)} />
                 </th>
               )}
               <th>Empresa</th>
@@ -132,7 +166,7 @@ export default function LeadsTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((lead) => {
+            {visibleRows.map((lead) => {
               const tier = effectiveTier(lead);
               return (
                 <tr key={lead.id} className={selected.has(lead.id) ? "triage-row picked" : "triage-row"}>
@@ -247,10 +281,10 @@ export default function LeadsTable({
                 </tr>
               );
             })}
-            {rows.length === 0 && (
+            {visibleRows.length === 0 && (
               <tr>
                 <td colSpan={readOnly ? 9 : 10} className="empty">
-                  Nenhum lead nesta faixa 🎯
+                  {rows.length === 0 ? "Nenhum lead nesta faixa 🎯" : "Nenhum lead bate com o filtro."}
                 </td>
               </tr>
             )}
@@ -260,7 +294,7 @@ export default function LeadsTable({
 
       {showBulkEdit && (
         <BulkEditModal
-          leads={rows.filter((r) => selected.has(r.id))}
+          leads={visibleRows.filter((r) => selected.has(r.id))}
           onClose={() => setShowBulkEdit(false)}
           onDone={() => {
             setShowBulkEdit(false);

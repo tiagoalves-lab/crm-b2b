@@ -32,6 +32,7 @@ import { createFakeAuthApp, withTenant } from './utils/fake-auth';
 process.env.META_APP_SECRET = 'app-secret-de-teste-idor';
 process.env.META_VERIFY_TOKEN = 'verify-token-de-teste-idor';
 process.env.COTACOES_API_TOKEN = 'token-cotacoes-de-teste-idor';
+process.env.META_LEADS_PLANILHA_TOKEN = 'token-planilha-de-teste-idor';
 
 const prisma = new PrismaClient();
 
@@ -90,6 +91,12 @@ const ROTAS_PUBLICAS = [
   // público neste backend", e o teste do controle substituto (assinatura
   // HMAC) está logo abaixo.
   '/integrations/meta-leads/webhook',
+  // Planilha do gestor de tráfego (2026-09-04) — canal por onde os leads
+  // do Meta chegam hoje. Controle substituto: token estático
+  // META_LEADS_PLANILHA_TOKEN no Authorization (Bearer), comparação em
+  // tempo constante (MetaLeadsPlanilhaService#assertTokenValido). Teste
+  // logo abaixo do bloco do Meta.
+  '/integrations/meta-leads/planilha',
   // App de cotações (2026-08-28) — idem: rotas sem `:id`, declaradas pela
   // documentação executável. Controle substituto: token estático
   // COTACOES_API_TOKEN no Authorization (Bearer), comparação em tempo
@@ -455,6 +462,45 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
     }, 20000);
   });
 
+  describe('rota pública (planilha de leads do Meta) — sem JWT, autentica por token estático', () => {
+    // @Public() como o webhook do Meta acima; o controle substituto é o
+    // token META_LEADS_PLANILHA_TOKEN no Authorization (Bearer), comparado
+    // em tempo constante (MetaLeadsPlanilhaService#assertTokenValido). Se
+    // essa checagem cair, vira endpoint aberto na internet capaz de criar
+    // lead na carteira do gerente.
+    //
+    // Payload VÁLIDO de propósito (mesmo gotcha dos blocos acima). O
+    // caminho feliz não é testado aqui: gravaria no banco real — a lógica
+    // tem spec unitário próprio (meta-leads-planilha.service.spec.ts).
+    const caminho = '/integrations/meta-leads/planilha';
+    const payloadValido = {
+      linhas: [{ id: 'l:1', campos: { full_name: 'Lead de teste IDOR' } }],
+    };
+
+    it('recusa requisição sem Authorization nenhum', async () => {
+      const res = await request(app.getHttpServer())
+        .post(caminho)
+        .send(payloadValido);
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Authorization ausente ou mal formado.',
+      );
+    }, 20000);
+
+    it('recusa token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .post(caminho)
+        .set('Authorization', 'Bearer token-forjado-de-proposito')
+        .send(payloadValido);
+      expect(res.status).toBe(401);
+      // A mensagem prova QUAL camada recusou: a comparação do token — não
+      // "não configurado" (env fixado no topo) nem "mal formado".
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+  });
+
   describe('rota pública (integração cotações) — sem JWT, autentica por token estático', () => {
     // @Public() como os webhooks acima; o controle substituto é o token
     // COTACOES_API_TOKEN no Authorization (Bearer), comparado em tempo
@@ -501,6 +547,47 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
         .post('/integrations/cotacoes/clientes')
         .set('Authorization', 'Bearer token-forjado-de-proposito')
         .send(payloadValido);
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
+    // Trello → funil (2026-09-04). Mesmas três armadilhas dos testes
+    // acima: payload/query VÁLIDOS, senão o 400 do ValidationPipe passaria
+    // verde sem exercitar o token. Sem esta checagem, qualquer um criaria
+    // oportunidade no funil e escreveria no chat dos cards.
+    const cardIdValido = 'abc0123456789abcdef01234';
+
+    it('recusa consulta de status de cartão sem Authorization', async () => {
+      const res = await request(app.getHttpServer()).get(
+        `/integrations/cotacoes/trello-status?card_ids=${cardIdValido}`,
+      );
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Authorization ausente ou mal formado.',
+      );
+    }, 20000);
+
+    it('recusa cadastro de oportunidade a partir de cartão com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/trello-vinculo')
+        .set('Authorization', 'Bearer token-forjado-de-proposito')
+        .send({ card_id: cardIdValido, cnpj: '00000000000191' });
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
+    it('recusa espelhamento de comentários com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/trello-comentarios')
+        .set('Authorization', 'Bearer token-forjado-de-proposito')
+        .send({
+          card_id: cardIdValido,
+          comentarios: [{ ref: 'a'.repeat(24), texto: 'oi' }],
+        });
       expect(res.status).toBe(401);
       expect((res.body as { message?: string }).message).toBe(
         'Token inválido.',

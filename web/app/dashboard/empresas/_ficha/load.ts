@@ -1,10 +1,11 @@
 import { getMe } from "@/lib/api/me";
 import { getCompany } from "@/lib/api/companies";
-import { listActivities } from "@/lib/api/activities";
+import { apenasInteracoes, listActivities } from "@/lib/api/activities";
 import { listTasks } from "@/lib/api/tasks";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listSalesHistory, listSalesHistoryItems } from "@/lib/api/sales-history";
 import { listContacts } from "@/lib/api/contacts";
+import { listMemberships } from "@/lib/api/memberships";
 import { ApiError } from "@/lib/api/client";
 
 // 403 = "sem permissão pra esta aba" (ver comentário no Promise.all de
@@ -27,12 +28,13 @@ export async function loadFicha(token: string, companyId: string) {
   const [
     me,
     company,
-    { items: activities },
+    { items: todasAsActivities },
     { items: tasks },
     { items: opportunities },
     salesHistory,
     salesItems,
     contacts,
+    memberships,
   ] = await Promise.all([
     getMe(token),
     getCompany(token, companyId),
@@ -51,9 +53,18 @@ export async function loadFicha(token: string, companyId: string) {
     vazioSe403(listSalesHistory(token, { companyId }), []),
     vazioSe403(listSalesHistoryItems(token, { companyId }), []),
     vazioSe403(listContacts(token, companyId), []),
+    // Nome real de quem registrou cada item da Timeline (2026-09-04) —
+    // GET /memberships vem enriquecido com nome/login via Supabase Auth
+    // Admin API. Antes só o próprio usuário aparecia por nome; os outros
+    // viravam um pedaço do id (ex.: "cdf42f7f…").
+    listMemberships(token),
   ]);
 
-  return { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts };
+  // A Timeline, o contador da aba e o "Interações" da visão geral saem
+  // todos daqui — filtrar num ponto só mantém os três coerentes.
+  const activities = apenasInteracoes(todasAsActivities);
+
+  return { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts, memberships };
 }
 
 export type FichaData = Awaited<ReturnType<typeof loadFicha>>;

@@ -1,5 +1,7 @@
 import type { TaskType } from '@prisma/client';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsDateString,
   IsIn,
   IsOptional,
@@ -8,6 +10,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ExactlyOneOf } from '../../common/validators/exactly-one-of.decorator';
+import { ITEM_NAME_MAX, ITEMS_MAX } from '../../opportunities/opportunity-tags';
 import { TASK_TYPES } from '../task-type.constants';
 
 export class CreateTaskDto {
@@ -51,4 +54,14 @@ export class CreateTaskDto {
   @IsOptional()
   @IsUUID()
   opportunityId?: string;
+
+  // Carimbo de itens da oportunidade de origem (2026-09-04) — só com
+  // opportunityId, e cada tag precisa ser item da lista dela; checado no
+  // service (opportunities/opportunity-tags.ts).
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ITEMS_MAX)
+  @IsString({ each: true })
+  @MaxLength(ITEM_NAME_MAX, { each: true })
+  tags?: string[];
 }

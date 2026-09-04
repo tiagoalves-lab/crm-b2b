@@ -4,9 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Company, Prisma, RawLead } from '@prisma/client';
+import { Prisma, type Company, type RawLead } from '@prisma/client';
 import { ActivityService } from '../activities/activity.service';
-import type { PaginatedResult } from '../companies/company.service';
+import type {
+  PaginatedResult,
+  SemTimeline,
+} from '../companies/company.service';
 import { CompanyService } from '../companies/company.service';
 import { ContactService } from '../companies/contact.service';
 import type { CreateCompanyDto } from '../companies/dto/create-company.dto';
@@ -17,6 +20,7 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { parseContactsSpreadsheet } from './contacts-spreadsheet-import.util';
 import type { CreateRawLeadDto } from './dto/create-raw-lead.dto';
 import type { ListRawLeadsQueryDto } from './dto/list-raw-leads-query.dto';
+import type { UpdateLeadCadastroDto } from './dto/update-lead-cadastro.dto';
 import type { UpdateLeadSegmentoDto } from './dto/update-lead-segmento.dto';
 import type { UpdateLeadTagsDto } from './dto/update-lead-tags.dto';
 import type { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
@@ -56,6 +60,11 @@ export class RawLeadService {
     tx: TenantTx,
     membership: MembershipContext,
     dtoRaw: CreateRawLeadDto,
+    // Carga em massa (planilha) e entrada automática (Meta) não escrevem
+    // "cadastro criado" na Timeline — ver SemTimeline em
+    // companies/company.service.ts. Cadastro manual pela Prospecção
+    // continua registrando.
+    options: SemTimeline = {},
   ): Promise<RawLead> {
     // Padroniza em caixa alta os campos de texto do cadastro (pedido do
     // usuário, 2026-08-10) — único ponto de entrada de criação de
@@ -126,7 +135,12 @@ export class RawLeadService {
       dtCad: dto.dtAbertura,
       customFields: dto.socios?.length ? { socios: dto.socios } : undefined,
     };
-    const company = await this.companies.create(tx, membership, companyDto);
+    const company = await this.companies.create(
+      tx,
+      membership,
+      companyDto,
+      options,
+    );
 
     const rawLeadData = {
       workspaceId: membership.workspaceId,
@@ -196,7 +210,7 @@ export class RawLeadService {
     let imported = 0;
     for (const { row, dto } of rows) {
       try {
-        await this.create(tx, membership, dto);
+        await this.create(tx, membership, dto, { semTimeline: true });
         imported++;
       } catch (error) {
         errors.push({
@@ -248,7 +262,9 @@ export class RawLeadService {
 
       let lead: RawLead;
       try {
-        lead = await this.create(tx, membership, companyDto);
+        lead = await this.create(tx, membership, companyDto, {
+          semTimeline: true,
+        });
       } catch (error) {
         errors.push({
           row: group.firstRow,
@@ -389,6 +405,16 @@ export class RawLeadService {
     id: string,
   ): Promise<Company> {
     const lead = await this.mustBeNovo(tx, membership, id);
+    // CNPJ obrigatório pra virar empresa (decisão do usuário, 2026-09-04):
+    // o lead do formulário do Meta chega sem CNPJ e pode ficar assim na
+    // triagem, mas é a chave que une tudo no CRM (regras de negócio, 5.3) —
+    // preencher na ficha (updateCadastro) antes de aprovar. Conferido em
+    // produção antes de ligar: nenhum lead existente sem CNPJ.
+    if (!lead.cnpj?.trim()) {
+      throw new BadRequestException(
+        'Preencha o CNPJ do lead antes de aprovar — é a chave que une a empresa no CRM.',
+      );
+    }
     if (!lead.promotedCompanyId) {
       throw new BadRequestException(
         'Lead sem empresa associada — não pode ser aprovado.',
@@ -501,6 +527,133 @@ export class RawLeadService {
     });
   }
 
+  // Completar/corrigir o cadastro de um lead em triagem (pedido do usuário,
+  // 2026-09-04): o lead do formulário do Meta chega sem CNPJ, e é aqui que
+  // o vendedor preenche — o frontend consulta a Receita e manda CNPJ +
+  // razão social + CNAE + porte + situação + cidade/UF de uma vez. Recalcula
+  // o score (os campos que entram na fórmula podem ter mudado) e espelha na
+  // company-lead o que ela também guarda (razão social, CNPJ, cidade/UF),
+  // pra "Aprovar para Lead" já encontrar a empresa completa.
+  //
+  // CNPJ é a chave que une tudo (regras de negócio, 5.3) — por isso dois
+  // bloqueios antes de gravar: outro lead em triagem com o mesmo CNPJ (seria
+  // a duplicata que create() já evita na importação) e empresa já
+  // cadastrada com esse CNPJ fora da triagem deste lead (cliente real, em
+  // geral vindo do eGestor — o certo é trabalhar pela ficha dela, não
+  // duplicar pela Prospecção).
+  async updateCadastro(
+    tx: TenantTx,
+    membership: MembershipContext,
+    id: string,
+    dtoRaw: UpdateLeadCadastroDto,
+  ): Promise<RawLead> {
+    const lead = await this.mustBeNovo(tx, membership, id);
+    const dto = this.upperCaseCadastroFields(dtoRaw);
+
+    // undefined = não tocar; null = limpar; string = dígitos validados.
+    let cnpj: string | null | undefined;
+    if (dto.cnpj === null) {
+      cnpj = null;
+    } else if (dto.cnpj !== undefined) {
+      const digits = dto.cnpj.replace(/\D/g, '');
+      if (digits.length !== 14) {
+        throw new BadRequestException('CNPJ precisa ter 14 dígitos.');
+      }
+      cnpj = digits;
+
+      const outroLead = await tx.rawLead.findFirst({
+        where: {
+          workspaceId: membership.workspaceId,
+          cnpj: digits,
+          status: 'novo',
+          id: { not: lead.id },
+        },
+        select: { id: true },
+      });
+      if (outroLead) {
+        throw new BadRequestException(
+          'Já existe outro lead na Prospecção com este CNPJ.',
+        );
+      }
+
+      // Mesma function SECURITY DEFINER de CompanyService#create — a RLS
+      // esconderia a empresa de outro representante e a checagem daria
+      // falso negativo (ver comentário na migration 20260806190000).
+      const rows = await tx.$queryRaw<Array<{ id: string | null }>>(
+        Prisma.sql`SELECT public.find_company_id_by_cnpj(${membership.workspaceId}::uuid, ${digits}) AS id`,
+      );
+      const existingCompanyId = rows[0]?.id;
+      if (existingCompanyId && existingCompanyId !== lead.promotedCompanyId) {
+        throw new BadRequestException(
+          'Este CNPJ já está cadastrado em Empresas. Descarte este lead e trabalhe pela ficha da empresa existente.',
+        );
+      }
+    }
+
+    const razao =
+      dto.razaoSocial !== undefined
+        ? resolveRazaoSocial(dto.razaoSocial, dto.emRecuperacaoJudicial)
+        : undefined;
+
+    const data: Prisma.RawLeadUpdateInput = {
+      ...(cnpj !== undefined ? { cnpj } : {}),
+      ...(razao
+        ? {
+            razaoSocial: razao.razaoSocial,
+            emRecuperacaoJudicial: razao.emRecuperacaoJudicial,
+          }
+        : {}),
+      ...(dto.cnaePrincipal !== undefined
+        ? { cnaePrincipal: dto.cnaePrincipal }
+        : {}),
+      ...(dto.cnaeDescricao !== undefined
+        ? { cnaeDescricao: dto.cnaeDescricao }
+        : {}),
+      ...(dto.porte !== undefined ? { porte: dto.porte } : {}),
+      ...(dto.uf !== undefined ? { uf: dto.uf } : {}),
+      ...(dto.municipio !== undefined ? { municipio: dto.municipio } : {}),
+      ...(dto.situacao !== undefined ? { situacao: dto.situacao } : {}),
+    };
+
+    const { score } = this.scoring.score({
+      cnaePrincipal: dto.cnaePrincipal ?? lead.cnaePrincipal,
+      importador: lead.importador,
+      porte: dto.porte ?? lead.porte,
+      situacao: dto.situacao ?? lead.situacao,
+      uf: dto.uf ?? lead.uf,
+    });
+
+    const updated = await tx.rawLead.update({
+      where: { id: lead.id },
+      data: { ...data, score },
+    });
+
+    if (lead.promotedCompanyId) {
+      // updateMany (não update): se a RLS esconder a company-lead deste
+      // usuário, 0 linhas em vez de estourar a transação inteira — o lead em
+      // si já foi atualizado, que é o que a Prospecção mostra.
+      await tx.company.updateMany({
+        where: {
+          id: lead.promotedCompanyId,
+          workspaceId: membership.workspaceId,
+        },
+        data: {
+          ...(cnpj !== undefined ? { cpfCnpj: cnpj } : {}),
+          ...(razao
+            ? {
+                razaoSocial: razao.razaoSocial,
+                emRecuperacaoJudicial: razao.emRecuperacaoJudicial,
+              }
+            : {}),
+          ...(dto.uf !== undefined ? { uf: dto.uf } : {}),
+          ...(dto.municipio !== undefined ? { cidade: dto.municipio } : {}),
+        },
+      });
+    }
+
+    return updated;
+  }
+
   async bulkApprove(
     tx: TenantTx,
     membership: MembershipContext,
@@ -585,6 +738,24 @@ export class RawLeadService {
       ...dto,
       razaoSocial: dto.razaoSocial.toUpperCase(),
       fantasia: up(dto.fantasia),
+      cnaePrincipal: up(dto.cnaePrincipal),
+      cnaeDescricao: up(dto.cnaeDescricao),
+      porte: up(dto.porte),
+      uf: up(dto.uf),
+      municipio: up(dto.municipio),
+      situacao: up(dto.situacao),
+    };
+  }
+
+  // Mesmo escopo de upperCaseTextFields, pros campos que chegam no
+  // updateCadastro (todos opcionais — `undefined` continua `undefined`).
+  private upperCaseCadastroFields(
+    dto: UpdateLeadCadastroDto,
+  ): UpdateLeadCadastroDto {
+    const up = (value?: string) => value?.toUpperCase();
+    return {
+      ...dto,
+      razaoSocial: up(dto.razaoSocial),
       cnaePrincipal: up(dto.cnaePrincipal),
       cnaeDescricao: up(dto.cnaeDescricao),
       porte: up(dto.porte),

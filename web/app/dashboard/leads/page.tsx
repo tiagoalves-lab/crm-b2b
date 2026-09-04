@@ -6,6 +6,7 @@ import { effectiveTier, listRawLeads, TIER_LABEL, type ScoreTier } from "@/lib/a
 import ImportContactsToggle from "./import-contacts-toggle";
 import LeadsTable from "./leads-table";
 import RescoreButton from "./rescore-button";
+import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
 
 type TierFilter = "todos" | ScoreTier | "fila" | "descartados";
 
@@ -106,12 +107,13 @@ export default async function LeadsPage({
     `/dashboard/leads?tier=${currentTier}${q ? `&q=${encodeURIComponent(q)}` : ""}${currentTag ? `&tag=${encodeURIComponent(currentTag)}` : ""}${s ? `&segmento=${encodeURIComponent(s)}` : ""}`;
 
   return (
-    <>
+    <TopbarFilterProvider>
       <div className="topbar">
         <div>
           <div className="page-title">Prospecção</div>
           <div className="page-sub">Relação de empresas com oportunidades de negócios</div>
         </div>
+        <TopbarFilter placeholder="Buscar razão social, CNPJ, CNAE, cidade… (Enter busca em tudo)" />
         <div style={{ display: "flex", gap: 8 }}>
           <RescoreButton />
           <ImportContactsToggle />
@@ -179,14 +181,6 @@ export default async function LeadsPage({
               Descartados ({descartadosItems.length})
             </Link>
           </div>
-          <form method="get" className="search">
-            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.3-4.3" />
-            </svg>
-            {currentTier !== "todos" && <input type="hidden" name="tier" value={currentTier} />}
-            <input name="q" defaultValue={q ?? ""} placeholder="Buscar razão social ou CNAE..." />
-          </form>
         </div>
 
         {(availableTags.length > 0 || hasUntagged) && (
@@ -225,6 +219,6 @@ export default async function LeadsPage({
 
         <LeadsTable rows={rows} readOnly={currentTier === "descartados"} contactsByCompanyId={contactsByCompanyId} />
       </div>
-    </>
+    </TopbarFilterProvider>
   );
 }

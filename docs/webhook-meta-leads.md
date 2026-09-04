@@ -1,17 +1,107 @@
-# Central de Leads do Meta — webhook `leadgen`
+# Central de Leads do Meta — webhook `leadgen` e planilha
 
 Como o CRM recebe automaticamente os leads que caem na Central de Leads
 do Meta Business Suite (formulários de Lead Ads no Facebook/Instagram do
-Portfólio da Gama). Implementado em 2026-08-14, módulo
-`src/integrations/meta-leads/`.
+Portfólio da Gama). Módulo `src/integrations/meta-leads/`, com **dois
+canais** que desembocam na mesma esteira:
 
-Mesma natureza do `webhook-egestor.md`: é **push** — a Meta chama uma URL
-do CRM quando alguém preenche um formulário, em vez de o CRM ficar
-consultando. A diferença estrutural pro eGestor é que aqui o fluxo é de
-**mão única**: a Central de Leads é fonte, nunca destino. O CRM nunca
-escreve de volta na Meta — por isso este módulo não tem nada equivalente
-ao mecanismo de eco (`EgestorWriteEcho`), que só existe lá porque a
-escrita do próprio CRM dispara webhook de volta.
+- **Webhook direto da Meta** (implementado em 2026-08-14) — parado
+  enquanto o App não sai do modo desenvolvimento (ver "O que falta").
+- **Planilha do gestor de tráfego** (em uso desde 2026-09-04) — o canal
+  por onde os leads reais chegam hoje. Seção própria logo abaixo.
+
+Mesma natureza do `webhook-egestor.md`: é **push** — alguém chama uma URL
+do CRM quando um lead novo aparece, em vez de o CRM ficar consultando. A
+diferença estrutural pro eGestor é que aqui o fluxo é de **mão única**: a
+Central de Leads (e a planilha) é fonte, nunca destino. O CRM nunca
+escreve de volta — por isso este módulo não tem nada equivalente ao
+mecanismo de eco (`EgestorWriteEcho`), que só existe lá porque a escrita
+do próprio CRM dispara webhook de volta.
+
+## Canal em uso hoje: planilha do gestor de tráfego
+
+O gestor de tráfego (conta externa à Gama) mantém a planilha Google
+Sheets **"LEADS GAMA BRASIL"** com o export da Central de Leads. O
+usuário espelha a aba **"Query CRM"** dela (que consolida as linhas de
+todas as versões do formulário) numa planilha **própria, "LEADS GAMA
+DB"**, via `IMPORTRANGE` — só ele tem acesso a essa, e é dela que o CRM
+lê (decisão do usuário, 2026-09-04: o script e o token não ficam numa
+planilha de terceiro). O `IMPORTRANGE` atualiza em até ~30 minutos, então
+é essa a latência máxima de um lead novo.
+
+**Como funciona**
+
+1. Um Google Apps Script (`scripts/planilha-meta-leads.gs`), instalado
+   na planilha "LEADS GAMA DB" (Extensões → Apps Script) na conta do
+   usuário, roda quando a planilha muda e, por garantia, a cada 5
+   minutos. Ele nunca escreve na planilha.
+2. O script manda as linhas novas (lotes de 50) pra
+   `POST /integrations/meta-leads/planilha`, com o token
+   `META_LEADS_PLANILHA_TOKEN` em `Authorization: Bearer …`. Cada linha
+   vai como `{ id, campos: { cabeçalho: valor } }` — quem interpreta as
+   colunas é o CRM (`MetaLeadsPlanilhaService`), então coluna nova na
+   planilha não exige mexer no script.
+3. O CRM confere o token **antes** de gravar qualquer coisa, registra a
+   linha em `meta_leads_webhook_events` (`origem = 'planilha'`, dedupe
+   pelo id que a Meta dá ao lead — mesma chave do webhook direto) e
+   entra na fase 3 do `MetaLeadsWebhookService` (`criarLeadNoCrm`): a
+   mesma do webhook, sem a chamada à Graph API porque as respostas já
+   vêm na linha.
+4. Lead de teste da Meta (botão "Testar" do formulário: e-mail
+   `test@meta.com`, campos `<test lead: …>`) é filtrado no script **e**
+   no CRM — fica registrado como `lead_de_teste_ignorado`, nunca vira
+   linha na Prospecção.
+
+**O que cada linha vira no CRM**
+
+- `RawLead` na Prospecção, `fonte = meta_leads`, tag **"Meta Business"**,
+  na carteira do gerente (`META_LEADS_DEFAULT_OWNER_USER_ID`), com o
+  score calculado pela fórmula de sempre.
+- `Contact` da pessoa que preencheu (nome + telefone/e-mail).
+- **Anotação na Timeline** do lead com a origem (plataforma, formulário,
+  campanha, anúncio) e as perguntas próprias do formulário — hoje:
+  equipamento procurado, prazo de compra, se já usa máquina do tipo.
+- CNPJ: o formulário atual pergunta (`qual_o_cnpj_da_sua_empresa?`).
+  Quando a pessoa preenche, entra direto e o dedupe por CNPJ funciona;
+  quando vem vazio, o vendedor preenche na aba "Dados cadastrais" da
+  ficha (`PATCH /raw-leads/:id/cadastro`, que consulta a Receita e
+  completa razão social, CNAE, porte, situação e cidade/UF). **Aprovar
+  para Lead exige CNPJ** — ver regras de negócio, 3.4.
+
+**Diretrizes (usuário, 2026-09-04)**
+
+- A planilha é **só porta de entrada**. O CRM copia a linha na chegada
+  e, dali em diante, a ficha vive no CRM. Alteração ou exclusão
+  posterior na planilha não muda nada no CRM; correção se faz na ficha.
+- Cada lead entra **uma única vez**. Reenviar a planilha inteira
+  (`crm_reenviar_tudo` no script) é seguro — o CRM ignora o que já tem.
+- O nome da aba ("Query CRM") e os nomes das colunas são o **contrato**
+  com o gestor de tráfego. Se ele renomear, o envio para
+  (`crm_status` no script mostra "aba não encontrada") ou um campo deixa
+  de ser reconhecido (vira pergunta na anotação, nada se perde).
+
+**Instalação e operação do script** — instruções no cabeçalho do próprio
+`scripts/planilha-meta-leads.gs`: colar em Extensões → Apps Script da
+"LEADS GAMA DB", rodar `crm_instalar` (autorizar na primeira vez). **O
+token nunca fica no código**: o próprio script gera um na instalação,
+guarda nas Propriedades do script e mostra no registro de execução pra
+copiar pro Railway (`META_LEADS_PLANILHA_TOKEN`) — mesmo molde do
+`crm_config_instalar` da integração de cotações. `crm_status` mostra
+gatilhos, último envio e último erro; `crm_mostrar_token` repete o token;
+`crm_gerar_novo_token` rotaciona (trocar no Railway depois);
+`crm_desinstalar` para tudo.
+
+Erro conhecido na primeira autorização: "Acesso bloqueado: erro de
+autorização — The OAuth client is not fully created yet (401
+invalid_client)". É o Google ainda propagando o projeto recém-criado, não
+bloqueio da conta: esperar alguns minutos, recarregar o editor e rodar de
+novo.
+
+**Segurança da planilha (pendência com o gestor de tráfego)**: em
+2026-09-04 ela estava compartilhada como "qualquer pessoa com o link pode
+editar" — dado pessoal de lead exposto e editável por quem tiver o link.
+Pedir restrição a pessoas nomeadas. Não afeta o script (roda na conta do
+usuário).
 
 ## Decisões fechadas
 
@@ -58,21 +148,31 @@ escrita do próprio CRM dispara webhook de volta.
   pessoa é o `Contact`) — sem isso, nome e telefone de quem preencheu
   ficariam só como campo solto da empresa.
 
-**Formulários da Página: levantados em 2026-08-20**
-- Decisão → o DE-PARA (`meta-lead-mapper.ts`) fica como está. A Página
-  tem **um** formulário ativo, que coleta só `email` e `nome_completo` —
-  os dois já cobertos pelos aliases de `CAMPOS_PADRAO`, sem pergunta
-  customizada nenhuma. Não há campo novo pra mapear hoje.
-- Fonte → consulta a `GET /{page-id}/leadgen_forms` com o token da
-  Página, 2026-08-20.
+**Formulário "Orçamento | Máquinas Industriais Gama" (levantado na
+planilha, 2026-09-04)**
+- Decisão → o DE-PARA (`meta-lead-mapper.ts`) cobre os campos padrão
+  (`full_name`, `email`, `phone_number`, `city`, `company_name`) e a
+  pergunta de CNPJ (`qual_o_cnpj_da_sua_empresa?`, ou qualquer campo
+  cujo nome contenha "cnpj"). As três perguntas próprias do formulário
+  (equipamento procurado, prazo de compra, se já usa máquina do tipo)
+  não viram coluna — viram anotação (decisão abaixo).
+- Fonte → colunas da aba "Query CRM" da planilha do gestor de tráfego.
 
-❓ **DÚVIDA — onde aparece resposta de pergunta customizada**: quando um
-formulário passar a fazer pergunta própria ("Qual produto te
-interessa?"), a resposta **não se perde** — o retorno inteiro do
-`GET /{leadgen_id}` é gravado em `meta_leads_webhook_events.lead_payload`
-e o campo não reconhecido sai no log. O que não existe é ela aparecer em
-alguma tela pro representante. Decidir onde exibir quando o primeiro
-formulário com pergunta customizada entrar no ar.
+**Pergunta própria do formulário vira anotação na Timeline**
+- Decisão → toda pergunta que o DE-PARA não conhece entra, com a
+  resposta, numa anotação na Timeline do lead (tipo "Anotação", igual à
+  registrada à mão), junto com a origem (plataforma, formulário,
+  campanha, anúncio). A Meta troca espaço por `_` na pergunta e nas
+  opções de múltipla escolha; o CRM desfaz isso na anotação. O dado cru
+  continua em `meta_leads_webhook_events.lead_payload`.
+- Fonte → Decisão do usuário, 2026-09-04 ("essas informações constem
+  como anotação").
+
+**Tag "Meta Business"**
+- Decisão → todo lead vindo do Meta (webhook ou planilha) recebe a tag
+  `Meta Business` na Prospecção, escrita exatamente assim. É por ela que
+  a lista filtra; `fonte = meta_leads` continua distinguindo no banco.
+- Fonte → Decisão do usuário, 2026-09-04.
 
 ## Como o fluxo funciona
 
@@ -247,7 +347,11 @@ Nomes em `.env.example`, valores nunca em commit/doc/chat.
 - `META_VERIFY_TOKEN` — valor arbitrário escolhido por nós no cadastro
   da assinatura; a Meta devolve no handshake.
 - `META_LEADS_DEFAULT_OWNER_USER_ID` — `Membership.userId` do gerente
-  dono dos leads (a decisão sobre qual gerente).
+  dono dos leads (a decisão sobre qual gerente). Vale pros dois canais.
+- `META_LEADS_PLANILHA_TOKEN` — token estático do canal da planilha
+  (`Authorization: Bearer …` em `POST /integrations/meta-leads/planilha`).
+  Gerado pelo script na instalação (`crm_instalar`) e copiado pra cá;
+  vive nas Propriedades do script e no Railway, nunca em código.
 
 Todas opcionais no boot (não entram em `REQUIRED_VARS`) — sem elas só a
 ingestão do Meta não funciona, o resto do app roda normal.
@@ -352,7 +456,7 @@ teste é preciso apagar o lead de teste antes, ou usar um lead real.
 3. **Acesso avançado / App Review.** O próprio painel avisa que, além de
    publicar o App, dados de usuário final podem exigir permissões em
    acesso avançado. Só dá pra confirmar depois de virar a chave.
-4. **Qualidade do lead.** O único formulário ativo pede só nome e
-   e-mail — sem empresa, telefone ou CNPJ, o lead nasce magro pro que um
-   CRM B2B precisa. Revisar o formulário é decisão de marketing, já está
-   no Kanban.
+4. **Qualidade do lead — resolvido pelo lado do marketing (2026-09-04).**
+   O formulário atual pede nome, e-mail, telefone, cidade, empresa e
+   CNPJ, mais as três perguntas de qualificação. Quando o CNPJ vem
+   vazio, o vendedor completa na ficha (ver "Canal em uso hoje").

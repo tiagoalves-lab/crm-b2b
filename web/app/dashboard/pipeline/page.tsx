@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
-import { companyDisplayName, getCompany, listCompanies } from "@/lib/api/companies";
+import { companyDisplayName } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
-import type { Company, Opportunity } from "@/lib/api/types";
+import type { Opportunity } from "@/lib/api/types";
 import { dayKeyBR, formatDateBR } from "@/lib/format-date";
 import { createPipelineAction } from "./actions";
 import PipelineBoard from "./pipeline-board";
 import SubmitButton from "@/app/_components/submit-button";
+import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
 
 function brl(value: number, currency = "BRL"): string {
   return `${currency} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
@@ -56,13 +57,11 @@ export default async function PipelinePage({
 }) {
   const { error, mes, periodo, ini, fim } = await searchParams;
   const token = await getServerAccessToken();
-  const [me, { items: pipelines }, { items: companies }, { items: opportunities }] =
-    await Promise.all([
-      getMe(token),
-      listPipelines(token),
-      listCompanies(token),
-      listOpportunities(token),
-    ]);
+  const [me, { items: pipelines }, { items: opportunities }] = await Promise.all([
+    getMe(token),
+    listPipelines(token),
+    listOpportunities(token),
+  ]);
 
   const canManagePipeline =
     me.membership.role === "owner" || me.membership.role === "admin";
@@ -101,27 +100,9 @@ export default async function PipelinePage({
 
   const stages = [...pipeline.stages].sort((a, b) => a.order - b.order);
 
-  // listCompanies pagina em 100 (web/lib/api/companies.ts) — com o
-  // workspace passando de 100 empresas (leads importados via planilha
-  // viraram company com tag lead-triagem), uma oportunidade pode apontar
-  // pra uma empresa fora dessa primeira página, e o card do Pipeline caía
-  // no fallback "—" mesmo a empresa existindo. Busca só as que faltarem
-  // (bem menos requisições que aumentar o pageSize, que voltaria a
-  // quebrar conforme a base cresce).
-  const neededCompanyIds = new Set(opportunities.map((o) => o.companyId));
-  const missingCompanyIds = [...neededCompanyIds].filter(
-    (id) => !companies.some((c) => c.id === id),
-  );
-  const missingCompanies =
-    missingCompanyIds.length > 0
-      ? await Promise.all(missingCompanyIds.map((id) => getCompany(token, id).catch(() => null)))
-      : [];
-  const allCompanies: Company[] = [...companies, ...missingCompanies.filter((c): c is Company => c !== null)];
-
-  const companyName = (id: string) => {
-    const company = allCompanies.find((c) => c.id === id);
-    return company ? companyDisplayName(company) : "—";
-  };
+  // Nome da empresa vem embutido em cada oportunidade (GET /opportunities,
+  // 2026-09-04) — a tela parou de baixar a base inteira de empresas.
+  const companyName = (opp: Opportunity) => (opp.company ? companyDisplayName(opp.company) : "—");
 
   const pipelineOpps = opportunities.filter((o) => o.pipelineId === pipeline.id && !o.deletedAt);
   const openOpps = pipelineOpps.filter((o) => o.status === "open");
@@ -173,12 +154,13 @@ export default async function PipelinePage({
     .slice(0, 10);
 
   return (
-    <>
+    <TopbarFilterProvider>
       <div className="topbar">
         <div>
           <div className="page-title">Pipeline de Oportunidades</div>
           <div className="page-sub">Ciclo de vida da venda · unidade: R$</div>
         </div>
+        <TopbarFilter placeholder="Buscar oportunidade por empresa..." />
         <Link href="/dashboard/pipeline/nova" className="btn btn-primary">
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" />
@@ -207,7 +189,7 @@ export default async function PipelinePage({
           </div>
         </div>
 
-        <PipelineBoard stages={stages} openOpportunities={openOpps} companies={allCompanies} currentUserId={me.user.id} />
+        <PipelineBoard stages={stages} openOpportunities={openOpps} currentUserId={me.user.id} />
 
         <div className="closed-section">
           <div className="closed-head">
@@ -294,7 +276,7 @@ export default async function PipelinePage({
                 return (
                   <Link key={opp.id} href={`/dashboard/pipeline/${opp.id}`} className={`closed-card ${won ? "ganho" : "perdido"}`}>
                     <div className="closed-card-top">
-                      <span className="closed-co">{companyName(opp.companyId)}</span>
+                      <span className="closed-co">{companyName(opp)}</span>
                       <span className={`closed-tag ${won ? "ganho" : "perdido"}`}>{won ? "Fechada" : "Perdida"}</span>
                     </div>
                     <div className="closed-prod">{fmtDate(opp.closedAt)}</div>
@@ -311,6 +293,6 @@ export default async function PipelinePage({
           </div>
         </div>
       </div>
-    </>
+    </TopbarFilterProvider>
   );
 }

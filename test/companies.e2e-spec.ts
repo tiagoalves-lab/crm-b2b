@@ -23,6 +23,19 @@ interface CompanyListBody {
   items: CompanyBody[];
 }
 
+interface ResumoBody {
+  id: string;
+  razaoSocial: string | null;
+  temEgestor: boolean;
+  ltv: number;
+  ultimaCompra: string | null;
+}
+
+interface ResumoListBody {
+  items: ResumoBody[];
+  total: number;
+}
+
 const prisma = new PrismaClient();
 
 describe('CompanyController (e2e)', () => {
@@ -63,6 +76,14 @@ describe('CompanyController (e2e)', () => {
     // delete de Company (sempre soft delete via deletedAt).
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.activity.deleteMany({ where: { workspaceId: workspace.id } }),
+    );
+    // sales_history também vem antes de Company: a FK
+    // sales_history_company_id_fkey é obrigatória (venda sempre pertence a
+    // uma empresa), então não há SET NULL pra salvar — apagar a empresa
+    // primeiro estoura constraint. Entrou com os testes de
+    // GET /companies/resumo, que criam venda pra conferir o LTV.
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.salesHistory.deleteMany({ where: { workspaceId: workspace.id } }),
     );
     await withTenant(prisma, membership.userId, workspace.id, (tx) =>
       tx.company.deleteMany({ where: { workspaceId: workspace.id } }),
@@ -148,6 +169,96 @@ describe('CompanyController (e2e)', () => {
       .expect(200);
     const body = res.body as CompanyListBody;
     expect(body.items.some((c) => c.id === companyId)).toBe(true);
+  });
+
+  // Endpoint que a tela de Empresas usa desde 2026-09-04: uma requisição
+  // com os campos da tabela + LTV/última compra somados pelo banco, no
+  // lugar de 4 páginas de /companies + /opportunities + /sales-history.
+  describe('GET /companies/resumo', () => {
+    it('não colide com GET /companies/:id (rota fixa vem antes)', async () => {
+      // Se a ordem das rotas no controller inverter, "resumo" cai no
+      // ParseUUIDPipe de :id e isto vira 400.
+      const res = await request(app.getHttpServer())
+        .get('/companies/resumo')
+        .expect(200);
+      const body = res.body as ResumoListBody;
+      expect(Array.isArray(body.items)).toBe(true);
+    });
+
+    it('traz a empresa com os campos da tabela e faturamento zerado sem venda', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/companies/resumo')
+        .expect(200);
+      const body = res.body as ResumoListBody;
+      const empresa = body.items.find((c) => c.id === companyId);
+      expect(empresa).toBeDefined();
+      expect(empresa).toMatchObject({
+        id: companyId,
+        temEgestor: false,
+        ltv: 0,
+        ultimaCompra: null,
+      });
+      // Campos pesados que a tabela não desenha continuam fora do payload.
+      expect(empresa).not.toHaveProperty('emails');
+      expect(empresa).not.toHaveProperty('customFields');
+      expect(body.total).toBe(body.items.length);
+    });
+
+    it('soma o histórico de vendas no LTV e usa a venda mais recente como última compra', async () => {
+      await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+        tx.salesHistory.createMany({
+          data: [
+            {
+              workspaceId: workspace.id,
+              companyId,
+              estabelecimento: 'matriz',
+              codVenda: `t1-${Date.now()}`,
+              dtVenda: new Date('2026-03-10T00:00:00.000Z'),
+              valorTotal: '1000.00',
+            },
+            {
+              workspaceId: workspace.id,
+              companyId,
+              estabelecimento: 'matriz',
+              codVenda: `t2-${Date.now()}`,
+              dtVenda: new Date('2026-05-20T00:00:00.000Z'),
+              valorTotal: '250.50',
+            },
+          ],
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/companies/resumo')
+        .expect(200);
+      const body = res.body as ResumoListBody;
+      const empresa = body.items.find((c) => c.id === companyId);
+      expect(empresa?.ltv).toBeCloseTo(1250.5, 2);
+      expect(empresa?.ultimaCompra).toBe('2026-05-20T00:00:00.000Z');
+    });
+
+    it('empresa em triagem de lead fica de fora, como em GET /companies', async () => {
+      const emTriagem = await withTenant(
+        prisma,
+        membership.userId,
+        workspace.id,
+        (tx) =>
+          tx.company.create({
+            data: {
+              workspaceId: workspace.id,
+              razaoSocial: 'LEAD EM TRIAGEM LTDA',
+              ownerUserId: membership.userId,
+              tags: ['lead-triagem'],
+            },
+          }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/companies/resumo')
+        .expect(200);
+      const body = res.body as ResumoListBody;
+      expect(body.items.some((c) => c.id === emTriagem.id)).toBe(false);
+    });
   });
 
   it('GET /companies/:id retorna a empresa', async () => {

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { SalesHistory, SalesHistoryItem } from "@/lib/api/types";
-import { formatDateBR } from "@/lib/format-date";
+import { formatDateOnlyBR } from "@/lib/format-date";
 
 // Tabela da aba Vendas com linha expansível (pedido do usuário,
 // 2026-09-01): clicar numa venda abre logo abaixo os itens (produtos e
@@ -115,7 +115,7 @@ function VendaRow({
         </td>
         <td>{venda.estabelecimento === "matriz" ? "Matriz" : "Filial"}</td>
         <td>{venda.vendedorNome ?? "—"}</td>
-        <td>{formatDateBR(venda.dtVenda)}</td>
+        <td>{formatDateOnlyBR(venda.dtVenda)}</td>
         <td style={COL_NUM}>{brl(Number(venda.valorTotal))}</td>
       </tr>
       {aberta && (

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { approveLeadForOpportunityAction } from "./actions";
 
 // Botão "Aprovar para Lead" do cabeçalho da ficha (feita client-side, ao
@@ -13,6 +14,7 @@ import { approveLeadForOpportunityAction } from "./actions";
 // estado local, não por navegação).
 export default function ApproveLeadButton({ leadId }: { leadId: string }) {
   const router = useRouter();
+  const refresh = useRefresh();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approvedCompanyId, setApprovedCompanyId] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export default function ApproveLeadButton({ leadId }: { leadId: string }) {
       return;
     }
     setApprovedCompanyId(res.data.id);
-    router.refresh();
+    refresh();
   }
 
   function handleSim() {

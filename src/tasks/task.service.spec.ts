@@ -25,10 +25,15 @@ function membership(
   };
 }
 
-function fakeTx(options: { existingTask?: object } = {}): TenantTx {
+function fakeTx(
+  options: { existingTask?: object; items?: { name: string }[] } = {},
+): TenantTx {
   return {
     membership: {
       findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
+    },
+    opportunityItem: {
+      findMany: jest.fn().mockResolvedValue(options.items ?? []),
     },
     company: {
       findFirst: jest
@@ -324,6 +329,65 @@ describe('TaskService', () => {
           title: 'Visita remarcada',
         }),
       ).resolves.toBeDefined();
+    });
+  });
+
+  // 2026-09-04: carimbo de itens da oportunidade. A validação em si mora
+  // em opportunities/opportunity-tags.ts (testada lá); aqui o que se trava
+  // é o encaixe na tarefa — só com oportunidade, e nunca mexer no carimbo
+  // quando o campo não veio.
+  describe('tags de item da oportunidade (2026-09-04)', () => {
+    const itens = [{ name: 'Bomba 5cv' }, { name: 'Painel' }];
+
+    it('CRÍTICO: rejeita tag em tarefa vinculada só a empresa', async () => {
+      await expect(
+        service.create(fakeTx({ items: itens }), membership(), {
+          title: 'Ligar',
+          companyId: COMPANY_ID,
+          tags: ['Painel'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('CRÍTICO: rejeita tag que não é item da oportunidade', async () => {
+      await expect(
+        service.create(fakeTx({ items: itens }), membership(), {
+          title: 'Ligar',
+          opportunityId: OPPORTUNITY_ID,
+          tags: ['Inventada'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('grava as tags com a grafia da lista da oportunidade', async () => {
+      const task = await service.create(
+        fakeTx({ items: itens }),
+        membership(),
+        {
+          title: 'Ligar',
+          opportunityId: OPPORTUNITY_ID,
+          tags: ['painel', 'BOMBA 5CV'],
+        },
+      );
+      expect(task.tags).toEqual(['Bomba 5cv', 'Painel']);
+    });
+
+    it('editar sem mandar tags não mexe no carimbo já gravado', async () => {
+      const tx = fakeTx({
+        items: itens,
+        existingTask: {
+          id: 'task-1',
+          status: 'pending',
+          opportunityId: OPPORTUNITY_ID,
+          tags: ['Painel'],
+        },
+      });
+      await service.update(tx, membership(), 'task-1', { title: 'Novo' });
+      const update = tx.task.update as unknown as jest.Mock<
+        Promise<unknown>,
+        [{ data: { tags?: string[] } }]
+      >;
+      expect(update.mock.calls[0][0].data.tags).toBeUndefined();
     });
   });
 });

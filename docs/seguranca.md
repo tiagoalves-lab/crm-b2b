@@ -421,6 +421,32 @@ o cenário A do modelo de ameaça — o mais provável de todos.
     (*"Signups not allowed for this instance"*), onde antes prosseguia.
     `Confirm email` segue ligada.
 
+**4.8 — Membership em cache no backend (60 s).**
+- Decisão → `TenantMembershipGuard` guarda em memória o `Membership` de cada
+  usuário por até 60 s (`MembershipCacheService`), em vez de reler do banco
+  numa transação própria a cada requisição. Alteração feita pela API
+  (`PATCH`/`DELETE /memberships/:id`) invalida a entrada na hora; alteração
+  feita por fora (SQL direto no Supabase) passa a valer em até 60 s. O id
+  do workspace único também fica em memória por processo (antes era um
+  UPSERT em `workspaces` a cada requisição). Falha de lookup (usuário sem
+  cadastro) nunca é cacheada — continua batendo no banco e levando 403.
+- Fonte → Performance, 2026-09-04. Cada chamada ao backend fazia ~13 idas
+  e voltas Virgínia↔Ohio antes do trabalho útil (UPSERT do workspace +
+  transação do guard + três `SET LOCAL` separados por transação). Com o
+  cache e as três variáveis de sessão setadas numa ida só
+  (`set_config(..., true)`, equivalente exato de `SET LOCAL`, agora com
+  bind parameter em vez de interpolação), caiu pra 1. Medido daqui do
+  Brasil: 2,7 s → 0,6 s por chamada; o isolamento por RLS foi reconferido
+  (workspace certo enxerga, errado não, e `test/rls-isolation.e2e-spec.ts`
+  segue verde).
+- Consequência de segurança → Suspender ou rebaixar um membro pela tela de
+  Membros vale na requisição seguinte, como antes. O JWT continua sendo
+  verificado em toda requisição; o cache só evita reler a linha de
+  `memberships`. Remoção de acesso de emergência segue a seção 10 (revogar
+  sessões no Supabase Auth). O backend roda numa instância só (Railway,
+  sem réplica) — se um dia houver réplica, este cache precisa virar
+  compartilhado ou cair.
+
 ---
 
 ## 5. Superfície HTTP — CORS, cabeçalhos e rate limiting

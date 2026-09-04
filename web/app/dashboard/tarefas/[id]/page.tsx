@@ -1,6 +1,6 @@
 import { getServerAccessToken } from "@/lib/api/auth";
 import { loadTaskDetail } from "../_detail/load";
-import { DetailBody, DetailFooter } from "../_detail/detail-body";
+import { DetailBody, DetailFooter, TaskDetailProvider } from "../_detail/task-detail";
 
 export default async function TaskDetailPage({
   params,
@@ -10,10 +10,9 @@ export default async function TaskDetailPage({
   const { id } = await params;
   const token = await getServerAccessToken();
   const data = await loadTaskDetail(token, id);
-  const backHref = `/dashboard/tarefas/${id}`;
 
   return (
-    <>
+    <TaskDetailProvider data={data} isModal={false}>
       <div className="topbar">
         <div>
           <div className="page-title">{data.task.title}</div>
@@ -23,13 +22,13 @@ export default async function TaskDetailPage({
       <div className="content">
         <div className="panel">
           <div className="panel-body">
-            <DetailBody data={data} backHref={backHref} />
+            <DetailBody />
           </div>
           <div className="modal-foot">
-            <DetailFooter data={data} backHref={backHref} />
+            <DetailFooter />
           </div>
         </div>
       </div>
-    </>
+    </TaskDetailProvider>
   );
 }

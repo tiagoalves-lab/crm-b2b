@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 // Botão de envio padrão de TODO formulário que dispara Server Action.
@@ -36,50 +36,6 @@ export default function SubmitButton({
     <button
       {...rest}
       type="submit"
-      disabled={pending || rest.disabled}
-      aria-busy={pending || undefined}
-    >
-      {pending && pendingLabel ? pendingLabel : children}
-    </button>
-  );
-}
-
-// Variante pro botão que envia um <form> ao qual ele NÃO pertence, via o
-// atributo `form={id}` do HTML — caso do "Salvar" da tarefa, que mora no
-// rodapé do modal enquanto o form vive no corpo (tarefas/_detail/
-// detail-body.tsx). `useFormStatus` não serve aí: ele lê o contexto do
-// form ANCESTRAL, e neste caso não há nenhum. Então escutamos o evento
-// `submit` do form pelo id.
-//
-// O estado só volta a false quando o componente remonta. Isso é seguro
-// aqui porque a Server Action associada sempre termina em redirect (tanto
-// no sucesso quanto no erro, ver updateTaskDetailAction) — ou seja, todo
-// envio produz uma navegação e uma árvore nova. Se algum dia esta variante
-// for usada com uma ação que não redireciona, o botão ficaria travado: use
-// SubmitButton (dentro do form) nesse caso.
-export function ExternalSubmitButton({
-  form,
-  children,
-  pendingLabel,
-  ...rest
-}: ComponentProps<"button"> & { form: string; pendingLabel?: ReactNode }) {
-  const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    const el = document.getElementById(form);
-    if (!(el instanceof HTMLFormElement)) return;
-    // Validação HTML5 reprovada não dispara `submit`, então o botão não
-    // trava quando o usuário esquece um campo obrigatório.
-    const onSubmit = () => setPending(true);
-    el.addEventListener("submit", onSubmit);
-    return () => el.removeEventListener("submit", onSubmit);
-  }, [form]);
-
-  return (
-    <button
-      {...rest}
-      type="submit"
-      form={form}
       disabled={pending || rest.disabled}
       aria-busy={pending || undefined}
     >

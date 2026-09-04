@@ -5,6 +5,7 @@ import { getServerAccessToken } from "@/lib/api/auth";
 import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { createMembership, deleteMembership, updateMembership } from "@/lib/api/memberships";
 import type { MembershipRole, MembershipStatus, PermissionMatrix } from "@/lib/api/types";
+import type { FormState } from "@/app/_components/action-form";
 
 // Campo hidden preenchido por PermissionsEditor (JSON.stringify do estado
 // React) — parse defensivo: JSON malformado (não deveria acontecer, vem
@@ -58,9 +59,20 @@ export async function createMemberAction(
   return { ok: true };
 }
 
-export async function updateMemberAction(formData: FormData) {
+// Modal "Editar membro": Salvar e Remover no mesmo ActionForm — o botão
+// Remover manda intent=remove. Devolve resultado, sem redirect (2026-09-03).
+export async function saveMemberFormAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
+
+  if (formData.get("intent") === "remove") {
+    try {
+      await deleteMembership(token, id);
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) };
+    }
+    return { ok: true, message: "Membro removido" };
+  }
   const name = formData.get("name");
   const login = String(formData.get("login") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
@@ -92,11 +104,10 @@ export async function updateMemberAction(formData: FormData) {
       permissions: parsePermissionsField(formData),
     });
   } catch (error) {
-    redirectWithError("/dashboard/membros", error);
+    return { ok: false, message: errorMessage(error) };
   }
 
-  revalidatePath("/dashboard/membros");
-  redirectWithMessage("/dashboard/membros", "Membro atualizado");
+  return { ok: true, message: "Membro atualizado" };
 }
 
 export async function removeMemberAction(formData: FormData) {

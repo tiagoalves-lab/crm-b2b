@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { MembershipCacheService } from './membership-cache.service';
 import { TenantContextService } from './tenant-context.service';
 import { TenantMembershipGuard } from './tenant-membership.guard';
 
@@ -8,9 +9,12 @@ import { TenantMembershipGuard } from './tenant-membership.guard';
   // próprio pra `overrideGuard` conseguir substituí-lo nos testes e2e.
   providers: [
     TenantContextService,
+    MembershipCacheService,
     TenantMembershipGuard,
     { provide: APP_GUARD, useExisting: TenantMembershipGuard },
   ],
-  exports: [TenantContextService],
+  // MembershipCacheService exportado pra MembershipService invalidar a
+  // entrada do usuário ao alterar/remover membro.
+  exports: [TenantContextService, MembershipCacheService],
 })
 export class TenancyModule {}

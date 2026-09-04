@@ -20,7 +20,14 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateTaskDto } from './dto/create-task.dto';
 import type { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import type { UpdateTaskDto } from './dto/update-task.dto';
+import { mustTagsBeItems } from '../opportunities/opportunity-tags';
 import { CONTACT_REQUIRED_TASK_TYPES } from './task-type.constants';
+import {
+  COMPANY_REF_SELECT,
+  OPPORTUNITY_REF_SELECT,
+  type CompanyRef,
+  type OpportunityRef,
+} from '../companies/company-ref';
 
 const NO_MATCH_SENTINEL = '__none__';
 
@@ -34,6 +41,10 @@ export type TaskWithDetails = Task & {
 // total, bem mais barato que TaskWithDetails pra uma listagem paginada.
 export type TaskWithCounts = Task & {
   _count: { checklistItems: number; comments: number; attachments: number };
+  // Referências mínimas pra rotular o Vínculo na lista (2026-09-04) —
+  // empresa direta ou a empresa da oportunidade. Ver company-ref.ts.
+  company: CompanyRef | null;
+  opportunity: OpportunityRef | null;
 };
 
 @Injectable()
@@ -80,6 +91,8 @@ export class TaskService {
       );
     }
 
+    const tags = await this.resolveTags(tx, dto.opportunityId, dto.tags);
+
     const task = await tx.task.create({
       data: {
         workspaceId: membership.workspaceId,
@@ -91,6 +104,7 @@ export class TaskService {
         assigneeUserId,
         companyId: dto.companyId,
         opportunityId: dto.opportunityId,
+        tags,
         createdBy: membership.userId,
       },
     });
@@ -158,6 +172,8 @@ export class TaskService {
           _count: {
             select: { checklistItems: true, comments: true, attachments: true },
           },
+          company: { select: COMPANY_REF_SELECT },
+          opportunity: { select: OPPORTUNITY_REF_SELECT },
         },
       }),
       tx.task.count({ where }),
@@ -224,6 +240,15 @@ export class TaskService {
       );
     }
 
+    const tags =
+      dto.tags !== undefined
+        ? await this.resolveTags(
+            tx,
+            existing.opportunityId ?? undefined,
+            dto.tags,
+          )
+        : undefined;
+
     const updated = await tx.task.update({
       where: { id: existing.id },
       data: {
@@ -234,6 +259,7 @@ export class TaskService {
         contactId: dto.contactId,
         status: dto.status,
         assigneeUserId: dto.assigneeUserId,
+        tags,
       },
     });
 
@@ -255,6 +281,23 @@ export class TaskService {
     }
 
     return updated;
+  }
+
+  // Carimbo de itens (2026-09-04): só tarefa vinculada a uma oportunidade
+  // pode receber tag, e cada tag precisa ser item da lista dela — a
+  // validação em si mora em opportunities/opportunity-tags.ts.
+  private async resolveTags(
+    tx: TenantTx,
+    opportunityId: string | undefined,
+    tags: string[] | undefined,
+  ): Promise<string[]> {
+    if (!tags || tags.length === 0) return [];
+    if (!opportunityId) {
+      throw new BadRequestException(
+        'Só tarefa vinculada a uma oportunidade pode receber tags de item.',
+      );
+    }
+    return mustTagsBeItems(tx, opportunityId, tags);
   }
 
   async remove(

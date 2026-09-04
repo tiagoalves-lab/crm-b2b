@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { hasPermission } from "@/lib/api/permission-catalog";
-import type { Activity } from "@/lib/api/types";
+import type { Activity, Membership } from "@/lib/api/types";
 import { effectiveTier, scoreReasons, TIER_LABEL } from "@/lib/api/raw-leads";
-import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
+import { formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
 import type { LeadFicha } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
 import AddNoteForm from "../../empresas/_ficha/add-note-form";
 import ContactItem from "../../empresas/_ficha/contact-item";
 import AddContactForm from "../../empresas/_ficha/add-contact-form";
+import LeadCnpjEditor from "../lead-cnpj-editor";
 import LeadSegmentoEditor from "../lead-segmento-editor";
 import LeadTagsEditor from "../lead-tags-editor";
+import { formatCnpj } from "../cnpj-lookup-fields";
 
 const SUBTIPO_LABEL: Record<string, string> = {
   nota: "Anotação",
@@ -30,26 +32,32 @@ const SUBTIPO_COLOR: Record<string, string> = {
   email: "red",
 };
 
-// Pedido do usuário (2026-08-03): em vez de "Você", mostrar o nome real
-// de quem está logado — mesmo critério de empresas/_ficha/ficha-body.tsx.
+// Nome de quem registrou o item da Timeline — o próprio usuário pelo nome
+// do JWT (2026-08-03) e qualquer outro membro pelo nome de GET
+// /memberships (2026-09-04). Mesmo critério de
+// empresas/_ficha/ficha-body.tsx.
 function memberLabel(
   userId: string | null,
   currentUserId: string,
-  currentUserName?: string | null,
+  currentUserName: string | null | undefined,
+  memberships: Membership[],
 ): string {
   if (!userId) return "Sistema";
   if (userId === currentUserId) return currentUserName?.trim() || "Você";
-  return `${userId.slice(0, 8)}…`;
+  const membro = memberships.find((m) => m.userId === userId);
+  return membro?.name?.trim() || membro?.login?.trim() || `${userId.slice(0, 8)}…`;
 }
 
 function ActivityItem({
   activity,
   currentUserId,
   currentUserName,
+  memberships,
 }: {
   activity: Activity;
   currentUserId: string;
   currentUserName?: string | null;
+  memberships: Membership[];
 }) {
   const payload = activity.payload as { texto?: string; subtipo?: string; contatoNome?: string };
   const subtipo =
@@ -59,7 +67,7 @@ function ActivityItem({
     <div className={`timeline-item type-${color}`}>
       <div className="timeline-item-head">
         <span className={`pill pill-${color}`}>{SUBTIPO_LABEL[subtipo] ?? subtipo}</span>
-        <span>{memberLabel(activity.actorUserId, currentUserId, currentUserName)}</span>
+        <span>{memberLabel(activity.actorUserId, currentUserId, currentUserName, memberships)}</span>
         {payload.contatoNome && <span>· {payload.contatoNome}</span>}
         <span>{formatDateTimeBR(activity.occurredAt)}</span>
       </div>
@@ -75,7 +83,7 @@ function ActivityItem({
 // da ficha (leads/[id]/page.tsx e @drawer/(.)leads/[id]/page.tsx), visível
 // não importa qual aba esteja aberta.
 export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string }) {
-  const { me, lead, companyId, activities, tasks, contacts, accessRestricted } = data;
+  const { me, lead, companyId, activities, tasks, contacts, accessRestricted, memberships } = data;
   const currentAba = currentAbaOf(aba);
   const tier = effectiveTier(lead);
   // Mesmo critério de empresas/_ficha/ficha-body.tsx: vem da matriz
@@ -83,6 +91,11 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
   // owner/admin.
   const canEditContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "editar");
   const canRemoveContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "excluir");
+  // CNPJ editável só enquanto o lead está em triagem (aprovado/descartado
+  // não muda mais) e pra quem pode editar leads — o backend confere de
+  // novo (PATCH /raw-leads/:id/cadastro, mustBeNovo + PolicyService).
+  const canEditCadastro =
+    lead.status === "novo" && hasPermission(me.membership.role, me.membership.permissions, "leads", "editar");
 
   if (currentAba === "timeline") {
     return (
@@ -103,7 +116,13 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
           <div className="timeline">
             {activities.length > 0 ? (
               activities.map((a) => (
-                <ActivityItem key={a.id} activity={a} currentUserId={me.user.id} currentUserName={me.user.name} />
+                <ActivityItem
+                  key={a.id}
+                  activity={a}
+                  currentUserId={me.user.id}
+                  currentUserName={me.user.name}
+                  memberships={memberships}
+                />
               ))
             ) : (
               <p className="empty">Nenhum contato registrado ainda. Use o campo acima para anotar a primeira conversa.</p>
@@ -134,7 +153,7 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
             <div key={t.id} className="drawer-list-item">
               <div>
                 <div className="dli-title">{t.title}</div>
-                <div className="dli-sub">{t.dueAt ? `vence ${formatDateBR(t.dueAt)}` : "sem prazo"}</div>
+                <div className="dli-sub">{t.dueAt ? `vence ${formatDateOnlyBR(t.dueAt)}` : "sem prazo"}</div>
               </div>
               <span className={t.status === "done" ? "pill pill-green" : "pill pill-gray"}>
                 {t.status === "done" ? "Concluída" : "Pendente"}
@@ -178,7 +197,7 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
     <>
       <dl className="kv">
         <dt>CNPJ</dt>
-        <dd>{lead.cnpj ?? "—"}</dd>
+        <dd>{canEditCadastro ? <LeadCnpjEditor leadId={lead.id} cnpj={lead.cnpj} /> : formatCnpj(lead.cnpj) || "—"}</dd>
         <dt>CNAE</dt>
         <dd>
           {lead.cnaePrincipal ?? "—"} — {lead.cnaeDescricao ?? "—"}

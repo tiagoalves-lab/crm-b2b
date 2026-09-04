@@ -1,21 +1,26 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
+import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { ApiError } from "@/lib/api/client";
 import { companyDisplayName, createCompany, lookupCnpj } from "@/lib/api/companies";
 import { createOpportunity, deleteOpportunity, updateOpportunity } from "@/lib/api/opportunities";
+import { createTask, type CreateTaskInput } from "@/lib/api/tasks";
 import {
   createUploadUrl,
   deleteAttachment,
   getDownloadUrl,
+  listAttachments,
+  type OpportunityAttachment,
 } from "@/lib/api/opportunity-attachments";
 import { createComment, deleteComment } from "@/lib/api/opportunity-comments";
+import { createItem, deleteItem, updateItem } from "@/lib/api/opportunity-items";
 import { createPipeline } from "@/lib/api/pipelines";
 import { approveLead } from "@/lib/api/raw-leads";
 import { searchEmpresaLead, type BuscaEmpresaLeadResult } from "@/lib/api/search";
+import type { FormState } from "@/app/_components/action-form";
+import type { Opportunity, OpportunityComment, OpportunityItem } from "@/lib/api/types";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -28,12 +33,6 @@ function emptyToUndefined(value: FormDataEntryValue | null): string | undefined 
   return str === "" ? undefined : str;
 }
 
-// Toda action de anexo/comentário volta pra essa mesma URL (preserva o
-// card que o usuário estava editando) — mesmo padrão de backPath em
-// tarefas/actions.ts.
-function backPath(formData: FormData): string {
-  return emptyToUndefined(formData.get("back")) ?? "/dashboard/pipeline";
-}
 
 export async function createPipelineAction(formData: FormData) {
   const token = await getServerAccessToken();
@@ -50,14 +49,21 @@ export async function createPipelineAction(formData: FormData) {
 }
 
 // Devolve o resultado em vez de redirecionar no sucesso — usado via
-// useActionState (nova-form.tsx) pro modal fechar com router.push no
-// client depois de confirmar. Mesmo motivo de createCompanyAction em
+// useActionState (nova/nova-card.tsx) pro modal fechar com router.back()
+// no client depois de confirmar. Mesmo motivo de createCompanyAction em
 // empresas/actions.ts: redirect() de dentro da Server Action não derruba
 // o slot @modal da rota interceptada.
+//
+// Cadastro pelo card (2026-09-04): cria a oportunidade já com a lista de
+// itens e em seguida grava o comentário inicial — com as tags escolhidas
+// — e o anexo inicial, mesma dança de tarefas/actions.ts
+// createTaskModalAction. Se comentário/anexo falharem DEPOIS de a
+// oportunidade existir, devolve ok mesmo assim (senão um segundo clique
+// criaria a oportunidade de novo) e avisa no toast o que faltou.
 export async function createOpportunityAction(
-  _prevState: ActionResult<null> | null,
+  _prevState: ActionResult<{ toast: string }> | null,
   formData: FormData,
-): Promise<ActionResult<null>> {
+): Promise<ActionResult<{ toast: string }>> {
   const token = await getServerAccessToken();
   const companyId = String(formData.get("companyId") ?? "").trim();
 
@@ -65,59 +71,112 @@ export async function createOpportunityAction(
     return { ok: false, message: "Selecione uma empresa para a oportunidade." };
   }
 
+  let created: Opportunity;
   try {
-    await createOpportunity(token, {
+    created = await createOpportunity(token, {
       companyId,
       pipelineId: String(formData.get("pipelineId")),
       stageId: String(formData.get("stageId")),
       amount: Number(formData.get("amount")),
       currency: String(formData.get("currency") ?? "BRL").toUpperCase(),
       expectedCloseDate: emptyToUndefined(formData.get("expectedCloseDate")),
+      items: itemsFrom(formData),
     });
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao criar a oportunidade.") };
   }
 
-  revalidatePath("/dashboard/pipeline");
-  return { ok: true, data: null };
-}
+  const pendencias: string[] = [];
+  const comment = String(formData.get("comment") ?? "").trim();
+  if (comment) {
+    try {
+      await createComment(token, created.id, comment, tagsFrom(formData, "tags"));
+    } catch (error) {
+      pendencias.push(`o comentário (${errorMessage(error)})`);
+    }
+  }
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    try {
+      await enviarAnexo(token, created.id, file);
+    } catch (error) {
+      pendencias.push(`o anexo (${errorMessage(error)})`);
+    }
+  }
 
-// Modal "Editar oportunidade" — valor/moeda/etapa/previsão de fechamento.
-export async function updateOpportunityDetailsAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const id = String(formData.get("id"));
-  const version = Number(formData.get("version"));
-  const back = String(formData.get("back") ?? `/dashboard/pipeline/${id}`);
-
-  try {
-    await updateOpportunity(token, id, {
-      version,
-      stageId: String(formData.get("stageId")),
-      amount: Number(formData.get("amount")),
-      currency: String(formData.get("currency") ?? "BRL").toUpperCase(),
-      expectedCloseDate: emptyToUndefined(formData.get("expectedCloseDate")),
-    });
-  } catch (error) {
-    redirectWithError(back, error);
+  // Tarefa cadastrada junto (2026-09-04) — só se a seção "Tarefa" foi
+  // aberta e preenchida no card; nasce vinculada à oportunidade nova.
+  const taskTitle = String(formData.get("taskTitle") ?? "").trim();
+  let taskCreated = false;
+  if (taskTitle) {
+    try {
+      const taskTags = tagsFrom(formData, "taskTags");
+      await createTask(token, {
+        title: taskTitle,
+        tipo: emptyToUndefined(formData.get("tipo")) as CreateTaskInput["tipo"],
+        contactId: emptyToUndefined(formData.get("contactId")),
+        dueAt: emptyToUndefined(formData.get("taskDueAt")),
+        assigneeUserId: emptyToUndefined(formData.get("taskAssigneeUserId")),
+        opportunityId: created.id,
+        tags: taskTags.length > 0 ? taskTags : undefined,
+      });
+      taskCreated = true;
+    } catch (error) {
+      pendencias.push(`a tarefa (${errorMessage(error)})`);
+    }
   }
 
   revalidatePath("/dashboard/pipeline");
-  redirectWithMessage(`/dashboard/pipeline/${id}`, "Oportunidade atualizada");
+  if (taskCreated) revalidatePath("/dashboard/tarefas");
+  const criado = taskCreated ? "Oportunidade e tarefa criadas" : "Oportunidade criada";
+  return {
+    ok: true,
+    data: {
+      toast:
+        pendencias.length === 0
+          ? criado
+          : `${criado}, mas não deu pra salvar ${pendencias.join(", ")}. Abra o card e tente de novo.`,
+    },
+  };
 }
 
-export async function deleteOpportunityAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const id = String(formData.get("id"));
-
+// A lista lateral viaja num único campo oculto (JSON) — ver nova-card.tsx.
+function itemsFrom(formData: FormData): string[] {
   try {
-    await deleteOpportunity(token, id);
-  } catch (error) {
-    redirectWithError(`/dashboard/pipeline/${id}`, error);
+    const parsed: unknown = JSON.parse(String(formData.get("items") ?? "[]"));
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
   }
-
-  revalidatePath("/dashboard/pipeline");
-  redirectWithMessage("/dashboard/pipeline", "Oportunidade excluída");
 }
+
+// Um <input type="hidden"> por chip marcado (TagPicker) — `tags` pro
+// comentário inicial, `taskTags` pra tarefa cadastrada junto.
+function tagsFrom(formData: FormData, field: "tags" | "taskTags"): string[] {
+  return formData.getAll(field).filter((t): t is string => typeof t === "string" && t.trim() !== "");
+}
+
+// O binário nunca passa pelo NestJS: o backend só assina a URL de upload;
+// quem faz o PUT é esta Server Action, direto no Storage do Supabase —
+// mesmo padrão de tarefas/actions.ts.
+async function enviarAnexo(token: string, opportunityId: string, file: File): Promise<void> {
+  const { uploadUrl } = await createUploadUrl(token, opportunityId, {
+    fileName: file.name,
+    mimeType: file.type || undefined,
+    sizeBytes: file.size,
+  });
+  const bytes = await file.arrayBuffer();
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    body: bytes,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  if (!res.ok) {
+    throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
+  }
+}
+
+
 
 // Drag-and-drop no board (SPEC-CRM-GAMA.md §4.2) chama isso direto — não é
 // submit de form.
@@ -198,29 +257,92 @@ export async function createCompanyFromCnpjAction(
   }
 }
 
-export async function markWonAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const id = String(formData.get("id"));
-  const version = Number(formData.get("version"));
 
-  try {
-    await updateOpportunity(token, id, { version, status: "won" });
-  } catch (error) {
-    redirectWithError(`/dashboard/pipeline/${id}`, error);
-  }
 
-  revalidatePath("/dashboard/pipeline");
-  redirectWithMessage("/dashboard/pipeline", "🎉 Oportunidade fechada!");
+
+// ---------- Comentários (feature nova, fora do SPEC-CRM-GAMA.md) ----------
+
+
+
+// ---------- Anexos (feature nova, fora do SPEC-CRM-GAMA.md) ----------
+// O binário nunca passa pelo NestJS: o backend só assina a URL de
+// upload; quem faz o PUT do arquivo é este Server Action, direto no
+// Storage do Supabase — mesmo padrão de tarefas/actions.ts.
+
+// ---------- Card da oportunidade (modal / página) ----------
+//
+// Reescrito em 2026-09-03 no mesmo molde da ficha de tarefa
+// (tarefas/actions.ts): toda ação devolve resultado e quem atualiza a
+// tela é o client component (pipeline/_detail/opportunity-detail.tsx).
+// Sem revalidatePath nem redirect aqui — dentro do @modal isso travava o
+// botão ou fechava-e-reabria o card.
+
+type DetailResult<T> = { ok: true; data: T } | { ok: false; message: string };
+
+function detailFail(error: unknown): { ok: false; message: string } {
+  return { ok: false, message: errorMessage(error) };
 }
 
-// Confirmação de motivo (protótipo: askLoseDeal → loseDeal, dois passos)
-// acontece na rota .../perder; esta action só aplica.
-export async function markLostAction(formData: FormData) {
+function trimOrUndefined(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+// O próprio card é o formulário de edição desde 2026-09-04 (pedido do
+// usuário: o botão "Editar", que abria outra tela, foi apagado). Devolve
+// o registro atualizado — inclusive a nova `version`, que o card guarda
+// pro próximo salvamento — em vez de redirecionar, mesmo motivo das
+// outras ações do card (redirect de Server Action não derruba o slot
+// @modal da rota interceptada).
+//
+// Campo vazio = não mexe no valor atual; a etapa não entra aqui de
+// propósito (some da ficha junto com o botão Editar — quem move o card
+// de etapa é o arrasto no quadro).
+export async function saveOpportunityDetailAction(
+  id: string,
+  version: number,
+  input: {
+    ownerUserId?: string;
+    // Ausente quando a soma dos itens manda no valor (o campo fica só
+    // leitura na tela e quem grava é o backend, ao mexer nos itens).
+    amount?: number;
+    currency?: string;
+    expectedCloseDate?: string;
+    description?: string;
+  },
+): Promise<DetailResult<Opportunity>> {
+  const token = await getServerAccessToken();
+  let amount: number | undefined;
+  if (input.amount !== undefined) {
+    amount = Number(input.amount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      return { ok: false, message: "Informe um valor válido." };
+    }
+  }
+  try {
+    return {
+      ok: true,
+      data: await updateOpportunity(token, String(id), {
+        version: Number(version),
+        ownerUserId: trimOrUndefined(input.ownerUserId),
+        amount,
+        currency: (trimOrUndefined(input.currency) ?? "BRL").toUpperCase(),
+        expectedCloseDate: trimOrUndefined(input.expectedCloseDate),
+        // String vazia é intencional: limpa a descrição.
+        description: typeof input.description === "string" ? input.description : undefined,
+      }),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+export async function markLostFormAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
   const version = Number(formData.get("version"));
   const lostReason = String(formData.get("lostReason") ?? "").trim();
-
   try {
     await updateOpportunity(token, id, {
       version,
@@ -228,132 +350,167 @@ export async function markLostAction(formData: FormData) {
       lostReason: lostReason || "Não informado",
     });
   } catch (error) {
-    redirectWithError(`/dashboard/pipeline/${id}/perder`, error);
+    return detailFail(error);
   }
-
-  revalidatePath("/dashboard/pipeline");
-  redirectWithMessage("/dashboard/pipeline", "Oportunidade marcada como perdida");
+  return { ok: true, message: "Oportunidade marcada como perdida" };
 }
 
-export async function reopenAction(formData: FormData) {
+export async function setOpportunityStatusAction(
+  id: string,
+  version: number,
+  status: "won" | "open",
+): Promise<DetailResult<Opportunity>> {
+  if (status !== "won" && status !== "open") return { ok: false, message: "Situação inválida." };
   const token = await getServerAccessToken();
-  const id = String(formData.get("id"));
-  const version = Number(formData.get("version"));
-  const back = String(formData.get("back") ?? "/dashboard/pipeline");
-
   try {
-    await updateOpportunity(token, id, { version, status: "open" });
+    return { ok: true, data: await updateOpportunity(token, String(id), { version: Number(version), status }) };
   } catch (error) {
-    redirectWithError(back, error);
+    return detailFail(error);
   }
-
-  revalidatePath("/dashboard/pipeline");
-  redirectWithMessage("/dashboard/pipeline", "Oportunidade reaberta");
 }
 
-// ---------- Comentários (feature nova, fora do SPEC-CRM-GAMA.md) ----------
-
-export async function createOpportunityCommentAction(formData: FormData) {
+export async function deleteOpportunityClientAction(id: string): Promise<DetailResult<null>> {
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const opportunityId = String(formData.get("opportunityId"));
-  const body = String(formData.get("body") ?? "").trim();
-
-  if (body) {
-    try {
-      await createComment(token, opportunityId, body);
-    } catch (error) {
-      redirectWithError(back, error);
-    }
-  }
-
-  revalidatePath("/dashboard/pipeline");
-}
-
-export async function deleteOpportunityCommentAction(formData: FormData) {
-  const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const opportunityId = String(formData.get("opportunityId"));
-  const commentId = String(formData.get("commentId"));
-
   try {
-    await deleteComment(token, opportunityId, commentId);
+    await deleteOpportunity(token, String(id));
+    return { ok: true, data: null };
   } catch (error) {
-    redirectWithError(back, error);
+    return detailFail(error);
   }
-
-  revalidatePath("/dashboard/pipeline");
 }
 
-// ---------- Anexos (feature nova, fora do SPEC-CRM-GAMA.md) ----------
-// O binário nunca passa pelo NestJS: o backend só assina a URL de
-// upload; quem faz o PUT do arquivo é este Server Action, direto no
-// Storage do Supabase — mesmo padrão de tarefas/actions.ts.
-
-export async function uploadOpportunityAttachmentAction(formData: FormData) {
+export async function addOpportunityCommentAction(
+  opportunityId: string,
+  body: string,
+  tags: string[] = [],
+): Promise<DetailResult<OpportunityComment>> {
+  const text = trimOrUndefined(body);
+  if (!text) return { ok: false, message: "Escreva o comentário antes de enviar." };
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const opportunityId = String(formData.get("opportunityId"));
+  try {
+    return {
+      ok: true,
+      data: await createComment(
+        token,
+        String(opportunityId),
+        text,
+        Array.isArray(tags) ? tags.map(String) : [],
+      ),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// ---------- Lista lateral de itens (2026-09-04) ----------
+// Ver src/opportunities/opportunity-item.service.ts — adicionar/remover
+// exige "write" na oportunidade; a lista volta embutida no GET do card.
+
+export async function addOpportunityItemAction(
+  opportunityId: string,
+  name: string,
+): Promise<DetailResult<OpportunityItem>> {
+  const text = trimOrUndefined(name);
+  if (!text) return { ok: false, message: "Digite o nome do item." };
+  const token = await getServerAccessToken();
+  try {
+    return { ok: true, data: await createItem(token, String(opportunityId), text) };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Valor de um item da lista lateral (2026-09-04). O backend recalcula
+// o valor da oportunidade (soma dos itens) e devolve o item; o card
+// mostra o total na hora.
+export async function setOpportunityItemAmountAction(
+  opportunityId: string,
+  itemId: string,
+  amount: number | null,
+): Promise<DetailResult<OpportunityItem>> {
+  if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+    return { ok: false, message: "Informe um valor válido." };
+  }
+  const token = await getServerAccessToken();
+  try {
+    return {
+      ok: true,
+      data: await updateItem(token, String(opportunityId), String(itemId), {
+        amount: amount === null ? null : Number(amount.toFixed(2)),
+      }),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+export async function removeOpportunityItemAction(
+  opportunityId: string,
+  itemId: string,
+): Promise<DetailResult<null>> {
+  const token = await getServerAccessToken();
+  try {
+    await deleteItem(token, String(opportunityId), String(itemId));
+    return { ok: true, data: null };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+export async function removeOpportunityCommentAction(
+  opportunityId: string,
+  commentId: string,
+): Promise<DetailResult<null>> {
+  const token = await getServerAccessToken();
+  try {
+    await deleteComment(token, String(opportunityId), String(commentId));
+    return { ok: true, data: null };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// O binário nunca passa pelo NestJS: o backend só assina a URL de upload;
+// quem faz o PUT é esta Server Action, direto no Storage do Supabase.
+export async function uploadOpportunityAttachmentClientAction(
+  opportunityId: string,
+  formData: FormData,
+): Promise<DetailResult<OpportunityAttachment[]>> {
   const file = formData.get("file");
-
   if (!(file instanceof File) || file.size === 0) {
-    redirectWithError(back, new Error("Selecione um arquivo pra enviar."));
-    return;
+    return { ok: false, message: "Selecione um arquivo pra enviar." };
   }
-
+  const token = await getServerAccessToken();
   try {
-    const { uploadUrl } = await createUploadUrl(token, opportunityId, {
-      fileName: file.name,
-      mimeType: file.type || undefined,
-      sizeBytes: file.size,
-    });
-    const bytes = await file.arrayBuffer();
-    const res = await fetch(uploadUrl, {
-      method: "PUT",
-      body: bytes,
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-    });
-    if (!res.ok) {
-      throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
-    }
+    await enviarAnexo(token, String(opportunityId), file);
+    return { ok: true, data: await listAttachments(token, String(opportunityId)) };
   } catch (error) {
-    redirectWithError(back, error);
+    return detailFail(error);
   }
-
-  revalidatePath(back);
-  redirectWithMessage(back, "Anexo adicionado");
 }
 
-export async function downloadOpportunityAttachmentAction(formData: FormData) {
+export async function removeOpportunityAttachmentClientAction(
+  opportunityId: string,
+  attachmentId: string,
+): Promise<DetailResult<OpportunityAttachment[]>> {
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const opportunityId = String(formData.get("opportunityId"));
-  const attachmentId = String(formData.get("attachmentId"));
-
-  let url: string;
   try {
-    const result = await getDownloadUrl(token, opportunityId, attachmentId);
-    url = result.url;
+    await deleteAttachment(token, String(opportunityId), String(attachmentId));
+    return { ok: true, data: await listAttachments(token, String(opportunityId)) };
   } catch (error) {
-    redirectWithError(back, error);
-    return;
+    return detailFail(error);
   }
-
-  redirect(url);
 }
 
-export async function deleteOpportunityAttachmentAction(formData: FormData) {
+export async function opportunityAttachmentUrlAction(
+  opportunityId: string,
+  attachmentId: string,
+): Promise<DetailResult<string>> {
   const token = await getServerAccessToken();
-  const back = backPath(formData);
-  const opportunityId = String(formData.get("opportunityId"));
-  const attachmentId = String(formData.get("attachmentId"));
-
   try {
-    await deleteAttachment(token, opportunityId, attachmentId);
+    const { url } = await getDownloadUrl(token, String(opportunityId), String(attachmentId));
+    return { ok: true, data: url };
   } catch (error) {
-    redirectWithError(back, error);
+    return detailFail(error);
   }
-
-  revalidatePath(back);
-  redirectWithMessage(back, "Anexo removido");
 }

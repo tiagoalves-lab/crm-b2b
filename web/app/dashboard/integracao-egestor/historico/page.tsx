@@ -4,6 +4,7 @@ import { getMe } from "@/lib/api/me";
 import { listEgestorInteractionLog } from "@/lib/api/egestor";
 import type { EgestorInteractionOrigin } from "@/lib/api/types";
 import { formatDateTimeBR } from "@/lib/format-date";
+import TopbarFilter from "@/app/_components/topbar-filter";
 
 const ORIGIN_LABEL: Record<EgestorInteractionOrigin, string> = {
   crm: "CRM",
@@ -52,6 +53,7 @@ export default async function HistoricoIntegracaoEgestorPage() {
             processamento automático do webhook (Matriz/Filial)
           </div>
         </div>
+        <TopbarFilter />
         <Link href="/dashboard/integracao-egestor" className="btn btn-ghost">
           Voltar
         </Link>

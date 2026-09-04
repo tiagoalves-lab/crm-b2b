@@ -4,7 +4,8 @@ import { loadLeadFicha } from "@/app/dashboard/leads/_ficha/load";
 import FichaTabs from "@/app/dashboard/leads/_ficha/ficha-tabs";
 import FichaBody from "@/app/dashboard/leads/_ficha/ficha-body";
 import OverlayDrawer from "@/app/dashboard/_overlay/overlay-drawer";
-import { discardOneLeadAction } from "@/app/dashboard/leads/actions";
+import { discardLeadFormAction } from "@/app/dashboard/leads/actions";
+import ActionForm from "@/app/_components/action-form";
 import ApproveLeadButton from "@/app/dashboard/leads/approve-button";
 import SubmitButton from "@/app/_components/submit-button";
 
@@ -39,13 +40,12 @@ export default async function LeadFichaDrawer({
             {lead.status !== "novo" && <span className="pill pill-gray">{lead.status}</span>}
             {lead.status === "novo" && (
               <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-                <form action={discardOneLeadAction}>
+                <ActionForm action={discardLeadFormAction} onSuccess="close">
                   <input type="hidden" name="id" value={lead.id} />
-                  <input type="hidden" name="back" value="/dashboard/leads" />
                   <SubmitButton className="btn btn-danger btn-sm" style={{ width: 150, justifyContent: "center" }} pendingLabel="Descartando…">
                     Descartar
                   </SubmitButton>
-                </form>
+                </ActionForm>
                 <ApproveLeadButton leadId={lead.id} />
               </div>
             )}

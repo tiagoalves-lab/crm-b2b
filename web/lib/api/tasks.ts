@@ -49,6 +49,9 @@ export interface CreateTaskInput {
   companyId?: string;
   opportunityId?: string;
   assigneeUserId?: string;
+  // Carimbo de itens da oportunidade de origem (2026-09-04) — só com
+  // opportunityId; o backend recusa tag fora da lista do card.
+  tags?: string[];
 }
 
 export function createTask(token: string, input: CreateTaskInput): Promise<Task> {
@@ -63,6 +66,8 @@ export interface UpdateTaskInput {
   contactId?: string;
   status?: TaskStatus;
   assigneeUserId?: string;
+  // Substitui a lista inteira de carimbos (mesma regra de CreateTaskInput).
+  tags?: string[];
 }
 
 export function updateTask(

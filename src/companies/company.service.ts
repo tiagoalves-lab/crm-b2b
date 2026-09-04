@@ -26,6 +26,57 @@ export interface PaginatedResult<T> {
   pageSize: number;
 }
 
+// Uma linha da tela de Empresas, já pronta (2026-09-04, etapa 3 da
+// performance). Antes a tela montava isto no servidor da Vercel a partir
+// de 6 requisições: as 4 páginas de `GET /companies` (81 KB cada, com
+// endereço, e-mails, telefones e customFields que a tabela não mostra),
+// mais `GET /opportunities` e `GET /sales-history` inteiros (1.093 vendas)
+// só pra somar LTV e achar a última compra. Agora é uma requisição só,
+// com os campos que a tabela desenha e as somas feitas pelo banco.
+//
+// Sem paginação de propósito: a tela ordena, filtra e conta no navegador,
+// então precisa da lista completa de qualquer jeito (hoje 395 empresas,
+// ~150 KB). Se a base crescer muito, o caminho é ordenar/filtrar no
+// backend — não paginar isto aqui e remontar no frontend.
+export interface CompanyResumo {
+  id: string;
+  razaoSocial: string | null;
+  fantasia: string | null;
+  nomeParaContato: string | null;
+  cpfCnpj: string | null;
+  cidade: string | null;
+  uf: string | null;
+  tags: string[];
+  curvaAbc: Company['curvaAbc'];
+  curvaAbcCalculadaEm: Date | null;
+  deletedAt: Date | null;
+  // Coluna "integração eGestor" — só existe/não existe, igual ao que
+  // CompanyWithEgestor já entregava.
+  temEgestor: boolean;
+  ltv: number;
+  ultimaCompra: string | null;
+}
+
+interface FaturamentoDaEmpresa {
+  ltv: number;
+  ultimaCompra: string | null;
+}
+
+const RESUMO_SELECT = {
+  id: true,
+  razaoSocial: true,
+  fantasia: true,
+  nomeParaContato: true,
+  cpfCnpj: true,
+  cidade: true,
+  uf: true,
+  tags: true,
+  curvaAbc: true,
+  curvaAbcCalculadaEm: true,
+  deletedAt: true,
+  egestorContato: { select: { id: true } },
+} satisfies Prisma.CompanySelect;
+
 // `egestorContato` não-nulo = a empresa tem vínculo com o eGestor (Matriz
 // e/ou Filial) — coluna "integração" da tela de Empresas (S2.4,
 // docs/roadmap.md). Só o id importa pro frontend (basta
@@ -108,6 +159,21 @@ interface BrasilApiCnpjResponse {
   descricao_identificador_matriz_filial?: string;
 }
 
+// Timeline da empresa é registro de RELACIONAMENTO, não log técnico
+// (decisão do usuário, 2026-09-04): só ação humana entra. Carga em massa
+// e preenchimento automático passam `semTimeline: true` e não deixam
+// rastro na ficha — antes uma importação de planilha escrevia "cadastro
+// criado" em centenas de empresas de uma vez (870 linhas em produção) e a
+// sanitização em lote pelo Cartão CNPJ escrevia "cadastro atualizado" em
+// mais 302, afogando as anotações de verdade.
+//
+// Quem chama continua sendo auditável fora da Timeline: importação
+// devolve o resumo por linha, o eGestor tem EgestorInteractionLog e o
+// webhook tem EgestorWebhookEvent.
+export interface SemTimeline {
+  semTimeline?: boolean;
+}
+
 @Injectable()
 export class CompanyService {
   constructor(
@@ -119,6 +185,7 @@ export class CompanyService {
     tx: TenantTx,
     membership: MembershipContext,
     dto: CreateCompanyDto,
+    options: SemTimeline = {},
   ): Promise<Company> {
     if (!this.policy.canModule(membership, 'empresas_cadastro', 'criar')) {
       throw new ForbiddenException('Sem permissão para cadastrar empresas.');
@@ -196,13 +263,15 @@ export class CompanyService {
       },
     });
 
-    await this.activities.emit(tx, {
-      workspaceId: membership.workspaceId,
-      actorUserId: membership.userId,
-      type: 'field_update',
-      payload: { action: 'created' },
-      companyId: company.id,
-    });
+    if (!options.semTimeline) {
+      await this.activities.emit(tx, {
+        workspaceId: membership.workspaceId,
+        actorUserId: membership.userId,
+        type: 'field_update',
+        payload: { action: 'created' },
+        companyId: company.id,
+      });
+    }
 
     return company;
   }
@@ -283,6 +352,115 @@ export class CompanyService {
     return { items, total, page, pageSize };
   }
 
+  // Tela de Empresas inteira numa requisição — ver CompanyResumo.
+  async resumoParaLista(
+    tx: TenantTx,
+    membership: MembershipContext,
+    includeDeleted: boolean,
+  ): Promise<{ items: CompanyResumo[]; total: number }> {
+    if (!this.policy.canModule(membership, 'empresas_cadastro', 'ver')) {
+      throw new ForbiddenException('Sem permissão para ver empresas.');
+    }
+    const visibilityWhere = await this.policy.companyReadFilter(tx, membership);
+    const where: Prisma.CompanyWhereInput = {
+      workspaceId: membership.workspaceId,
+      ...visibilityWhere,
+      deletedAt: includeDeleted ? undefined : null,
+      // Mesmo recorte de findAll: lead em triagem não é empresa ainda.
+      NOT: { tags: { has: 'lead-triagem' } },
+    };
+
+    // Faturamento tem permissão própria — mesma régua de
+    // SalesHistoryService#findAll. Quem não pode ver vendas recebe a lista
+    // com LTV/última compra vazios, em vez de 403 na tela inteira (que é o
+    // que acontecia antes: a página chamava GET /sales-history direto e
+    // quebrava por inteiro pra quem não tinha a permissão).
+    const podeVerFaturamento =
+      this.policy.canModule(membership, 'empresas_vendas', 'ver') ||
+      this.policy.canModule(membership, 'empresas_posvenda', 'ver');
+
+    const [companies, faturamento] = await Promise.all([
+      tx.company.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        select: RESUMO_SELECT,
+      }),
+      podeVerFaturamento
+        ? this.agregarFaturamento(tx, membership)
+        : Promise.resolve(new Map<string, FaturamentoDaEmpresa>()),
+    ]);
+
+    const items = companies.map(({ egestorContato, ...c }) => {
+      const stats = faturamento.get(c.id);
+      return {
+        ...c,
+        temEgestor: egestorContato !== null,
+        ltv: stats?.ltv ?? 0,
+        ultimaCompra: stats?.ultimaCompra ?? null,
+      };
+    });
+
+    return { items, total: items.length };
+  }
+
+  // LTV e última compra somados PELO BANCO, um group by cada. LTV =
+  // oportunidade ganha (pipeline novo) + histórico de vendas do eGestor —
+  // mesma conta que a tela fazia em JavaScript depois de baixar as duas
+  // listas inteiras.
+  private async agregarFaturamento(
+    tx: TenantTx,
+    membership: MembershipContext,
+  ): Promise<Map<string, FaturamentoDaEmpresa>> {
+    // Oportunidade respeita o escopo por dono (scopeFilter), igual a
+    // GET /opportunities: manager continua somando só o time dele, e não
+    // o workspace inteiro. Histórico de vendas não tem dono (importado do
+    // eGestor) — quem controla ali é só a permissão de módulo acima.
+    const ownerFilter = await this.policy.scopeFilter(tx, membership);
+
+    const [vendas, ganhas] = await Promise.all([
+      tx.salesHistory.groupBy({
+        by: ['companyId'],
+        where: { workspaceId: membership.workspaceId },
+        _sum: { valorTotal: true },
+        _max: { dtVenda: true },
+      }),
+      tx.opportunity.groupBy({
+        by: ['companyId'],
+        where: {
+          workspaceId: membership.workspaceId,
+          ...ownerFilter,
+          status: 'won',
+          deletedAt: null,
+        },
+        _sum: { amount: true },
+        _max: { closedAt: true },
+      }),
+    ]);
+
+    const mapa = new Map<string, FaturamentoDaEmpresa>();
+    const acumular = (
+      companyId: string,
+      valor: Prisma.Decimal | null,
+      data: Date | null,
+    ) => {
+      const atual = mapa.get(companyId) ?? { ltv: 0, ultimaCompra: null };
+      atual.ltv += valor ? Number(valor) : 0;
+      const iso = data ? data.toISOString() : null;
+      if (iso && (!atual.ultimaCompra || iso > atual.ultimaCompra)) {
+        atual.ultimaCompra = iso;
+      }
+      mapa.set(companyId, atual);
+    };
+
+    for (const v of vendas) {
+      acumular(v.companyId, v._sum.valorTotal, v._max.dtVenda);
+    }
+    for (const o of ganhas) {
+      acumular(o.companyId, o._sum.amount, o._max.closedAt);
+    }
+    return mapa;
+  }
+
   async findOne(
     tx: TenantTx,
     membership: MembershipContext,
@@ -296,6 +474,7 @@ export class CompanyService {
     membership: MembershipContext,
     id: string,
     dto: UpdateCompanyDto,
+    options: SemTimeline = {},
   ): Promise<Company> {
     const existing = await this.mustBeVisible(tx, membership, id, 'write');
 
@@ -348,13 +527,15 @@ export class CompanyService {
       },
     });
 
-    await this.activities.emit(tx, {
-      workspaceId: membership.workspaceId,
-      actorUserId: membership.userId,
-      type: 'field_update',
-      payload: { action: 'updated', fields: Object.keys(dto) },
-      companyId: updated.id,
-    });
+    if (!options.semTimeline) {
+      await this.activities.emit(tx, {
+        workspaceId: membership.workspaceId,
+        actorUserId: membership.userId,
+        type: 'field_update',
+        payload: { action: 'updated', fields: Object.keys(dto) },
+        companyId: updated.id,
+      });
+    }
 
     return updated;
   }

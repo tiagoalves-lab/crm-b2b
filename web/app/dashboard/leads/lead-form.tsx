@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { CnpjLookupResult } from "@/lib/api/companies";
 import { createRawLeadAction } from "./actions";
+import { cadastroFromLookup, PORTES, SITUACOES } from "./cnpj-lookup-fields";
 import SubmitButton from "@/app/_components/submit-button";
 
-const PORTES = ["GRANDE", "MÉDIO", "PEQUENO"];
-const SITUACOES = ["ATIVA", "BAIXADA", "SUSPENSA", "INAPTA", "NULA"];
 const FONTES = [
   { value: "manual", label: "Manual" },
   { value: "econodata", label: "Econodata" },
@@ -52,40 +51,6 @@ const EMPTY_FIELDS: Fields = {
   municipio: "",
   fonte: "manual",
 };
-
-// lookupCnpj (company.service.ts) devolve o CNAE já como "código -
-// descrição" numa string só (mesmo texto do card da Receita na ficha de
-// empresa) — aqui precisa separar em dois campos porque RawLead guarda
-// cnaePrincipal/cnaeDescricao à parte.
-function splitCnae(combined?: string): { codigo: string; descricao: string } {
-  if (!combined) return { codigo: "", descricao: "" };
-  const idx = combined.indexOf(" - ");
-  if (idx === -1) return { codigo: combined, descricao: "" };
-  return { codigo: combined.slice(0, idx), descricao: combined.slice(idx + 3) };
-}
-
-// Espelha o normalizePorte do backend (spreadsheet-import.util.ts) — a
-// Receita devolve texto livre ("DEMAIS", "MICRO EMPRESA", "EMPRESA DE
-// PEQUENO PORTE"), e o <select> aqui só tem as 3 faixas que o
-// LeadScoringService reconhece.
-function normalizePorte(raw?: string): string {
-  const upper = (raw ?? "")
-    .trim()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toUpperCase();
-  if (!upper) return "";
-  if (upper === "EPP" || upper.includes("PEQUENO") || upper.includes("MICRO")) return "PEQUENO";
-  if (upper === "DEMAIS") return "MÉDIO";
-  if (upper === "GRANDE") return "GRANDE";
-  if (upper === "MEDIO") return "MÉDIO";
-  return "";
-}
-
-function normalizeSituacao(raw?: string): string {
-  const upper = (raw ?? "").trim().toUpperCase();
-  return SITUACOES.includes(upper) ? upper : "ATIVA";
-}
 
 // Form de "Novo lead" — mesma busca por CNPJ (BrasilAPI via /api/cnpj) já
 // usada em CompanyForm (Empresas), só que aqui autopreenche os campos do
@@ -149,22 +114,22 @@ export default function LeadForm() {
       if (!res.ok) {
         throw new Error(data.message ?? "Não foi possível consultar o CNPJ.");
       }
-      const cnae = splitCnae(data.cnaePrincipal);
+      // cadastroFromLookup já devolve tudo em caixa alta (mesma
+      // padronização do field() acima) — a Receita devolve razão
+      // social/município em texto misto.
+      const cadastro = cadastroFromLookup(data);
       setFields((prev) => ({
         ...prev,
-        // Mesma padronização em caixa alta do field() acima — a Receita
-        // devolve razão social/município em texto misto, então força pra
-        // já entrar no cadastro na condição padrão.
-        razaoSocial: (data.razaoSocial ?? prev.razaoSocial).toUpperCase(),
-        cnpj: data.cpfCnpj ?? prev.cnpj,
-        cnaePrincipal: (cnae.codigo || prev.cnaePrincipal).toUpperCase(),
-        cnaeDescricao: (cnae.descricao || prev.cnaeDescricao).toUpperCase(),
-        porte: normalizePorte(data.porte) || prev.porte,
-        situacao: normalizeSituacao(data.situacaoCadastral),
-        uf: (data.uf ?? prev.uf).toUpperCase(),
-        municipio: (data.cidade ?? prev.municipio).toUpperCase(),
+        razaoSocial: cadastro.razaoSocial ?? prev.razaoSocial,
+        cnpj: cadastro.cnpj || prev.cnpj,
+        cnaePrincipal: cadastro.cnaePrincipal ?? prev.cnaePrincipal,
+        cnaeDescricao: cadastro.cnaeDescricao ?? prev.cnaeDescricao,
+        porte: cadastro.porte ?? prev.porte,
+        situacao: cadastro.situacao,
+        uf: cadastro.uf ?? prev.uf,
+        municipio: cadastro.municipio ?? prev.municipio,
       }));
-      setRjHint(data.emRecuperacaoJudicial);
+      setRjHint(cadastro.emRecuperacaoJudicial);
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : "Erro ao consultar CNPJ.");
     } finally {

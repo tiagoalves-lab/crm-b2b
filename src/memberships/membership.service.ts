@@ -3,8 +3,9 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import type { Membership, MembershipRole, Prisma } from '@prisma/client';
+import type { Membership, MembershipRole } from '@prisma/client';
 import {
   MODULE_ACTIONS,
   PERMISSION_MODULES,
@@ -12,6 +13,7 @@ import {
   type PermissionMatrix,
 } from '../policy/permission-catalog';
 import { PolicyService } from '../policy/policy.service';
+import { MembershipCacheService } from '../tenancy/membership-cache.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateMembershipDto } from './dto/create-membership.dto';
@@ -45,6 +47,9 @@ export class MembershipService {
   constructor(
     private readonly supabaseUser: SupabaseUserService,
     private readonly policy: PolicyService,
+    // Opcional só pelo membership.service.spec.ts, que instancia com dois
+    // argumentos. Em produção sempre vem (TenancyModule exporta).
+    @Optional() private readonly membershipCache?: MembershipCacheService,
   ) {}
 
   // Cria o login (Supabase Auth) e o Membership do workspace atual numa
@@ -208,7 +213,7 @@ export class MembershipService {
         )
       : undefined;
 
-    return tx.membership.update({
+    const updated = await tx.membership.update({
       where: { id: existing.id },
       data: {
         role: dto.role,
@@ -217,6 +222,13 @@ export class MembershipService {
         permissions: permissions,
       },
     });
+    // Papel/status/permissões novos valem na próxima requisição do membro
+    // (o guard relê do banco). A invalidação acontece antes do COMMIT do
+    // controller — a janela em que outra requisição do mesmo usuário
+    // poderia recachear a linha antiga é de milissegundos, e o TTL do
+    // cache cobre o resto.
+    this.membershipCache?.invalidate(existing.userId);
+    return updated;
   }
 
   // Um ator não-owner/admin (ex.: gerente cadastrando um subordinado) nunca
@@ -281,6 +293,8 @@ export class MembershipService {
 
     // manager_id tem ON DELETE SET NULL (ver migration) — quem reportava
     // pra esse membro fica sem gerente automaticamente, sem violar FK.
-    return tx.membership.delete({ where: { id: existing.id } });
+    const removed = await tx.membership.delete({ where: { id: existing.id } });
+    this.membershipCache?.invalidate(existing.userId);
+    return removed;
   }
 }

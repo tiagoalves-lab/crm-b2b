@@ -1,9 +1,12 @@
+import { cache } from "react";
 import { apiFetch } from "./client";
 import type { Membership, MembershipRole, MembershipStatus, PermissionMatrix } from "./types";
 
-export function listMemberships(token: string): Promise<Membership[]> {
+// cache() do React — mesmo motivo de getMe (lib/api/me.ts): uma chamada
+// por renderização, não uma por componente que precisa de nomes.
+export const listMemberships = cache((token: string): Promise<Membership[]> => {
   return apiFetch<Membership[]>("/memberships", { token });
-}
+});
 
 export interface CreateMembershipInput {
   name: string;

@@ -61,6 +61,19 @@ describe('RLS — isolamento entre workspaces', () => {
     await withWorkspace(workspaceA.id, (tx) =>
       tx.task.deleteMany({ where: { workspaceId: workspaceA.id } }),
     );
+    // Oportunidade (opportunity_items some em cascata) antes de stage/
+    // pipeline/company, que ela referencia.
+    await withWorkspace(workspaceA.id, (tx) =>
+      tx.opportunity.deleteMany({ where: { workspaceId: workspaceA.id } }),
+    );
+    await withWorkspace(workspaceA.id, (tx) =>
+      tx.stage.deleteMany({
+        where: { pipeline: { workspaceId: workspaceA.id } },
+      }),
+    );
+    await withWorkspace(workspaceA.id, (tx) =>
+      tx.pipeline.deleteMany({ where: { workspaceId: workspaceA.id } }),
+    );
     await withWorkspace(workspaceA.id, (tx) =>
       tx.company.deleteMany({ where: { workspaceId: workspaceA.id } }),
     );
@@ -68,7 +81,7 @@ describe('RLS — isolamento entre workspaces', () => {
       where: { id: { in: [workspaceA.id, workspaceB.id] } },
     });
     await prisma.$disconnect();
-  });
+  }, 15000);
 
   /**
    * Roda `fn` dentro de uma transação com `app.current_workspace_id`
@@ -219,4 +232,65 @@ describe('RLS — isolamento entre workspaces', () => {
     );
     expect(commentInB).toBeNull();
   }, 15000);
+
+  // 2026-09-04: lista lateral de itens do card de Oportunidade — mesma
+  // policy por subquery (opportunity_id -> opportunities.workspace_id) de
+  // opportunity_comments/opportunity_attachments.
+  it('CRÍTICO: opportunity_items (RLS via subquery em opportunity_id) não vazam pro workspace B', async () => {
+    const company = await withWorkspace(workspaceA.id, (tx) =>
+      tx.company.create({
+        data: {
+          workspaceId: workspaceA.id,
+          razaoSocial: 'Empresa pra itens de oportunidade',
+        },
+      }),
+    );
+    const pipeline = await withWorkspace(workspaceA.id, (tx) =>
+      tx.pipeline.create({
+        data: {
+          workspaceId: workspaceA.id,
+          name: 'Pipeline do teste de itens',
+          stages: { create: [{ name: 'Etapa 1', order: 1, probability: 10 }] },
+        },
+        include: { stages: true },
+      }),
+    );
+    const opportunity = await withWorkspace(workspaceA.id, (tx) =>
+      tx.opportunity.create({
+        data: {
+          workspaceId: workspaceA.id,
+          companyId: company.id,
+          pipelineId: pipeline.id,
+          stageId: pipeline.stages[0].id,
+          ownerUserId: '00000000-0000-0000-0000-000000000001',
+          amount: 100,
+          currency: 'BRL',
+        },
+      }),
+    );
+    const item = await withWorkspace(workspaceA.id, (tx) =>
+      tx.opportunityItem.create({
+        data: { opportunityId: opportunity.id, name: 'Item secreto' },
+      }),
+    );
+
+    const itemInA = await withWorkspace(workspaceA.id, (tx) =>
+      tx.opportunityItem.findUnique({ where: { id: item.id } }),
+    );
+    expect(itemInA?.name).toBe('Item secreto');
+
+    const itemInB = await withWorkspace(workspaceB.id, (tx) =>
+      tx.opportunityItem.findUnique({ where: { id: item.id } }),
+    );
+    expect(itemInB).toBeNull();
+
+    // WITH CHECK: B também não consegue pendurar item numa oportunidade de A.
+    await expect(
+      withWorkspace(workspaceB.id, (tx) =>
+        tx.opportunityItem.create({
+          data: { opportunityId: opportunity.id, name: 'Intruso' },
+        }),
+      ),
+    ).rejects.toThrow();
+  }, 20000);
 });

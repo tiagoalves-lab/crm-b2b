@@ -7,6 +7,7 @@ import {
 import type {
   Opportunity,
   OpportunityComment,
+  OpportunityItem,
   OpportunityStatus,
   Prisma,
   Stage,
@@ -21,6 +22,8 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import type { ListOpportunitiesQueryDto } from './dto/list-opportunities-query.dto';
 import type { UpdateOpportunityDto } from './dto/update-opportunity.dto';
+import { uniqueItemNames } from './opportunity-tags';
+import { COMPANY_REF_SELECT, type CompanyRef } from '../companies/company-ref';
 
 // open -> won/lost (fechamento); won/lost -> open (reabertura explícita,
 // limpa lostReason/closedAt). Bloqueia won<->lost direto — precisa reabrir
@@ -28,17 +31,27 @@ import type { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 // explícita" (docs/arquitetura-dados.md fala de mudança de STAGE nesse
 // contexto, não de status diretamente) — sinalizado aqui por ser uma
 // extensão, não algo literal do doc.
+// Item de GET /opportunities: a oportunidade + referência mínima da
+// empresa, pro card do Pipeline/Painel rotular sem baixar a base inteira
+// de empresas (2026-09-04, ver company-ref.ts). Resolvida numa segunda
+// consulta na mesma transação — custa a mesma ida que um include, mas não
+// depende de include em relação obrigatória: empresa invisível pelo RLS
+// vira null em vez de erro de consistência do Prisma.
+export type OpportunityListItem = Opportunity & { company: CompanyRef | null };
+
 const ALLOWED_TRANSITIONS: Record<OpportunityStatus, OpportunityStatus[]> = {
   open: ['won', 'lost'],
   won: ['open'],
   lost: ['open'],
 };
 
-// Comentários do card (feature nova, ver OpportunityCommentService) —
-// embutidos em findOne, mesmo padrão de TaskWithDetails. Anexos ficam de
-// fora (endpoint próprio), igual Task.
+// Comentários do card (feature nova, ver OpportunityCommentService) e a
+// lista lateral de itens (OpportunityItemService, 2026-09-04) — embutidos
+// em findOne, mesmo padrão de TaskWithDetails. Anexos ficam de fora
+// (endpoint próprio), igual Task.
 export type OpportunityWithDetails = Opportunity & {
   comments: OpportunityComment[];
+  items: OpportunityItem[];
 };
 
 @Injectable()
@@ -81,9 +94,23 @@ export class OpportunityService {
         expectedCloseDate: dto.expectedCloseDate
           ? new Date(dto.expectedCloseDate)
           : undefined,
+        description: dto.description,
         status: 'open',
       },
     });
+
+    // Lista lateral de itens digitada já no cadastro (2026-09-04) — na
+    // mesma transação, na ordem em que o usuário digitou.
+    const items = uniqueItemNames(dto.items ?? []);
+    if (items.length > 0) {
+      await tx.opportunityItem.createMany({
+        data: items.map((name, index) => ({
+          opportunityId: opportunity.id,
+          name,
+          position: index + 1,
+        })),
+      });
+    }
 
     await this.activities.emit(tx, {
       workspaceId: membership.workspaceId,
@@ -100,7 +127,7 @@ export class OpportunityService {
     tx: TenantTx,
     membership: MembershipContext,
     query: ListOpportunitiesQueryDto,
-  ): Promise<PaginatedResult<Opportunity>> {
+  ): Promise<PaginatedResult<OpportunityListItem>> {
     // Mesmo critério de TaskService#findAll: filtrado por empresa (aba
     // "Oportunidades" da ficha) usa empresas_oportunidades, separado da
     // tela geral (Pipeline) — só 'ver' tem efeito próprio, ver comentário
@@ -132,7 +159,7 @@ export class OpportunityService {
       };
     }
 
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       tx.opportunity.findMany({
         where,
         skip: (page - 1) * pageSize,
@@ -141,6 +168,20 @@ export class OpportunityService {
       }),
       tx.opportunity.count({ where }),
     ]);
+
+    const companyIds = [...new Set(rows.map((o) => o.companyId))];
+    const companies =
+      companyIds.length > 0
+        ? await tx.company.findMany({
+            where: { id: { in: companyIds } },
+            select: COMPANY_REF_SELECT,
+          })
+        : [];
+    const companyById = new Map(companies.map((c) => [c.id, c]));
+    const items = rows.map((o) => ({
+      ...o,
+      company: companyById.get(o.companyId) ?? null,
+    }));
 
     return { items, total, page, pageSize };
   }
@@ -178,7 +219,10 @@ export class OpportunityService {
     await this.mustBeVisible(tx, membership, id);
     return tx.opportunity.findUniqueOrThrow({
       where: { id },
-      include: { comments: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        comments: { orderBy: { createdAt: 'asc' } },
+        items: { orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
+      },
     });
   }
 
@@ -260,6 +304,7 @@ export class OpportunityService {
         expectedCloseDate: dto.expectedCloseDate
           ? new Date(dto.expectedCloseDate)
           : undefined,
+        description: dto.description,
         status: nextStatus,
         lostReason: nextLostReason,
         closedAt,

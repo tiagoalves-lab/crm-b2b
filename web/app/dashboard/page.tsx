@@ -1,21 +1,17 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { listRecentActivities } from "@/lib/api/activities";
-import {
-  buildCompanyLookup,
-  companyDisplayName,
-  companyRazaoSocialName,
-  listCompanies,
-} from "@/lib/api/companies";
+import { companyDisplayName, companyRazaoSocialName } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listMemberships } from "@/lib/api/memberships";
 import { listPipelines } from "@/lib/api/pipelines";
 import { listRawLeads } from "@/lib/api/raw-leads";
 import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
-import type { Activity, Company, Membership, Opportunity, Task } from "@/lib/api/types";
+import type { Activity, Membership, Opportunity, Task } from "@/lib/api/types";
 import { dayKeyBR } from "@/lib/format-date";
 import RecentActivityTable from "./recent-activity-table";
 import WeeklyTasksTable from "./weekly-tasks-table";
+import TopbarFilter from "@/app/_components/topbar-filter";
 
 function brl(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
@@ -88,7 +84,6 @@ interface DescribedActivity {
 // (antes só tinha `title`, sem id nenhum pra apontar de volta).
 function describeActivity(
   activity: Activity,
-  companyById: Map<string, Company>,
   opportunities: Opportunity[],
 ): DescribedActivity {
   const payload = activity.payload;
@@ -97,7 +92,8 @@ function describeActivity(
     (activity.opportunityId
       ? (opportunities.find((o) => o.id === activity.opportunityId)?.companyId ?? null)
       : null);
-  const company = companyId ? companyById.get(companyId) : undefined;
+  // Empresa vem embutida em GET /activities (direta ou a da oportunidade).
+  const company = activity.company ?? activity.opportunity?.company ?? null;
   const companyLabel = company ? companyDisplayName(company) : null;
   const companyHref = companyId ? `/dashboard/empresas/${companyId}` : null;
   const opportunityHref = activity.opportunityId ? `/dashboard/pipeline/${activity.opportunityId}` : null;
@@ -220,14 +216,12 @@ export default async function DashboardPage() {
     { items: pipelines },
     { items: opportunities },
     { items: tasks },
-    { items: companies },
     { items: leadsNovos },
     memberships,
   ] = await Promise.all([
     listPipelines(token),
     listOpportunities(token),
     listTasks(token),
-    listCompanies(token, true),
     listRawLeads(token, { status: "novo" }),
     listMemberships(token),
   ]);
@@ -264,40 +258,14 @@ export default async function DashboardPage() {
     .filter((t) => t.status === "pending" && t.dueAt !== null && new Date(t.dueAt) <= semanaFim)
     .sort((a, b) => (a.dueAt as string).localeCompare(b.dueAt as string));
 
-  const oppCompanyId = (opportunityId: string | null) =>
-    opportunityId ? (opportunities.find((o) => o.id === opportunityId)?.companyId ?? null) : null;
-
-  // Empresas que as linhas exibidas referenciam mas que `listCompanies`
-  // não devolve — as que ainda têm a tag "lead-triagem" (ver
-  // buildCompanyLookup). Sem isto, tarefa criada a partir de um lead em
-  // triagem aparecia com "Empresa: —" mesmo tendo vínculo, que é
-  // exatamente o que o usuário reportou em 2026-08-13. A tela de Tarefas
-  // já tinha esse tratamento; o Painel nunca recebeu.
-  //
-  // Restrito a tarefasSemana + recentActivities (o que de fato é
-  // renderizado), não a `tasks` inteiro: cada empresa faltante custa um
-  // GET /companies/:id, então a conta tem que ficar presa ao tamanho da
-  // tela, não ao tamanho da página da API.
-  const companyById = await buildCompanyLookup(token, companies, [
-    ...tarefasSemana.flatMap((t) => [t.companyId, oppCompanyId(t.opportunityId)]),
-    ...recentActivities.flatMap((a) => [a.companyId, oppCompanyId(a.opportunityId)]),
-  ]);
-
   // Coluna "Empresa" de Ações da semana mostra razão social (pedido do
-  // usuário, 2026-08-11) — inclui empresas arquivadas na busca (companies
-  // vem com includeDeleted=true) pra não cair no "—" quando a tarefa
-  // aponta pra uma empresa já arquivada.
-  const companyName = (id: string | null) => {
-    const company = id ? companyById.get(id) : undefined;
-    return company ? companyRazaoSocialName(company) : "—";
-  };
+  // usuário, 2026-08-11). A empresa vem embutida em GET /tasks desde
+  // 2026-09-04 (direta ou a da oportunidade, inclusive arquivada ou ainda
+  // em triagem de lead) — o Painel parou de baixar a base inteira de
+  // empresas pra rotular meia dúzia de linhas.
   const targetLabel = (task: Task) => {
-    if (task.companyId) return companyName(task.companyId);
-    if (task.opportunityId) {
-      const opp = opportunities.find((o) => o.id === task.opportunityId);
-      return opp ? companyName(opp.companyId) : "—";
-    }
-    return "—";
+    const company = task.company ?? task.opportunity?.company ?? null;
+    return company ? companyRazaoSocialName(company) : "—";
   };
   const dueInfo = (task: Task): { cls: string; label: string } => {
     if (!task.dueAt) return { cls: "due-ok", label: "—" };
@@ -332,7 +300,7 @@ export default async function DashboardPage() {
   });
 
   const activityRows = recentActivities.map((a) => {
-    const described = describeActivity(a, companyById, opportunities);
+    const described = describeActivity(a, opportunities);
     return {
       id: described.id,
       kind: described.kind,
@@ -351,6 +319,7 @@ export default async function DashboardPage() {
           <div className="page-title">Painel comercial</div>
           <div className="page-sub">Visão geral da carteira</div>
         </div>
+        <TopbarFilter />
       </div>
 
       <div className="content">

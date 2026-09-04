@@ -53,30 +53,21 @@ export class TenantContextService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        // Postgres não aceita bind parameter no valor de SET LOCAL — os ids
-        // já foram validados como UUID estrito acima (assertUuid) e o role
-        // contra um enum fechado (ROLE_RE), então a interpolação abaixo
-        // nunca carrega texto arbitrário de request.
-        await tx.$executeRawUnsafe(
-          `SET LOCAL app.current_user_id = '${ctx.userId}'`,
-        );
-        await tx.$executeRawUnsafe(
-          `SET LOCAL app.current_workspace_id = '${ctx.workspaceId}'`,
-        );
-        // Sempre seta (mesmo vazio) — SET LOCAL sem isso manteria o valor
-        // da transação anterior no mesmo pool de conexão (Postgres reseta
-        // no COMMIT/ROLLBACK, então isso não vaza entre requests, mas fica
-        // explícito de qualquer jeito: nunca herdar role de ninguém).
-        // "current_role" é palavra reservada do SQL (função CURRENT_ROLE) —
-        // mesmo qualificado com o namespace "app.", o parser do comando SET
-        // recusa o identificador desqualificado ("syntax error at or near
-        // current_role"). Envolver "app.current_role" inteiro em aspas
-        // duplas trata como um único identificador quotado, contornando a
-        // palavra reservada — current_setting('app.current_role', true) nas
-        // policies de RLS não muda (ali o nome é string, não identificador).
-        await tx.$executeRawUnsafe(
-          `SET LOCAL "app.current_role" = '${ctx.role ?? ''}'`,
-        );
+        // Uma ida só ao banco pras três variáveis de sessão (2026-09-04).
+        // Eram três SET LOCAL separados — três idas e voltas Virgínia↔Ohio
+        // por transação, em toda requisição. set_config(nome, valor, true)
+        // é o equivalente exato de SET LOCAL (vale até o fim da transação;
+        // Postgres reseta no COMMIT/ROLLBACK, nada vaza entre requests no
+        // pool) e aceita bind parameter, então a interpolação de string
+        // de antes deixou de existir. As validações acima (UUID estrito,
+        // enum de role) continuam como defesa em profundidade. O role é
+        // sempre setado, mesmo vazio: nunca herdar role de ninguém.
+        // current_setting('app.current_role', true) nas policies de RLS
+        // lê exatamente o que está aqui (o nome é string nos dois lados).
+        await tx.$queryRaw`SELECT
+          set_config('app.current_user_id', ${ctx.userId}, true),
+          set_config('app.current_workspace_id', ${ctx.workspaceId}, true),
+          set_config('app.current_role', ${ctx.role ?? ''}, true)`;
         return fn(tx);
       },
       options?.timeoutMs ? { timeout: options.timeoutMs } : undefined,

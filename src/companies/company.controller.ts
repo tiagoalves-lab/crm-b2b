@@ -76,6 +76,30 @@ export class CompanyController {
     );
   }
 
+  // Tela de Empresas inteira numa requisição (ver CompanyResumo).
+  // ATENÇÃO: rota fixa de 1 segmento — precisa vir ANTES de `@Get(':id')`,
+  // senão o Nest casa "resumo" com o parâmetro :id e o ParseUUIDPipe
+  // devolve 400. Não mover para baixo.
+  @Get('resumo')
+  resumo(
+    @CurrentMembership() membership: MembershipContext,
+    @Query() query: ListQueryDto,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) =>
+        this.companies.resumoParaLista(
+          tx,
+          membership,
+          query.includeDeleted ?? false,
+        ),
+    );
+  }
+
   // Rota fixa de 2 segmentos ("cnpj/:cnpj") não colide com ":id" (1
   // segmento) — ordem no controller não importa aqui, mas fica antes por
   // convenção (mais específico primeiro).

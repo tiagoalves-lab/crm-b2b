@@ -14,6 +14,7 @@ interface Deps {
   graph: { buscarLead: jest.Mock };
   rawLeads: { create: jest.Mock };
   contacts: { create: jest.Mock };
+  activities: { emit: jest.Mock };
   tx: {
     metaLeadsWebhookEvent: {
       findFirst: jest.Mock;
@@ -94,6 +95,7 @@ function montar(overrides: Partial<Record<string, unknown>> = {}): {
       }),
     },
     contacts: { create: jest.fn().mockResolvedValue({}) },
+    activities: { emit: jest.fn().mockResolvedValue({}) },
     tx,
   };
 
@@ -104,6 +106,7 @@ function montar(overrides: Partial<Record<string, unknown>> = {}): {
     deps.graph as never,
     deps.rawLeads as never,
     deps.contacts as never,
+    deps.activities as never,
   );
   return { service, deps };
 }
@@ -232,6 +235,42 @@ describe('MetaLeadsWebhookService', () => {
       )[0];
       expect(data).toMatchObject({ rawLeadId: 'raw-lead-1' });
       expect(data.processedAt).toBeInstanceOf(Date);
+    });
+
+    it('registra uma anotação na Timeline do lead com a origem e as perguntas do formulário', async () => {
+      const { service, deps } = montar();
+      deps.graph.buscarLead.mockResolvedValue({
+        id: 'lead-1',
+        field_data: [
+          { name: 'full_name', values: ['Joana Prado'] },
+          { name: 'email', values: ['joana@exemplo.com.br'] },
+          {
+            name: 'qual_equipamento_você_procura?',
+            values: ['máquina_de_corte_a_laser_para_chapas'],
+          },
+        ],
+      });
+
+      await service.handleEvent(payloadLeadgen());
+
+      const [, emitido] = argumentos<
+        unknown,
+        {
+          type: string;
+          actorUserId: string;
+          companyId: string;
+          payload: { texto: string; subtipo: string; origem: string };
+        }
+      >(deps.activities.emit);
+      expect(emitido).toMatchObject({
+        type: 'note',
+        actorUserId: OWNER_USER_ID,
+        companyId: 'company-1',
+        payload: { subtipo: 'nota', origem: 'meta_leads' },
+      });
+      expect(emitido.payload.texto).toBe(
+        'Lead do formulário do Meta.\n• Qual equipamento você procura? — máquina de corte a laser para chapas',
+      );
     });
 
     it('cria o lead na carteira do gerente configurado, não do ator sistema', async () => {

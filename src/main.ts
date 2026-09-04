@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { httpTiming } from './common/http-timing.middleware';
 
 async function bootstrap() {
   // `rawBody: true` mantém o corpo original (Buffer) em `request.rawBody`
@@ -20,6 +21,7 @@ async function bootstrap() {
   // na prática — quem precisa de CSP de verdade é o Next.js, e ela está
   // em web/middleware.ts. O que importa aqui é HSTS, nosniff e negar
   // enquadramento.
+  app.use(httpTiming());
   app.use(
     helmet({
       // A API é consumida de outra origem (servidor da Vercel). O default

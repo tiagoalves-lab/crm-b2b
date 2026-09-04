@@ -7,6 +7,8 @@ import { OpportunityAttachmentController } from './opportunity-attachment.contro
 import { OpportunityAttachmentService } from './opportunity-attachment.service';
 import { OpportunityCommentController } from './opportunity-comment.controller';
 import { OpportunityCommentService } from './opportunity-comment.service';
+import { OpportunityItemController } from './opportunity-item.controller';
+import { OpportunityItemService } from './opportunity-item.service';
 import { OpportunityController } from './opportunity.controller';
 import { OpportunityService } from './opportunity.service';
 
@@ -16,11 +18,13 @@ import { OpportunityService } from './opportunity.service';
     OpportunityController,
     OpportunityCommentController,
     OpportunityAttachmentController,
+    OpportunityItemController,
   ],
   providers: [
     OpportunityService,
     OpportunityCommentService,
     OpportunityAttachmentService,
+    OpportunityItemService,
   ],
   // Idem TaskModule: exportado pro CountsService (src/counts/).
   exports: [OpportunityService],

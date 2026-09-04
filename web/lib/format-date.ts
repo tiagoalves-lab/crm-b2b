@@ -25,3 +25,14 @@ export function formatDateBR(iso: string): string {
 export function dayKeyBR(date: Date): string {
   return date.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
+
+// Campo "só data" (prazo da tarefa, previsão de fechamento, data da venda,
+// data de abertura da empresa): o backend guarda como meia-noite UTC
+// (input type="date" → 2026-08-11T00:00:00.000Z). Formatar isso em
+// Brasília cai em 21h do dia ANTERIOR — a lista de Tarefas mostrava 10/08
+// pra um prazo que a ficha mostrava como 11/08 (achado 2026-09-04). Só
+// data se formata em UTC, sem conversão de fuso. Carimbo com hora de
+// verdade (createdAt, closedAt) continua em formatDateBR/formatDateTimeBR.
+export function formatDateOnlyBR(iso: string): string {
+  return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" });
+}

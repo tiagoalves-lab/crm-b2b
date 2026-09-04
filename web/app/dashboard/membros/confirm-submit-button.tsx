@@ -16,6 +16,8 @@ import { useFormStatus } from "react-dom";
 // corre, nenhum outro botão do mesmo form deve aceitar clique.
 export default function ConfirmSubmitButton({
   formAction,
+  name,
+  value,
   confirmMessage,
   className,
   title,
@@ -23,7 +25,12 @@ export default function ConfirmSubmitButton({
   pendingLabel,
   children,
 }: {
-  formAction: (formData: FormData) => void | Promise<void>;
+  // Opcional desde 2026-09-03: dentro de um ActionForm o botão não troca
+  // a action — manda `name`/`value` junto (ex.: intent=remove) e a própria
+  // action decide o que fazer.
+  formAction?: (formData: FormData) => void | Promise<void>;
+  name?: string;
+  value?: string;
   confirmMessage: string;
   className?: string;
   title?: string;
@@ -41,6 +48,8 @@ export default function ConfirmSubmitButton({
     <button
       type="submit"
       formAction={formAction}
+      name={name}
+      value={value}
       className={className}
       title={title}
       disabled={disabled || pending}

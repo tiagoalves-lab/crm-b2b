@@ -661,7 +661,9 @@ model EgestorInteractionLog {
 model MetaLeadsWebhookEvent {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId String   @map("workspace_id") @db.Uuid
-  pageId      String   @map("page_id")
+  // Nulo quando o lead chegou pela planilha do gestor de tráfego (ver
+  // `origem` abaixo) — a planilha não traz o id da Página.
+  pageId      String?  @map("page_id")
   formId      String?  @map("form_id")
   adId        String?  @map("ad_id")
   leadgenId   String   @map("leadgen_id")
@@ -686,6 +688,13 @@ model MetaLeadsWebhookEvent {
   // RawLead criado a partir deste evento — plain UUID (sem @relation, mesmo
   // padrão de RawLead.promotedCompanyId), só pra auditoria/rastreio manual.
   rawLeadId String? @map("raw_lead_id") @db.Uuid
+  // Canal por onde o lead chegou (2026-09-04): 'webhook' = a Meta chamou o
+  // CRM direto (fluxo original, parado enquanto o App não sai do modo
+  // desenvolvimento); 'planilha' = o script instalado na planilha do gestor
+  // de tráfego (scripts/planilha-meta-leads.gs) mandou a linha. Mesma
+  // tabela pros dois porque o dedupe é o mesmo — `leadgen_id` é o id que a
+  // Meta dá ao lead, igual nos dois canais.
+  origem    String  @default("webhook")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
 
@@ -814,6 +823,10 @@ model Opportunity {
   ownerUserId       String            @map("owner_user_id") @db.Uuid
   amount            Decimal           @db.Decimal(14, 2)
   currency          String            @db.Char(3)
+  // Detalhamento livre do que está sendo negociado (2026-09-04) — o
+  // usuário escreve aqui o que hoje escreve na descrição do cartão do
+  // Trello. Texto simples, sem formatação.
+  description       String?           @db.Text
   expectedCloseDate DateTime?         @map("expected_close_date") @db.Date
   status            OpportunityStatus @default(open)
   lostReason        String?           @map("lost_reason")
@@ -822,6 +835,15 @@ model Opportunity {
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
   closedAt          DateTime?         @map("closed_at")
+  // Cartão do Trello que originou a oportunidade (2026-09-04) — a tela
+  // "Trello | Solicitação de Propostas" do app de cotações cadastra por
+  // aqui e depois espelha os comentários do cartão no chat do card.
+  // A unicidade (1 cartão = 1 oportunidade viva) é um índice ÚNICO
+  // PARCIAL, que o Prisma não sabe declarar: vive no SQL da migration
+  // 20260904180000_cotacoes_trello_vinculo.
+  trelloCardId      String?           @map("trello_card_id")
+  trelloCardUrl     String?           @map("trello_card_url")
+  trelloSyncEm      DateTime?         @map("trello_sync_em")
 
   workspace      Workspace  @relation(fields: [workspaceId], references: [id])
   company        Company    @relation(fields: [companyId], references: [id])
@@ -831,6 +853,7 @@ model Opportunity {
   activities     Activity[]
   comments       OpportunityComment[]
   attachments    OpportunityAttachment[]
+  items          OpportunityItem[]
 
   @@index([workspaceId])
   @@index([companyId])
@@ -849,12 +872,48 @@ model OpportunityComment {
   opportunityId String   @map("opportunity_id") @db.Uuid
   authorUserId  String   @map("author_user_id") @db.Uuid
   body          String
+  // Carimbo de itens da oportunidade (2026-09-04) — nome do item como
+  // texto, validado contra a lista na gravação (opportunity-tags.ts).
+  tags          String[] @default([])
+  // Id do comentário na origem quando a mensagem foi espelhada de fora
+  // (hoje: action id do comentário no cartão do Trello, 2026-09-04).
+  // NULL em tudo que foi escrito por gente aqui dentro. É o que deixa o
+  // botão "Sincronizar" ser apertado à vontade sem duplicar mensagem —
+  // a unicidade (opportunity_id, external_ref) é um índice PARCIAL, no
+  // SQL da migration 20260904180000_cotacoes_trello_vinculo.
+  externalRef   String?  @map("external_ref")
+  // Nome de quem escreveu na origem (2026-09-04). Quem comenta no cartão
+  // do Trello não é usuário do CRM, então `author_user_id` fica com o
+  // sentinela de sistema e o nome de verdade mora aqui — é o que a tela
+  // mostra no lugar do id cru. NULL em comentário escrito aqui dentro.
+  externalAuthor String? @map("external_author")
   createdAt     DateTime @default(now()) @map("created_at")
 
   opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
 
   @@index([opportunityId])
   @@map("opportunity_comments")
+}
+
+// Lista lateral de itens do card de Oportunidade (2026-09-04): o que está
+// sendo negociado. Cada item vira uma tag que carimba comentários do card
+// e tarefas geradas a partir dele — ver opportunity-tags.ts.
+model OpportunityItem {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId String   @map("opportunity_id") @db.Uuid
+  name          String
+  // Valor negociado do item (2026-09-04). Opcional: item continua
+  // servindo de rótulo pra carimbar comentário/tarefa. Quando pelo
+  // menos um item tem valor, a soma vira o valor da oportunidade
+  // (OpportunityItemService#sincronizarValor).
+  amount        Decimal? @db.Decimal(14, 2)
+  position      Float    @default(0)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@map("opportunity_items")
 }
 
 model OpportunityAttachment {
@@ -895,6 +954,10 @@ model Task {
   // `tipo` é ligação/reunião/visita — contato precisa pertencer à mesma
   // company da tarefa (direta ou via opportunity.companyId).
   contactId      String?    @map("contact_id") @db.Uuid
+  // Carimbo de itens da oportunidade de origem (2026-09-04) — só faz
+  // sentido com opportunityId preenchido; validado no service contra a
+  // lista da oportunidade (opportunities/opportunity-tags.ts).
+  tags           String[]   @default([])
   createdBy      String     @map("created_by") @db.Uuid
   createdAt      DateTime   @default(now()) @map("created_at")
 

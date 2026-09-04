@@ -60,15 +60,40 @@ export const CAMPOS_PADRAO = {
   cargo: ['job_title', 'cargo', 'funcao'],
   cidade: ['city', 'cidade'],
   uf: ['state', 'estado', 'uf'],
-  cnpj: ['cnpj'],
+  // A pergunta de CNPJ do formulário da Gama chega com o texto inteiro
+  // como nome do campo (levantado na planilha, 2026-09-04). Além dos
+  // aliases, o mapeador aceita qualquer campo cujo nome contenha "cnpj".
+  cnpj: ['cnpj', 'qual_o_cnpj_da_sua_empresa?', 'cnpj_da_empresa'],
 } as const;
+
+// Colunas da planilha do gestor de tráfego (export da Central de Leads)
+// que são metadado do anúncio/da captura, não resposta do formulário. O
+// MetaLeadsPlanilhaService deixa essas de fora do `field_data` que monta —
+// senão cada uma viraria "pergunta customizada" e iria parar na anotação
+// da Timeline do lead.
+export const COLUNAS_METADADOS_PLANILHA = new Set<string>([
+  'id',
+  'created_time',
+  'ad_id',
+  'ad_name',
+  'adset_id',
+  'adset_name',
+  'campaign_id',
+  'campaign_name',
+  'form_id',
+  'form_name',
+  'is_organic',
+  'platform',
+  'lead_status',
+]);
 
 // Todos os nomes já cobertos pelo mapeador — o que sobra é pergunta
 // customizada (a Meta devolve a pergunta com o TEXTO dela como `name`,
 // confirmado na doc oficial em 2026-08-14 — por isso o índice de respostas
 // é montado em minúsculas, senão "Qual produto?" nunca casaria com alias
-// nenhum), preservada só em `meta_leads_webhook_events.lead_payload`
-// (nenhum campo de RawLead recebe isso hoje, ver dúvida 1.4 do roadmap).
+// nenhum). Pergunta customizada vira anotação na Timeline do lead
+// (decisão do usuário, 2026-09-04, ver MetaLeadsWebhookService) e segue
+// preservada em `meta_leads_webhook_events.lead_payload`.
 export const NOMES_MAPEADOS = new Set<string>(
   Object.values(CAMPOS_PADRAO).flat(),
 );

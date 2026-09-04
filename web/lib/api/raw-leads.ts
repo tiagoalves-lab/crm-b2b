@@ -163,6 +163,33 @@ export function updateLeadSegmento(
   });
 }
 
+// Completar o cadastro de um lead em triagem (CNPJ + dados da Receita) —
+// todo campo opcional, o que não vier fica como está; `cnpj: null` limpa.
+// Espelha UpdateLeadCadastroDto no backend.
+export interface UpdateLeadCadastroInput {
+  cnpj?: string | null;
+  razaoSocial?: string;
+  emRecuperacaoJudicial?: boolean;
+  cnaePrincipal?: string;
+  cnaeDescricao?: string;
+  porte?: string;
+  uf?: string;
+  municipio?: string;
+  situacao?: string;
+}
+
+export function updateLeadCadastro(
+  token: string,
+  id: string,
+  input: UpdateLeadCadastroInput,
+): Promise<RawLead> {
+  return apiFetch<RawLead>(`/raw-leads/${id}/cadastro`, {
+    method: "PATCH",
+    token,
+    body: input,
+  });
+}
+
 export interface BulkResult {
   ok: string[];
   failed: Array<{ id: string; reason: string }>;

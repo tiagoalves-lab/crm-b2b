@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
+import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { ApiError } from "@/lib/api/client";
 import {
   approveLead,
@@ -12,14 +12,17 @@ import {
   discardLead,
   importRawLeadsWithContactsSpreadsheet,
   rescoreLeads,
+  updateLeadCadastro,
   updateLeadSegmento,
   updateLeadTags,
   updateLeadTier,
   type BulkResult,
   type ImportResult,
   type ScoreTier,
+  type UpdateLeadCadastroInput,
 } from "@/lib/api/raw-leads";
 import type { Company, LeadFonte, RawLead } from "@/lib/api/types";
+import type { FormState } from "@/app/_components/action-form";
 
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   const str = value ? String(value).trim() : "";
@@ -203,6 +206,24 @@ export async function setLeadSegmentoAction(
   }
 }
 
+// Completar o cadastro do lead pela ficha (CNPJ + dados da Receita,
+// 2026-09-04) — mesmo padrão de setLeadSegmentoAction: RPC via Server
+// Action, sem navegar, devolve o lead atualizado. Quem faz o refresh é o
+// componente (useRefresh, por estar dentro do drawer).
+export async function setLeadCadastroAction(
+  id: string,
+  input: UpdateLeadCadastroInput,
+): Promise<ActionResult<RawLead>> {
+  const token = await getServerAccessToken();
+  try {
+    const result = await updateLeadCadastro(token, id, input);
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao salvar o cadastro do lead.") };
+  }
+}
+
 export async function rescoreLeadsAction(): Promise<ActionResult<{ updated: number }>> {
   const token = await getServerAccessToken();
   try {
@@ -231,4 +252,17 @@ export async function importLeadsContactsSpreadsheetAction(
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao importar a planilha de contatos.") };
   }
+}
+
+// Descartar de dentro da ficha (drawer/página): devolve resultado, sem
+// redirect (2026-09-03) — ActionForm fecha o drawer com router.back().
+export async function discardLeadFormAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const token = await getServerAccessToken();
+  const id = String(formData.get("id"));
+  try {
+    await discardLead(token, id);
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+  return { ok: true, message: "Lead descartado (fica na staging)" };
 }

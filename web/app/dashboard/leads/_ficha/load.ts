@@ -1,15 +1,22 @@
 import { getMe } from "@/lib/api/me";
 import { getRawLead } from "@/lib/api/raw-leads";
-import { listActivities } from "@/lib/api/activities";
+import { apenasInteracoes, listActivities } from "@/lib/api/activities";
 import { listTasks } from "@/lib/api/tasks";
 import { listContacts } from "@/lib/api/contacts";
+import { listMemberships } from "@/lib/api/memberships";
 import { ApiError } from "@/lib/api/client";
 
 // Carregamento compartilhado entre a versão full-page da ficha do lead
 // (leads/[id]/page.tsx, fallback de acesso direto) e a versão drawer
 // interceptada (@drawer/(.)leads/[id]/page.tsx).
 export async function loadLeadFicha(token: string, leadId: string) {
-  const [me, lead] = await Promise.all([getMe(token), getRawLead(token, leadId)]);
+  // memberships: nome real de quem registrou cada item da Timeline
+  // (2026-09-04) — mesmo motivo de empresas/_ficha/load.ts.
+  const [me, lead, memberships] = await Promise.all([
+    getMe(token),
+    getRawLead(token, leadId),
+    listMemberships(token),
+  ]);
 
   const companyId = lead.promotedCompanyId;
   let activities: Awaited<ReturnType<typeof listActivities>>["items"] = [];
@@ -24,7 +31,8 @@ export async function loadLeadFicha(token: string, leadId: string) {
         listTasks(token, { companyId }),
         listContacts(token, companyId),
       ]);
-      activities = act.items;
+      // Só interação registrada por gente — ver apenasInteracoes.
+      activities = apenasInteracoes(act.items);
       tasks = tsk.items;
       contacts = cts;
     } catch (error) {
@@ -42,7 +50,7 @@ export async function loadLeadFicha(token: string, leadId: string) {
     }
   }
 
-  return { me, lead, companyId, activities, tasks, contacts, accessRestricted };
+  return { me, lead, companyId, activities, tasks, contacts, accessRestricted, memberships };
 }
 
 export type LeadFicha = Awaited<ReturnType<typeof loadLeadFicha>>;

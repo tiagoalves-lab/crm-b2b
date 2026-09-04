@@ -16,9 +16,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { companyDisplayName } from "@/lib/api/companies";
-import type { Company, Opportunity, Stage } from "@/lib/api/types";
+import type { Opportunity, Stage } from "@/lib/api/types";
 import { moveOpportunityStageAction } from "./actions";
 import { stageColor } from "./stage-colors";
+import { useTopbarQuery } from "@/app/_components/topbar-filter";
 
 function brlFull(value: number, currency: string): string {
   return `${currency} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
@@ -72,7 +73,7 @@ function Column({
 }: {
   stage: Stage;
   opportunities: Opportunity[];
-  companyName: (id: string) => string;
+  companyName: (opp: Opportunity) => string;
   ownerInitialsOf: (id: string) => string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
@@ -96,7 +97,7 @@ function Column({
           <Card
             key={opp.id}
             opp={opp}
-            companyName={companyName(opp.companyId)}
+            companyName={companyName(opp)}
             ownerInitials={ownerInitialsOf(opp.ownerUserId)}
             color={color}
           />
@@ -119,28 +120,28 @@ function Column({
 export default function PipelineBoard({
   stages,
   openOpportunities,
-  companies,
   currentUserId,
 }: {
   stages: Stage[];
   openOpportunities: Opportunity[];
-  companies: Company[];
   currentUserId: string;
 }) {
   const router = useRouter();
   const [items, setItems] = useState(openOpportunities);
   useEffect(() => setItems(openOpportunities), [openOpportunities]);
 
-  const [query, setQuery] = useState("");
+  // Texto do filtro do cabeçalho (TopbarFilter em modo contexto) — a busca
+  // antiga da toolbar saiu em 2026-09-03 pra não duplicar. Continua
+  // filtrando aqui (e não por DOM) pra contagem e soma das colunas baterem.
+  const query = useTopbarQuery();
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  const companyName = (id: string) => {
-    const company = companies.find((c) => c.id === id);
-    return company ? companyDisplayName(company) : "—";
-  };
+  // Nome da empresa vem embutido em cada oportunidade (GET /opportunities,
+  // 2026-09-04) — o board não recebe mais a base de empresas por prop.
+  const companyName = (opp: Opportunity) => (opp.company ? companyDisplayName(opp.company) : "—");
   // Membership não guarda e-mail/nome (só userId, ver dashboard/membros/
   // page.tsx) — mesmo fallback usado lá: "Você" para o usuário atual,
   // prefixo do id pros demais.
@@ -149,9 +150,9 @@ export default function PipelineBoard({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((o) => companyName(o.companyId).toLowerCase().includes(q));
+    return items.filter((o) => companyName(o).toLowerCase().includes(q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, query, companies]);
+  }, [items, query]);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
@@ -196,20 +197,6 @@ export default function PipelineBoard({
 
   return (
     <>
-      <div className="toolbar">
-        <div className="search">
-          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.3-4.3" />
-          </svg>
-          <input
-            placeholder="Buscar oportunidade por empresa..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className={`board b${Math.max(stages.length, 1)}`}>
           {stages.map((stage) => (
@@ -225,7 +212,7 @@ export default function PipelineBoard({
         <DragOverlay>
           {activeOpp ? (
             <div className="card dragging" style={{ borderLeftColor: stageColor(stages.find((s) => s.id === activeOpp.stageId)?.order ?? 1) }}>
-              <div className="card-co">{companyName(activeOpp.companyId)}</div>
+              <div className="card-co">{companyName(activeOpp)}</div>
               <div className="card-foot">
                 <span className="card-val">{brlFull(Number(activeOpp.amount), activeOpp.currency)}</span>
               </div>

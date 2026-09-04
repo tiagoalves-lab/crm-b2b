@@ -28,6 +28,7 @@
   --blue: #2f80c9;
   --blue-soft: rgba(47, 128, 201, 0.1);
   --green: #1f8a4c;
+  --green-hover: #186c3c;
   --green-soft: rgba(31, 138, 76, 0.1);
   --purple: #7a52d6;
   --purple-soft: rgba(122, 82, 214, 0.1);
@@ -501,6 +502,21 @@ a {
   border-color: var(--accent-hover);
 }
 
+/* Verde sólido — hoje só o "Concluir" da ficha de tarefa, que ficou
+   sozinho no canto esquerdo do rodapé pra não ser clicado no lugar do
+   "Salvar" (pedido do usuário, 2026-09-04: o usuário trocou o prazo e a
+   tarefa acabou concluída). */
+.btn-success {
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
+}
+
+.btn-success:hover {
+  background: var(--green-hover);
+  border-color: var(--green-hover);
+}
+
 .btn-danger {
   border-color: var(--danger);
   color: var(--danger);
@@ -548,6 +564,12 @@ a {
 .btn-primary:disabled:hover {
   background: var(--accent);
   border-color: var(--accent);
+}
+
+.btn-success:disabled,
+.btn-success:disabled:hover {
+  background: var(--green);
+  border-color: var(--green);
 }
 
 .btn-ghost:disabled,
@@ -3036,6 +3058,24 @@ a.tag-chip.active {
   color: var(--text-secondary);
 }
 
+/* Bloco de anexos discreto (2026-09-04, pedido do usuário: "está muito
+   grande para inserir um arquivo"). Título e botão na mesma linha; a
+   caixa tracejada de antes (.attach-drop) sobrou só no card de
+   cadastro, onde ainda faz sentido convidar a anexar. */
+.attach-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.attach-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 2px 0 4px;
+}
+
 .attach-item {
   display: flex;
   align-items: center;
@@ -3085,6 +3125,25 @@ a.tag-chip.active {
 .attach-info {
   flex: 1;
   min-width: 0;
+  /* É um <button> desde 2026-09-04 (abre a prévia do arquivo), mas
+     continua parecendo texto: só o sublinhado no hover indica o clique. */
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.attach-info:hover .attach-name {
+  text-decoration: underline;
+}
+
+.attach-info:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .attach-name {
@@ -3100,6 +3159,81 @@ a.tag-chip.active {
   font-size: 10px;
   color: var(--text-tertiary);
   margin-top: 1px;
+}
+
+/* Prévia do anexo (2026-09-04): sobe por cima do modal da ficha, que
+   já é z-index 100 no .overlay — por isso 200 aqui. */
+.attach-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(20, 24, 29, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.attach-viewer-box {
+  background: var(--surface);
+  border-radius: 10px;
+  width: min(1000px, 100%);
+  height: min(90vh, 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(20, 24, 29, 0.35);
+}
+
+.attach-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.attach-viewer-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attach-viewer-body {
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.attach-viewer-body img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.attach-viewer-body iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--surface);
+}
+
+.attach-viewer-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
 .chat-thread {
@@ -3627,4 +3761,410 @@ a.tag-chip.active {
     width: 100%;
     max-width: 100%;
   }
+}
+
+/* ---------- Filtro geral de tela (cabeçalho) ----------
+   Pedido do usuário (2026-09-03): caixa de filtro no canto direito do
+   cabeçalho de toda tela. O título continua à esquerda (margin-right:
+   auto no primeiro filho); filtro e botões de ação ficam juntos à
+   direita. Componente em app/_components/topbar-filter.tsx. */
+.topbar {
+  gap: 12px;
+}
+
+.topbar > :first-child {
+  margin-right: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/* Ocupação generosa (pedido do usuário, 2026-09-03): cresce até 760px
+   e cede espaço só quando o título/ações precisam. */
+.topbar-filter {
+  position: relative;
+  flex: 1 1 360px;
+  min-width: 240px;
+  max-width: 760px;
+}
+
+.topbar-filter input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 46px 8px 34px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+/* Lupa clicável no canto direito (Enter faz o mesmo): abre a Busca geral. */
+.topbar-filter-go {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  bottom: 4px;
+  width: 36px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.topbar-filter-go .ic {
+  width: 15px;
+  height: 15px;
+}
+
+.topbar-filter-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.topbar-filter-go:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+.topbar-filter input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.topbar-filter input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.topbar-filter .ic {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* O filtro esconde linha/card marcando o atributo hidden — precisa vencer
+   qualquer display definido nas classes de tabela/card. */
+.main [hidden] {
+  display: none !important;
+}
+
+/* ---------- Card de oportunidade: lista lateral de itens + tags (2026-09-04) ---------- */
+/* O card (cadastro e detalhe) tem duas colunas: conteúdo + lista de itens.
+   Em tela estreita a lateral desce pra baixo do conteúdo. */
+.modal.xl {
+  max-width: 940px;
+}
+
+/* Lista de itens à esquerda do conteúdo do card (pedido do usuário,
+   2026-09-04). A troca é só de posição: no HTML o conteúdo continua
+   vindo primeiro, o `order` inverte no desktop — assim no celular, onde
+   as colunas viram uma só, o card abre pelo conteúdo e os itens ficam
+   embaixo, como antes. */
+.opp-grid {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.opp-main {
+  min-width: 0;
+  order: 2;
+}
+
+.opp-side {
+  order: 1;
+  border-right: 1px solid var(--border);
+  padding-right: 20px;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .opp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .opp-main {
+    order: 1;
+  }
+
+  .opp-side {
+    order: 2;
+    border-right: 0;
+    padding-right: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+}
+
+.opp-items {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Item da coluna (2026-09-04): nome e remover na primeira linha, campo
+   de valor na segunda — a coluna tem 240px e não cabe tudo lado a
+   lado. */
+.opp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.opp-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opp-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.opp-item-amount {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.opp-item-amount:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.opp-item-amount-read {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.opp-item-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.opp-item-total strong {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--accent-secondary);
+}
+
+.opp-item-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  padding: 2px 0 10px;
+}
+
+.opp-item-add {
+  display: flex;
+  gap: 6px;
+}
+
+.opp-item-add input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.opp-item-add input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Rodapé do card de cadastro: mora dentro do <form> (o botão de enviar
+   precisa estar dentro dele), então cola na borda do modal por margem
+   negativa igual ao padding de .modal-body. */
+.opp-foot-modal {
+  margin: 22px -22px -22px;
+}
+
+/* Campos editáveis com a mesma grade dt/dd do detalhe. */
+.kv-form dd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kv-form input,
+.kv-form select {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.kv-form input:focus,
+.kv-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Escolher quais itens carimbar (comentário/tarefa). */
+.tag-pick-block {
+  margin-bottom: 8px;
+}
+
+.tag-pick-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.tag-pick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tag-pick {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tag-pick:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.tag-pick.on {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-secondary);
+}
+
+.tag-pick:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Carimbo já gravado (comentário, linha da lista de tarefas). */
+.tag-stamp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* Lupa do seletor de empresa dentro do card de oportunidade fica à
+   DIREITA (pedido do usuário, 2026-09-04) — o padrão do .search é à
+   esquerda, e aqui o .kv-form input já tinha tirado o espaço dela. */
+.kv-form .search input {
+  padding: 7px 34px 7px 10px;
+}
+
+.kv-form .search .ic {
+  left: auto;
+  right: 11px;
+}
+
+/* ---------- Calendário de tarefas: card completo + arrastar (2026-09-04) ---------- */
+/* O card mostra tipo, responsável e cliente além do título, e pode ser
+   arrastado pra outro dia pra mudar o prazo (tarefas/calendar-view.tsx). */
+.calendar-day {
+  min-height: 120px;
+}
+
+.calendar-day.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.calendar-task {
+  white-space: normal;
+  cursor: grab;
+  touch-action: none;
+}
+
+.calendar-task.dragging {
+  opacity: 0.4;
+}
+
+.calendar-task a {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.calendar-task-title {
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-task-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.calendar-task-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-task.overdue .calendar-task-meta {
+  color: var(--danger);
+  opacity: 0.8;
+}
+
+.calendar-task.done .calendar-task-title {
+  text-decoration: line-through;
 }

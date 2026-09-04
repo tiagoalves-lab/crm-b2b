@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { EgestorContatoConsolidado, EgestorContatoStatus } from "@/lib/api/types";
 import { completeEgestorContatoRpc, correctEgestorContatoRpc } from "./actions";
+import { useTopbarQuery } from "@/app/_components/topbar-filter";
 
 const STATUS_LABEL: Record<EgestorContatoStatus, string> = {
   so_matriz: "Só Matriz",
@@ -96,7 +97,9 @@ export default function EgestorTable({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: number; failed: FailedItem[] } | null>(null);
-  const [query, setQuery] = useState("");
+  // Texto do filtro do cabeçalho (TopbarFilter em modo contexto) — a caixa
+  // antiga da toolbar saiu em 2026-09-03 pra não duplicar.
+  const query = useTopbarQuery();
   // Progresso do lote em curso. Contador próprio, não derivado de
   // `selected`: o loop remove cada item da seleção conforme conclui, então
   // qualquer conta feita em cima da seleção encolhe junto e nunca avança.
@@ -130,11 +133,10 @@ export default function EgestorTable({
   // buscar uma empresa e clicar em "Corrigir" achando que a ação vale pra
   // linha que está na tela — quando na verdade valeria pras centenas que a
   // busca escondeu, cada uma virando uma escrita no eGestor de produção.
-  function handleQuery(valor: string) {
-    setQuery(valor);
+  useEffect(() => {
     setSelected(new Set());
     setResult(null);
-  }
+  }, [query]);
 
   const filtroHref = (s?: EgestorContatoStatus) =>
     s ? `/dashboard/integracao-egestor?status=${s}` : "/dashboard/integracao-egestor";
@@ -153,7 +155,7 @@ export default function EgestorTable({
   }
 
   // Sempre a partir das linhas VISÍVEIS — a seleção nunca pode alcançar o
-  // que a busca escondeu (ver handleQuery acima).
+  // que a busca escondeu (ver o efeito em `query` acima).
   const selecionados = visiveis.filter((r) => selected.has(r.id));
   const completaveis = selecionados.filter(
     (r) => r.status === "so_matriz" || r.status === "so_filial",
@@ -270,18 +272,6 @@ export default function EgestorTable({
           >
             Iguais ({counts.ambos_iguais})
           </Link>
-        </div>
-        <div className="search">
-          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.3-4.3" />
-          </svg>
-          <input
-            placeholder="Buscar por empresa, CNPJ ou código..."
-            value={query}
-            onChange={(e) => handleQuery(e.target.value)}
-            autoComplete="off"
-          />
         </div>
         {q && (
           <span className="t-sub" style={{ fontSize: 13 }}>

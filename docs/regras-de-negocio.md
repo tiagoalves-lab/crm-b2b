@@ -143,9 +143,12 @@ outras.
 **3.4**
 - Decisão → Lead do Meta entra na **Prospecção** (mesma esteira de
   qualquer outro lead: pontuação, classificação quente/morno/frio,
-  "Aprovar para Lead"), sempre com um gerente como dono. O gerente
-  distribui a partir daí; o lead nunca nasce sem dono.
-- Fonte → Decisão do usuário, 2026-08-14.
+  "Aprovar para Lead"), sempre com um gerente como dono e com a tag
+  **Meta Business**. O gerente distribui a partir daí; o lead nunca
+  nasce sem dono. A pessoa que preencheu vira contato da empresa, e as
+  respostas do formulário (equipamento, prazo, se já usa) entram como
+  anotação na Timeline do lead.
+- Fonte → Decisão do usuário, 2026-08-14 e 2026-09-04.
 
 **3.5**
 - Decisão → O **histórico de compras** de cada cliente vem do eGestor, das
@@ -214,6 +217,48 @@ outras.
   `gama-webapp/planejamento/integracao-crm.md`; doc técnico em
   `integracao-cotacoes.md`).
 
+**3.11**
+- Decisão → Enquanto o App do Meta não sai do modo desenvolvimento, os
+  leads chegam pela **planilha do gestor de tráfego** (aba "Query CRM"),
+  que avisa o CRM sozinha a cada linha nova, como o webhook do eGestor.
+  A planilha é **só porta de entrada**: o CRM copia o lead na chegada e,
+  dali em diante, a ficha vive no CRM. Alteração ou exclusão posterior
+  na planilha não muda nada no CRM; cada lead entra uma única vez.
+- Fonte → Decisão do usuário, 2026-09-04 (doc técnico em
+  `webhook-meta-leads.md`).
+
+**3.12**
+- Decisão → Lead pode ficar na Prospecção **sem CNPJ** (o formulário do
+  Meta nem sempre traz), mas **"Aprovar para Lead" exige CNPJ**. O
+  vendedor preenche na ficha do lead durante a qualificação; ao digitar,
+  o CRM consulta a Receita e completa razão social, CNAE, porte,
+  situação e cidade, recalculando a pontuação.
+- Fonte → Decisão do usuário, 2026-09-04.
+
+**3.13**
+- Decisão → Solicitação de proposta que chega pelo **Trello** vira
+  oportunidade no funil pela tela do app de cotações. O botão ao lado do
+  cartão diz o que dá pra fazer: **Cadastrar Oportunidade** quando o
+  cartão ainda não tem card no CRM, **Ver Oportunidade** quando já tem.
+  A oportunidade nasce em **Solicitação de Propostas**, com valor zero
+  (ninguém cotou ainda), a empresa do cartão e a lista de itens do que o
+  cliente pediu. Um cartão gera **um** card, para sempre: cadastrar de
+  novo devolve o mesmo.
+- Decisão → O **chat do cartão é espelhado** no chat do card, e o botão
+  **Sincronizar** traz o que foi conversado depois. O espelho só
+  acrescenta: mensagem já trazida não vem duas vezes, e nada do que foi
+  escrito no CRM é apagado ou alterado. A mensagem mostra o nome de quem
+  escreveu no Trello, marcada como vinda de fora — a pessoa não é usuária
+  do CRM, então não vira autor de verdade.
+- Decisão → O **representante da oportunidade sai do quadro do Trello**:
+  cada representante tem o quadro dele, então é o quadro que diz de quem
+  é a cotação. Quadro que não corresponde a nenhum membro (ou que
+  corresponde a dois) não chuta: a oportunidade fica com o responsável
+  padrão e se corrige no campo Representante do card.
+- Fonte → Pedido do usuário, 2026-09-04 (plano mestre em
+  `gama-webapp/planejamento/integracao-crm.md`, seção 6; doc técnico em
+  `integracao-cotacoes.md`).
+
 ---
 
 ## O que o CRM nunca faz sozinho
@@ -273,6 +318,15 @@ outras.
   histórico, tarefas, oportunidades e contatos continuam privados de quem
   os criou.
 - Fonte → Decisão do usuário, 2026-08-06.
+
+**5.4**
+- Decisão → O card de oportunidade é um só: cadastrar e consultar usam a
+  mesma tela (o formulário pequeno de "Nova oportunidade" foi removido).
+  Na lateral do card fica a **lista de itens** — o que está sendo
+  negociado —, e cada item vira uma **tag** que carimba os comentários do
+  card e as tarefas geradas a partir dele. Só item da lista vira tag;
+  remover um item não apaga o carimbo dos registros antigos.
+- Fonte → Pedido do usuário, 2026-09-04.
 
 ---
 

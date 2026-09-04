@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { Membership, MembershipRole, PermissionMatrix } from "@/lib/api/types";
-import { removeMemberAction, updateMemberAction } from "./actions";
+import { saveMemberFormAction } from "./actions";
+import ActionForm from "@/app/_components/action-form";
 import ConfirmSubmitButton from "./confirm-submit-button";
 import PasswordConfirmFields from "./password-confirm-fields";
 import { effectivePermissions } from "@/lib/api/permission-catalog";
@@ -55,7 +56,7 @@ export default function MemberEditForm({
           Permissões
         </button>
       </div>
-      <form action={updateMemberAction}>
+      <ActionForm action={saveMemberFormAction} onSuccess="close">
         <input type="hidden" name="id" value={member.id} />
         <div className="form-grid" hidden={tab !== "dados"}>
           <label>
@@ -144,14 +145,15 @@ export default function MemberEditForm({
             Salvar
           </SubmitButton>
           <ConfirmSubmitButton
-            formAction={removeMemberAction}
+            name="intent"
+            value="remove"
             confirmMessage={`Remover ${memberName(member)}? Essa ação não pode ser desfeita.`}
             className="btn btn-danger"
           >
             Remover
           </ConfirmSubmitButton>
         </div>
-      </form>
+      </ActionForm>
       {tab === "dados" && (
         <p className="field-hint">
           Alterar o Login muda o identificador usado pra entrar na plataforma —

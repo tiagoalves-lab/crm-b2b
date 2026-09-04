@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { createContactRpcAction } from "../actions";
 
 // Formulário "Novo contato" da aba Contatos — compartilhado entre a ficha
@@ -20,7 +20,7 @@ import { createContactRpcAction } from "../actions";
 // Server Action feito pelo próprio <form>, e este form é controlado por
 // onSubmit. Por isso o estado é manual.
 export default function AddContactForm({ companyId }: { companyId: string }) {
-  const router = useRouter();
+  const refresh = useRefresh();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nome, setNome] = useState("");
@@ -60,7 +60,7 @@ export default function AddContactForm({ companyId }: { companyId: string }) {
     setEmail("");
     setTelefone("");
     setDecisor(false);
-    router.refresh();
+    refresh();
   }
 
   return (

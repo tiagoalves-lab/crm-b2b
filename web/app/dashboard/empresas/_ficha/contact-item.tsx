@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import type { Contact } from "@/lib/api/types";
 import { deleteContactRpcAction, updateContactAction } from "../actions";
 
@@ -25,7 +25,7 @@ export default function ContactItem({
   canEdit: boolean;
   canRemove: boolean;
 }) {
-  const router = useRouter();
+  const refresh = useRefresh();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +49,7 @@ export default function ContactItem({
     // Sem setBusy(false) no sucesso de propósito: o item vai sumir da
     // lista no refresh, e reabilitar o botão antes disso só daria margem
     // pra um segundo clique num contato que já não existe (404).
-    router.refresh();
+    refresh();
   }
 
   function cancelEdit() {
@@ -82,7 +82,7 @@ export default function ContactItem({
       return;
     }
     setEditing(false);
-    router.refresh();
+    refresh();
   }
 
   if (editing) {

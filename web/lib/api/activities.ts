@@ -27,6 +27,30 @@ export function listRecentActivities(
   });
 }
 
+// A Timeline da ficha é o histórico de relacionamento com o cliente: só
+// o que uma pessoa registrou à mão (Anotação, Ligação, Reunião, Visita,
+// E-mail, Pós-venda — os tipos do AddNoteForm, que sempre gravam
+// note/call/email com `subtipo`).
+//
+// O CRM também grava um registro automático a cada empresa criada ou
+// alterada (type `field_update`/`stage_change`, sem `subtipo`). Esses são
+// trilha de auditoria — alimentam "Últimas atividades" no Painel, onde
+// aparecem com texto de verdade ("cadastrou a empresa X") — mas na ficha
+// caíam no fallback "nota" do ActivityItem e viravam uma "Anotação" roxa
+// em branco, indistinguível de nota escrita por alguém.
+//
+// Achado 2026-09-04 (relato do usuário: "todos os clientes têm esses dois
+// registros"): eram 897 de "empresa criada" (importação do eGestor em
+// 06/08) + 302 de "cadastro atualizado" (sanitização de CNPJ em 12-24/08),
+// um par em praticamente toda empresa da base. Filtrar aqui resolve pra
+// sempre; apagar as linhas não resolveria, porque a próxima edição de
+// cadastro criaria outra.
+const TIPOS_DE_INTERACAO = new Set<Activity["type"]>(["note", "call", "email"]);
+
+export function apenasInteracoes(activities: Activity[]): Activity[] {
+  return activities.filter((a) => TIPOS_DE_INTERACAO.has(a.type));
+}
+
 export interface CreateActivityInput {
   companyId?: string;
   opportunityId?: string;

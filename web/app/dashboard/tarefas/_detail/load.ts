@@ -19,25 +19,27 @@ export async function loadTaskDetail(token: string, id: string) {
 
   let targetLabel = "—";
   let companyId: string | null = null;
+  let prefixo = "Empresa";
+  // Itens da oportunidade de origem (2026-09-04) — opções de carimbo na
+  // ficha; vazio em tarefa vinculada só a empresa.
+  let opportunityItems: string[] = [];
   if (task.companyId) {
     companyId = task.companyId;
-    const company = await getCompany(token, companyId);
-    targetLabel = `Empresa: ${companyDisplayName(company)}`;
   } else if (task.opportunityId) {
     const opp = await getOpportunity(token, task.opportunityId);
     companyId = opp.companyId;
-    const company = await getCompany(token, companyId);
-    targetLabel = `Oportunidade: ${companyDisplayName(company)}`;
+    prefixo = "Oportunidade";
+    opportunityItems = (opp.items ?? []).map((item) => item.name);
   }
 
-  // Empresa é fixa nesse ponto (vínculo imutável após a criação da
-  // tarefa) — contatos pra Ligação/Reunião/Visita/E-mail (pedido do usuário,
-  // 2026-08-04) resolvidos aqui, sem precisar de fetch disparado no
-  // cliente (diferente de "Nova tarefa", onde a empresa ainda pode
-  // mudar).
-  const contacts = companyId ? await listContacts(token, companyId) : [];
+  // Empresa e contatos de uma vez (2026-09-03 — eram duas idas em
+  // sequência a cada abertura da ficha).
+  const [company, contacts] = companyId
+    ? await Promise.all([getCompany(token, companyId), listContacts(token, companyId)])
+    : [null, []];
+  if (company) targetLabel = `${prefixo}: ${companyDisplayName(company)}`;
 
-  return { me, task, attachments, memberships, targetLabel, contacts, companyId };
+  return { me, task, attachments, memberships, targetLabel, contacts, companyId, opportunityItems };
 }
 
 export type TaskDetail = Awaited<ReturnType<typeof loadTaskDetail>>;

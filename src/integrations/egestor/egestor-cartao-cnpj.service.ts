@@ -68,8 +68,14 @@ export class EgestorCartaoCnpjService {
         lookup,
         new Date(),
       );
+      // semTimeline: preenchimento automático pela Receita não é ação
+      // humana e não entra na Timeline (ver SemTimeline em
+      // company.service.ts) — em lote isso escrevia "cadastro atualizado"
+      // em centenas de fichas de uma vez.
       await this.tenantContext.run(ctx, (tx: TenantTx) =>
-        this.companies.update(tx, membership, company.id, atualizacao.dto),
+        this.companies.update(tx, membership, company.id, atualizacao.dto, {
+          semTimeline: true,
+        }),
       );
       return {
         status: 'preenchido',

@@ -40,6 +40,7 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     amount: 1000 as unknown as Opportunity['amount'],
     currency: 'BRL',
     expectedCloseDate: null,
+    description: null,
     status: 'open',
     lostReason: null,
     version: 1,
@@ -47,6 +48,9 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     createdAt: new Date(),
     updatedAt: new Date(),
     closedAt: null,
+    trelloCardId: null,
+    trelloCardUrl: null,
+    trelloSyncEm: null,
     ...overrides,
   };
 }

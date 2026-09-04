@@ -46,6 +46,13 @@ export default () => ({
   // gerente" — ver docs/roadmap.md decisão 1.2/1.3). Copiar o id de
   // `/dashboard/membros`.
   metaLeadsDefaultOwnerUserId: process.env.META_LEADS_DEFAULT_OWNER_USER_ID,
+  // metaLeadsPlanilhaToken: token estático conferido em POST
+  // /integrations/meta-leads/planilha (Authorization: Bearer) — quem chama
+  // é o script instalado na planilha do gestor de tráfego
+  // (scripts/planilha-meta-leads.gs), canal por onde os leads do Meta
+  // chegam hoje enquanto o webhook direto está parado. Mesmo molde do
+  // cotacoesApiToken abaixo. Opcional: sem ele a rota responde 401.
+  metaLeadsPlanilhaToken: process.env.META_LEADS_PLANILHA_TOKEN,
   // Integração com o app de cotações (gama-webapp, docs/integracao-cotacoes.md)
   // — token estático conferido nas rotas públicas de /integrations/cotacoes
   // (CotacoesService#assertTokenValido). Gerado pelo GAS (crm_config_instalar
@@ -53,6 +60,13 @@ export default () => ({
   // REQUIRED_VARS), mesmo raciocínio dos tokens eGestor/Meta: só essas rotas
   // usam, resto do app funciona sem isso configurado.
   cotacoesApiToken: process.env.COTACOES_API_TOKEN,
+  // cotacoesDefaultOwnerUserId: Membership.userId (UUID de auth.users,
+  // copiar de /dashboard/membros) que vira dono da oportunidade criada a
+  // partir de um cartão do Trello pela tela do app de cotações. Opcional:
+  // sem ela, a integração usa o dono do workspace — a oportunidade nunca
+  // fica sem responsável (owner_user_id é NOT NULL), e o dono é
+  // remanejável na tela do CRM depois.
+  cotacoesDefaultOwnerUserId: process.env.COTACOES_DEFAULT_OWNER_USER_ID,
   // Aceita uma ou mais origens separadas por vírgula (ex.: URL da Vercel +
   // domínio próprio coexistindo, caso 2026-08-06 — crm.gamabrasil.com.br
   // adicionado ao lado de web-gamma-olive-80.vercel.app) — sem isso,

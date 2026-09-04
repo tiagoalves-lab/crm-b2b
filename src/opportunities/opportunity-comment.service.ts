@@ -8,6 +8,7 @@ import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateCommentDto } from './dto/create-comment.dto';
+import { mustTagsBeItems } from './opportunity-tags';
 import { OpportunityService } from './opportunity.service';
 
 // Mirror de src/tasks/task-comment.service.ts.
@@ -33,8 +34,16 @@ export class OpportunityCommentService {
       'read',
     );
 
+    // Tag só pode ser item da lista lateral do card (2026-09-04).
+    const tags = await mustTagsBeItems(tx, opportunityId, dto.tags);
+
     return tx.opportunityComment.create({
-      data: { opportunityId, authorUserId: membership.userId, body: dto.body },
+      data: {
+        opportunityId,
+        authorUserId: membership.userId,
+        body: dto.body,
+        tags,
+      },
     });
   }
 

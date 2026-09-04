@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { completeTaskAction, reopenTaskAction } from "./actions";
+import { TagChips } from "../pipeline/_detail/item-tags";
 import SubmitButton from "@/app/_components/submit-button";
 
 export interface TarefaRow {
   id: string;
   title: string;
   done: boolean;
+  // Carimbo de itens da oportunidade de origem (2026-09-04).
+  tags: string[];
   tipoLabel: string;
   vinculoLabel: string;
   assigneeLabel: string;
@@ -74,6 +77,7 @@ export default function TarefasTable({ rows, baseHref }: { rows: TarefaRow[]; ba
                   <Link href={href} className={task.done ? "task-title-cell done" : "task-title-cell"}>
                     {task.title}
                   </Link>
+                  <TagChips tags={task.tags} />
                   {task.nAnexos > 0 && (
                     <span className="attach-count" title="Anexos">
                       <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

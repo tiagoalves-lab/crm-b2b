@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { companyRazaoSocialName } from "@/lib/api/companies";
-import type { Company } from "@/lib/api/types";
-import { formatDateBR } from "@/lib/format-date";
+import { companyRazaoSocialName, type CompanyResumo } from "@/lib/api/companies";
+import { formatDateOnlyBR } from "@/lib/format-date";
 import { deleteCompanyAction, restoreCompanyAction } from "./actions";
 import SubmitButton from "@/app/_components/submit-button";
+import { useTopbarQuery } from "@/app/_components/topbar-filter";
 
 export type Tipo = "lead" | "cliente";
 export type Classe = "A" | "B" | "C";
 
 export interface EmpresaRow {
-  company: Company;
+  // Versão enxuta da empresa, montada pelo backend (2026-09-04) — só os
+  // campos que esta tabela desenha. Ver CompanyResumo.
+  company: CompanyResumo;
   tipo: Tipo;
   // Classe da curva ABC gravada na empresa. null = sem compra, ou curva
   // nunca calculada (o botão "Calcular curva ABC" é quem preenche).
@@ -35,7 +37,7 @@ function brl(value: number): string {
 
 // Primeira coluna mostra razão social (igual ao protótipo, clienteRows()
 // usa c.razao) — ver companyRazaoSocialName em lib/api/companies.ts.
-function primaryName(company: Company): string {
+function primaryName(company: CompanyResumo): string {
   return companyRazaoSocialName(company);
 }
 
@@ -59,7 +61,7 @@ function valorDaColuna(row: EmpresaRow, key: SortKey): string | number | null {
     case "tipo":
       return row.tipo;
     case "egestor":
-      return row.company.egestorContato ? 0 : 1;
+      return row.company.temEgestor ? 0 : 1;
     case "cidade":
       return row.company.cidade
         ? `${row.company.cidade}${row.company.uf ?? ""}`.toLowerCase()
@@ -142,7 +144,9 @@ export default function EmpresasTable({
   counts: { todas: number; lead: number; cliente: number };
   canDelete: boolean;
 }) {
-  const [query, setQuery] = useState("");
+  // Texto do filtro do cabeçalho (TopbarFilter em modo contexto) — a caixa
+  // antiga da toolbar saiu em 2026-09-03 pra não duplicar.
+  const query = useTopbarQuery();
   // Começa como a lista já chegava do servidor: alfabética pela empresa.
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "empresa",
@@ -200,18 +204,6 @@ export default function EmpresasTable({
             Clientes ({counts.cliente})
           </Link>
         </div>
-        <div className="search">
-          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.3-4.3" />
-          </svg>
-          <input
-            placeholder="Buscar empresa..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
         <Link href={deletedHref} className="btn btn-ghost btn-sm">
           {showDeleted ? "Ocultar excluídas" : "Ver excluídas"}
         </Link>
@@ -247,7 +239,7 @@ export default function EmpresasTable({
                 </span>
               </td>
               <td style={{ textAlign: "center" }}>
-                {company.egestorContato ? (
+                {company.temEgestor ? (
                   <span title="Integrada com o eGestor" style={{ color: "var(--green)" }}>
                     ✓
                   </span>
@@ -282,7 +274,7 @@ export default function EmpresasTable({
                 {ltv > 0 ? brl(ltv) : "—"}
               </td>
               <td className="t-sub">
-                {ultimaCompra ? formatDateBR(ultimaCompra) : "—"}
+                {ultimaCompra ? formatDateOnlyBR(ultimaCompra) : "—"}
               </td>
               <td>
                 <div className="cell-actions">

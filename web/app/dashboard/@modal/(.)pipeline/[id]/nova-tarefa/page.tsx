@@ -31,6 +31,7 @@ export default async function NovaTarefaDoCardModal({
         initialContacts={initialContacts}
         initialCompanyId={data.company.id}
         assigneeOptions={assigneeOptions}
+        opportunityItems={data.opportunity.items.map((item) => item.name)}
       />
     </OverlayModal>
   );

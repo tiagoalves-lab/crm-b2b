@@ -74,7 +74,7 @@ export default async function DashboardLayout({
       {modal}
       {drawer}
       <Suspense fallback={null}>
-        <Toast />
+        <Toast renderedAt={Date.now()} />
       </Suspense>
     </div>
   );

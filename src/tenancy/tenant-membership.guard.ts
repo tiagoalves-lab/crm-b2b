@@ -3,12 +3,14 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator';
 import type { AuthenticatedRequest } from '../auth/supabase-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { MembershipCacheService } from './membership-cache.service';
 import { TenantContextService, type TenantTx } from './tenant-context.service';
 
 // Ferramenta interna de uso colaborativo da Gama — não é SaaS multi-tenant
@@ -46,10 +48,18 @@ export type MembershipRequest = AuthenticatedRequest & {
 
 @Injectable()
 export class TenantMembershipGuard implements CanActivate {
+  // Id do workspace único, resolvido uma vez por processo. Até 2026-09-04
+  // era um UPSERT em workspaces a CADA requisição (uma escrita Virgínia↔
+  // Ohio por chamada) só pra descobrir um id que nunca muda.
+  private workspaceId: string | null = null;
+
   constructor(
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    // Opcional: o teste membership-gate.e2e-spec.ts instancia o guard à
+    // mão com 3 argumentos e sem cache — cai no caminho "sempre consulta".
+    @Optional() private readonly cache?: MembershipCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -61,11 +71,15 @@ export class TenantMembershipGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<MembershipRequest>();
 
-    const workspace = await this.resolveDefaultWorkspace();
-    const membership = await this.tenantContext.run(
-      { userId: request.user.id, workspaceId: workspace.id },
-      (tx) => this.ensureMembership(tx, workspace.id, request.user.id),
-    );
+    const userId = request.user.id;
+    let membership = this.cache?.get(userId);
+    if (!membership) {
+      const workspaceId = await this.resolveDefaultWorkspaceId();
+      membership = await this.tenantContext.run({ userId, workspaceId }, (tx) =>
+        this.ensureMembership(tx, workspaceId, userId),
+      );
+      this.cache?.set(userId, membership);
+    }
 
     if (membership.status === 'suspended') {
       throw new ForbiddenException('Acesso suspenso para este usuário.');
@@ -75,16 +89,19 @@ export class TenantMembershipGuard implements CanActivate {
     return true;
   }
 
-  private resolveDefaultWorkspace(): Promise<{ id: string }> {
+  private async resolveDefaultWorkspaceId(): Promise<string> {
+    if (this.workspaceId) return this.workspaceId;
     // `workspaces` é a única tabela sem RLS (decisão da Fase 1 — ver
     // docs/arquitetura-dados.md) — upsert por slug fixo é atômico
     // (ON CONFLICT) e seguro de chamar fora de qualquer contexto de tenant.
-    return this.prisma.workspace.upsert({
+    const workspace = await this.prisma.workspace.upsert({
       where: { slug: DEFAULT_WORKSPACE_SLUG },
       update: {},
       create: { slug: DEFAULT_WORKSPACE_SLUG, name: DEFAULT_WORKSPACE_NAME },
       select: { id: true },
     });
+    this.workspaceId = workspace.id;
+    return workspace.id;
   }
 
   private async ensureMembership(

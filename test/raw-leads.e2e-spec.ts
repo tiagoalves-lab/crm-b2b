@@ -81,6 +81,7 @@ describe('RawLeadController (e2e) — POST /raw-leads/:id/approve (SPEC-CRM-GAMA
           data: {
             workspaceId: workspace.id,
             razaoSocial: 'Lead a aprovar',
+            cnpj: '11222333000181',
             status: 'novo',
             promotedCompanyId: company.id,
           },
@@ -153,6 +154,7 @@ describe('RawLeadController (e2e) — POST /raw-leads/:id/approve (SPEC-CRM-GAMA
           data: {
             workspaceId: workspace.id,
             razaoSocial: 'Lead órfão',
+            cnpj: '11222333000262',
             status: 'novo',
           },
         }),
@@ -161,6 +163,42 @@ describe('RawLeadController (e2e) — POST /raw-leads/:id/approve (SPEC-CRM-GAMA
     await request(app.getHttpServer())
       .post(`/raw-leads/${lead.id}/approve`)
       .expect(400);
+  }, 15000);
+
+  it('400 ao aprovar lead sem CNPJ (decisão 2026-09-04: CNPJ é exigido pra virar empresa)', async () => {
+    const company = await withTenant(
+      prisma,
+      membership.userId,
+      workspace.id,
+      (tx) =>
+        tx.company.create({
+          data: {
+            workspaceId: workspace.id,
+            razaoSocial: 'Lead do Meta sem CNPJ',
+            tags: ['lead-triagem'],
+          },
+        }),
+    );
+    const lead = await withTenant(
+      prisma,
+      membership.userId,
+      workspace.id,
+      (tx) =>
+        tx.rawLead.create({
+          data: {
+            workspaceId: workspace.id,
+            razaoSocial: 'Lead do Meta sem CNPJ',
+            fonte: 'meta_leads',
+            status: 'novo',
+            promotedCompanyId: company.id,
+          },
+        }),
+    );
+
+    const res = await request(app.getHttpServer())
+      .post(`/raw-leads/${lead.id}/approve`)
+      .expect(400);
+    expect((res.body as { message: string }).message).toContain('CNPJ');
   }, 15000);
 });
 
@@ -348,11 +386,21 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
   it('POST /raw-leads/bulk-approve aprova em lote e reporta falhas individualmente', async () => {
     const a = await request(app.getHttpServer())
       .post('/raw-leads')
-      .send({ razaoSocial: 'Lote A', situacao: 'ATIVA', uf: 'RS' })
+      .send({
+        razaoSocial: 'Lote A',
+        cnpj: '33444555000101',
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
       .expect(201);
     const b = await request(app.getHttpServer())
       .post('/raw-leads')
-      .send({ razaoSocial: 'Lote B', situacao: 'ATIVA', uf: 'RS' })
+      .send({
+        razaoSocial: 'Lote B',
+        cnpj: '33444555000202',
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
       .expect(201);
     const leadA = a.body as { id: string };
     const leadB = b.body as { id: string };
@@ -549,6 +597,95 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
     await request(app.getHttpServer())
       .patch(`/raw-leads/${randomUUID()}/segmento`)
       .send({ segmento: 'x' })
+      .expect(404);
+  });
+
+  it('PATCH /raw-leads/:id/cadastro completa CNPJ + dados da Receita, recalcula o score e espelha na company-lead', async () => {
+    // Lead "magro" como o que chega do formulário do Meta: só razão social.
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({ razaoSocial: 'Autônomo', fonte: 'meta_leads' })
+      .expect(201);
+    const lead = created.body as {
+      id: string;
+      cnpj: string | null;
+      score: number;
+      promotedCompanyId: string;
+    };
+    expect(lead.cnpj).toBeNull();
+
+    const patched = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/cadastro`)
+      .send({
+        cnpj: '12.345.678/0001-95',
+        razaoSocial: 'Indústria Modelo Ltda',
+        cnaePrincipal: '2511-0',
+        cnaeDescricao: 'Fabricação de estruturas metálicas',
+        porte: 'GRANDE',
+        situacao: 'ATIVA',
+        uf: 'RS',
+        municipio: 'Caxias do Sul',
+      })
+      .expect(200);
+    const body = patched.body as Record<string, unknown>;
+    expect(body).toMatchObject({
+      cnpj: '12345678000195',
+      razaoSocial: 'INDÚSTRIA MODELO LTDA',
+      cnaePrincipal: '2511-0',
+      porte: 'GRANDE',
+      uf: 'RS',
+      municipio: 'CAXIAS DO SUL',
+    });
+    // CNAE alvo + grande + ativa + RS — o score sobe em relação ao lead
+    // sem dado nenhum.
+    expect(body.score as number).toBeGreaterThan(lead.score);
+
+    const company = await withTenant(
+      prisma,
+      membership.userId,
+      workspace.id,
+      (tx) =>
+        tx.company.findUniqueOrThrow({
+          where: { id: lead.promotedCompanyId },
+        }),
+    );
+    expect(company).toMatchObject({
+      cpfCnpj: '12345678000195',
+      razaoSocial: 'INDÚSTRIA MODELO LTDA',
+      cidade: 'CAXIAS DO SUL',
+      uf: 'RS',
+    });
+  }, 20000);
+
+  it('PATCH /raw-leads/:id/cadastro recusa CNPJ já usado por outro lead em triagem e CNPJ curto', async () => {
+    await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({ razaoSocial: 'Lead que já tem o CNPJ', cnpj: '98765432000100' })
+      .expect(201);
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({ razaoSocial: 'Lead sem CNPJ' })
+      .expect(201);
+    const lead = created.body as { id: string };
+
+    const duplicado = await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/cadastro`)
+      .send({ cnpj: '98765432000100' })
+      .expect(400);
+    expect((duplicado.body as { message: string }).message).toContain(
+      'outro lead',
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/cadastro`)
+      .send({ cnpj: '123' })
+      .expect(400);
+  }, 20000);
+
+  it('PATCH /raw-leads/:id/cadastro devolve 404 pra lead inexistente', async () => {
+    await request(app.getHttpServer())
+      .patch(`/raw-leads/${randomUUID()}/cadastro`)
+      .send({ cnpj: '12345678000195' })
       .expect(404);
   });
 

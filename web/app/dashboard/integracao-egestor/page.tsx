@@ -7,6 +7,7 @@ import { formatDateTimeBR } from "@/lib/format-date";
 import ConfirmSubmitButton from "../membros/confirm-submit-button";
 import EgestorTable from "./egestor-table";
 import { promoteEgestorAction, syncEgestorAction, syncEgestorVendasAction } from "./actions";
+import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
 
 // Relatório de auditoria + correção Matriz×Filial (docs/roadmap.md, itens
 // 9.3/9.6/9.9) — menu "Integração eGestor" em Administração, só
@@ -56,7 +57,7 @@ export default async function IntegracaoEgestorPage({
   }, null);
 
   return (
-    <>
+    <TopbarFilterProvider>
       <div className="topbar">
         <div>
           <div className="page-title">Integração eGestor</div>
@@ -67,6 +68,7 @@ export default async function IntegracaoEgestorPage({
               : " — nunca sincronizado"}
           </div>
         </div>
+        <TopbarFilter placeholder="Buscar por empresa, CNPJ ou código..." />
         <div style={{ display: "flex", gap: 8 }}>
           <Link href="/dashboard/integracao-egestor/historico" className="btn btn-ghost">
             Histórico de requisições
@@ -128,6 +130,6 @@ export default async function IntegracaoEgestorPage({
 
         <EgestorTable rows={visiveis} counts={counts} filtroAtual={filtroAtual} />
       </div>
-    </>
+    </TopbarFilterProvider>
   );
 }

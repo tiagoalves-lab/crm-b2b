@@ -8,6 +8,7 @@ import type { Contact } from "@/lib/api/types";
 import { createTaskModalAction, listCompanyContactsAction } from "../actions";
 import TipoContatoFields from "../tipo-contato-fields";
 import CompanyPicker from "../../pipeline/company-picker";
+import { TagPicker } from "../../pipeline/_detail/item-tags";
 import SubmitButton from "@/app/_components/submit-button";
 
 // Compartilhado entre a versão full-page e a versão modal de "Nova
@@ -22,6 +23,7 @@ export default function NovaForm({
   initialContacts,
   initialCompanyId,
   assigneeOptions,
+  opportunityItems,
 }: {
   // Preenchidos quando o form é aberto de dentro de um card do Pipeline
   // ("+ Gerar tarefa") — trava o vínculo na oportunidade de origem em vez
@@ -49,10 +51,14 @@ export default function NovaForm({
   // Só o próprio representante (quem está criando) ou o gerente dele —
   // resolvido no servidor (web/lib/api/assignee-options.ts).
   assigneeOptions: AssigneeOption[];
+  // Itens da oportunidade de origem (só com lockedOpportunityId,
+  // 2026-09-04) — viram chips pra carimbar na tarefa que está nascendo.
+  opportunityItems?: string[];
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(createTaskModalAction, null);
   const [contacts, setContacts] = useState<Contact[]>(initialContacts ?? []);
+  const [tags, setTags] = useState<string[]>([]);
   const [companyId, setCompanyId] = useState(initialCompanyId ?? lockedCompanyId ?? "");
   useEffect(() => {
     if (state?.ok) {
@@ -97,6 +103,14 @@ export default function NovaForm({
             <label>Empresa</label>
           </div>
           <CompanyPicker onPick={loadContactsFor} />
+        </div>
+      )}
+      {opportunityItems && opportunityItems.length > 0 && (
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div className="field" style={{ marginBottom: 6 }}>
+            <label>Itens da oportunidade (carimbar na tarefa)</label>
+          </div>
+          <TagPicker options={opportunityItems} selected={tags} onChange={setTags} name="tags" />
         </div>
       )}
       <TipoContatoFields contacts={contacts} companyId={companyId} />
