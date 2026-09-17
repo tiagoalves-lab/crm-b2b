@@ -328,7 +328,182 @@ outras.
   remover um item não apaga o carimbo dos registros antigos.
 - Fonte → Pedido do usuário, 2026-09-04.
 
+**5.5**
+- Decisão → O card de oportunidade **é** o formulário de edição: não
+  existe mais botão "Editar" nem tela separada. Representante, valor,
+  moeda, previsão e descrição são editados no próprio card e gravados no
+  botão "Salvar". A **etapa** não aparece no card: quem move a
+  oportunidade de etapa é o arrasto do cartão no quadro.
+- Fonte → Pedido do usuário, 2026-09-04.
+
+**5.6**
+- Decisão → O card tem um campo de **descrição** longo, no molde da
+  descrição do cartão do Trello: é onde se detalha o que está sendo
+  negociado (modelo, opcionais, condições, prazos). Texto livre, sem
+  formatação.
+- Fonte → Pedido do usuário, 2026-09-04.
+
+**5.7**
+- Decisão → Cada item da lista lateral pode ter **valor**. Havendo
+  qualquer item com valor, o **valor da oportunidade passa a ser a soma
+  dos itens** — o campo Valor vira leitura e acompanha o total. Lista
+  sem nenhum valor mantém o comportamento antigo: o valor é digitado à
+  mão no card.
+- Fonte → Pedido do usuário, 2026-09-04.
+
+**5.8**
+- Decisão → Anexo de oportunidade e de tarefa abre **prévia dentro do
+  CRM** (imagem e PDF); os demais formatos oferecem baixar. O bloco de
+  anexar é uma linha discreta — escolher o arquivo já dispara o envio.
+- Fonte → Pedido do usuário, 2026-09-04.
+
+**5.9**
+- Decisão → Anexo do card de oportunidade tem **publicação**. Arquivo
+  enviado por **administrador ou proprietário** entra reservado: só esses
+  dois papéis enxergam, e um botão no anexo o **publica** para gerente e
+  representante. Arquivo enviado por **gerente ou representante** já
+  entra publicado. Publicar **não tem volta** — para tirar da vista,
+  exclui-se o anexo e envia-se outro.
+- Fonte → Pedido do usuário, 2026-09-15.
+
+**5.10**
+- Decisão → O calendário de Tarefas mostra, além das tarefas, as
+  oportunidades do Pipeline **em Negociação e Fechamento**, no dia da
+  **previsão de fechamento**. As das etapas de proposta ficam só no
+  quadro; sem previsão, ganha ou perdida não aparece. O cartão diz
+  **Pipeline** (não "Proposta", que é tipo de tarefa) e **arrasta igual
+  tarefa**: soltar em outro dia muda a previsão de fechamento. Tarefa e
+  oportunidade têm o **mesmo visual**, azul claro — atraso não muda a cor.
+- Fonte → Pedido do usuário, 2026-09-16.
+
+**5.11**
+- Decisão → O **SLA da proposta é automático** e mede quanto tempo o time
+  leva para concluir a proposta. Ninguém digita data: o campo Prazo SLA
+  saiu das telas e é preenchido pelo sistema.
+  - Enquanto o card está em **Solicitação, Elaboração ou Aprovação de
+    Propostas**, o SLA está pendente e conta **até hoje**.
+  - Ao mover o card para **Negociação e Fechamento**, o SLA **encerra** na
+    data do movimento. Card cadastrado direto em Negociação nasce
+    encerrado. Marcar como ganha, perdida ou reabrir **não mexe no SLA**:
+    ele mede a conclusão da proposta, não o aceite ou a recusa do cliente.
+  - Ao **voltar** um card de Negociação para uma etapa de proposta, abre
+    uma janela para escolher o tratamento:
+    - **Erro na elaboração da proposta** — não reinicia: a contagem segue
+      desde o início até o novo encerramento.
+    - **Solicitação de alteração pelo cliente** — reinicia: grava a
+      **data de revisão** e a contagem passa a valer a partir dela.
+    Cancelar a janela devolve o card para onde estava. A escolha fica no
+    histórico do card.
+  - O **selo de SLA** do card (Pipeline e e-mail) mostra os **dias úteis**
+    (segunda a sexta, sem feriados) do início (data de revisão ou, sem
+    ela, abertura) até o encerramento ou hoje.
+  - Os e-mails (resumo diário e follow-up) listam as oportunidades **na
+    mesma ordem do quadro** — a prioridade é gerenciada no Pipeline.
+  - **Previsão de fechamento** continua livre para o representante
+    organizar a negociação com o cliente.
+  - As oportunidades que já existiam em 16/09/2026 foram recalculadas por
+    esta regra (as datas digitadas à mão foram descartadas).
+- Fonte → Pedido do usuário, 2026-09-16.
+
+**5.12**
+- Decisão → Toda exclusão feita pelas telas entra no **Registro de
+  exclusões** (Administração): quem excluiu, quando, o tipo, o registro e
+  uma **cópia do que foi apagado** — a tarefa leva junto comentários,
+  checklist e anexos. A exclusão só acontece se o registro for gravado.
+  Só administrador e proprietário veem a tela; ninguém altera nem apaga
+  um registro. Exclusões automáticas da sincronização com o eGestor ficam
+  de fora. Cobre as exclusões feitas a partir de 16/09/2026 — as anteriores
+  não têm registro.
+- Fonte → Pedido do usuário, 2026-09-16, depois de duas tarefas excluídas
+  sem rastro.
+
+**5.13**
+- Decisão → Marcar uma oportunidade como **perdida** abre a janela **"Por
+  que a negociação foi perdida?"**, no mesmo formato da janela de SLA: um
+  botão por motivo, e clicar já confirma. Os motivos vêm de uma **lista
+  única do CRM**; quem não achar o motivo usa **"+ Novo motivo"**, que o
+  acrescenta à lista para todos (sem repetir motivo já existente).
+  Administrador e proprietário mantêm a lista na aba **Motivos de perda**
+  da Administração: cadastrar, **renomear** (as oportunidades já perdidas
+  com o nome antigo passam a mostrar o novo) e **excluir** — só motivo que
+  nenhuma oportunidade usou; a exclusão entra no Registro de exclusões.
+  A lista existe para, com histórico,
+  montar um **Pareto das perdas** — por isso não há motivo digitado solto.
+  Lista inicial: Preço / concorrente, Demora no envio da proposta, Sem
+  orçamento no momento, Prazo de entrega, Optou por terceirizar, Sem
+  retorno / esfriou.
+- Fonte → Pedido do usuário, 2026-09-17, depois de uma proposta recusada
+  por demora no envio.
+
+**5.14**
+- Decisão → O menu lateral tem um item único **Administração**, que abre
+  uma página em **abas** no molde das Configurações do eGestor: Membros,
+  E-mail automático, Registro de exclusões, Integração eGestor e Motivos
+  de perda. Cada papel vê só as abas a que tem acesso — gerente e
+  representante veem apenas Membros.
+- Fonte → Pedido do usuário, 2026-09-17.
+
+**5.15**
+- Decisão → Em **Últimas atividades** (Painel), do Pipeline só aparecem:
+  **oportunidade criada**, **movida para Negociação e Fechamento**,
+  **volta de Negociação** para uma etapa de proposta (aparece como
+  "Solicitada alteração") e **marcada como fechada ou perdida** (com o
+  motivo). Edição de campos, itens, troca entre etapas de proposta,
+  exclusão e reabertura não aparecem ali — continuam no histórico do
+  próprio card. Os demais módulos (tarefas, registros de contato,
+  empresas, prospecção) não mudam.
+- Fonte → Pedido do usuário, 2026-09-17.
+
+**5.16**
+- Decisão → O **Histórico de anotações** do Pipeline tem **marcar como
+  lido**, no molde das notificações do Trello: uma bolinha em cada
+  anotação (lida/não lida, clicando alterna), a opção **"Mostrar apenas
+  não lidas"** e o botão **"Marcar tudo como lido"**. A marcação é **de
+  cada pessoa** — ler não muda nada para os outros. Anotação escrita pela
+  própria pessoa já nasce lida. As anotações que existiam em 17/09/2026
+  começaram todas como não lidas. Quem entra na lista: o **representante**
+  vê só as anotações dos cards dele; o **gerente**, as dos cards dele e da
+  equipe (a mesma regra dos cards que ele abre); **administrador e
+  proprietário** veem todas.
+- Fonte → Pedido do usuário, 2026-09-17.
+
+**5.17**
+- Decisão → O cadastro de membros tem a marcação **Vendedor**. Só membro
+  **ativo e marcado** aparece na lista **Representante** do card de
+  oportunidade, e só para ele dá para trocar o representante. A marcação
+  independe do papel. O representante atual de um card continua aparecendo
+  nele mesmo sem a marcação, para o card não mudar de dono sozinho. Membro
+  novo nasce desmarcado; os gerentes e representantes ativos em 17/09/2026
+  começaram marcados.
+- Fonte → Pedido do usuário, 2026-09-17.
+
 ---
+
+## Processo comercial
+
+**6.1**
+- Decisão → A venda nasce por **dois caminhos**:
+  - **Oportunidade pronta** — parte do cliente (recompra ou indicação de
+    outra empresa): já entra como oportunidade e segue o fluxo do Pipeline.
+  - **Prospecção ativa** — um **SDR** faz o contato e qualifica o lead
+    pela **intenção de compra**. O objetivo desse caminho é **gerar novas
+    oportunidades**, e é nele que está o foco estratégico do CRM.
+- Fonte → Usuário, 2026-09-17, no mapeamento do processo comercial.
+
+**6.2**
+- Decisão → A abordagem do SDR tem **duas premissas**: obter (ou tentar
+  obter) o contato do **tomador de decisão** e perguntar se a empresa tem
+  **projeção de investimento em máquinas** e em que **período**. O SDR
+  registra isso no CRM, e o período é o **critério de qualificação** — a
+  classificação Curto/Médio/Longo Prazo que já existe na Prospecção:
+  - **Curto Prazo — até 3 meses**: qualificado. Vira **oportunidade** e vai
+    para o vendedor. É a "nova oportunidade gerada".
+  - **Médio Prazo — 3 a 12 meses**: fica na Prospecção com **tarefa de
+    retorno** criada automaticamente para a data do próximo contato.
+  - **Longo Prazo — mais de 12 meses**: igual ao médio, com retorno mais
+    distante.
+  Lead sem classificação significa que o SDR ainda não trabalhou.
+- Fonte → Usuário, 2026-09-17.
 
 ## Perguntas para depois
 

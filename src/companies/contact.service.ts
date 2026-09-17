@@ -11,6 +11,7 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateContactDto } from './dto/create-contact.dto';
 import type { UpdateContactDto } from './dto/update-contact.dto';
+import { nomeDaEmpresa, registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 // Ver/criar/editar/excluir agora vêm da matriz de permissões (módulo
 // "contatos", ver permission-catalog.ts) — os presets default reproduzem o
@@ -161,6 +162,13 @@ export class ContactService {
     if (!existing) {
       throw new NotFoundException('Contato não encontrado.');
     }
+    await registrarExclusao(tx, membership, {
+      entidade: 'contato',
+      registroId: existing.id,
+      titulo: existing.nome?.trim() || existing.email || existing.telefone || 'Contato',
+      contexto: await nomeDaEmpresa(tx, companyId),
+      snapshot: existing,
+    });
     await tx.contact.delete({ where: { id: existing.id } });
   }
 

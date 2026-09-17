@@ -11,6 +11,7 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateAttachmentDto } from './dto/create-attachment.dto';
 import { TaskService } from './task.service';
+import { registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 // Anexo serializado pra API — sizeBytes vem como BigInt do Prisma
 // (coluna bigint), e o serializador JSON do Nest não sabe lidar com
@@ -140,6 +141,18 @@ export class TaskAttachmentService {
     if (attachment.uploadedBy !== membership.userId) {
       throw new ForbiddenException('Só quem enviou o anexo pode removê-lo.');
     }
+    const task = await tx.task.findFirst({
+      where: { id: taskId },
+      select: { title: true },
+    });
+    // Registro antes de apagar o arquivo: se a gravação falhar, nada sai.
+    await registrarExclusao(tx, membership, {
+      entidade: 'tarefa_anexo',
+      registroId: attachment.id,
+      titulo: attachment.fileName,
+      contexto: task?.title ?? null,
+      snapshot: attachment,
+    });
     await this.storage.remove(attachment.storagePath);
     await tx.taskAttachment.delete({ where: { id: attachment.id } });
   }

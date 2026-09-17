@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { getEgestorContato } from "@/lib/api/egestor";
-import CorrectForm from "@/app/dashboard/integracao-egestor/[id]/corrigir/correct-form";
+import CorrectForm from "@/app/dashboard/(administracao)/integracao-egestor/[id]/corrigir/correct-form";
 import OverlayModal from "@/app/dashboard/_overlay/overlay-modal";
 
 export default async function CorrigirContatoModal({

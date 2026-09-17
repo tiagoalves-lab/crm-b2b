@@ -5,7 +5,6 @@ import type { Contact } from "@/lib/api/types";
 import { effectiveTier, listRawLeads, TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
 import ImportContactsToggle from "./import-contacts-toggle";
 import LeadsTable from "./leads-table";
-import RescoreButton from "./rescore-button";
 import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
 
 type TierFilter = "todos" | ScoreTier | "fila" | "descartados";
@@ -33,6 +32,7 @@ export default async function LeadsPage({
   const quenteCount = novos.filter((r) => effectiveTier(r) === "quente").length;
   const mornoCount = novos.filter((r) => effectiveTier(r) === "morno").length;
   const frioCount = novos.filter((r) => effectiveTier(r) === "frio").length;
+  const semClassificacao = novos.filter((r) => effectiveTier(r) === null).length;
 
   const currentTier: TierFilter =
     tier === "quente" || tier === "morno" || tier === "frio" || tier === "fila" || tier === "descartados"
@@ -77,7 +77,7 @@ export default async function LeadsPage({
           .filter(searchFilter)
           .filter(tagFilter)
           .filter(segmentoFilter)
-          .sort((a, b) => b.score - a.score);
+          .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial, "pt-BR"));
 
   // Coluna "Contatos" (2026-08-07, pedido direto do usuário) — uma
   // chamada só (listContactsByCompanyIds) pras empresas efetivamente
@@ -113,9 +113,8 @@ export default async function LeadsPage({
           <div className="page-title">Prospecção</div>
           <div className="page-sub">Relação de empresas com oportunidades de negócios</div>
         </div>
-        <TopbarFilter placeholder="Buscar razão social, CNPJ, CNAE, cidade… (Enter busca em tudo)" />
+        <TopbarFilter placeholder="Buscar razão social, CNPJ, CNAE, cidade…" />
         <div style={{ display: "flex", gap: 8 }}>
-          <RescoreButton />
           <ImportContactsToggle />
           <Link href="/dashboard/leads/novo" className="btn btn-primary">
             <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -134,23 +133,29 @@ export default async function LeadsPage({
             <div className="fstat-v">{novos.length}</div>
             <div className="fstat-l">Na fila de triagem</div>
           </div>
+          <div className="fstat">
+            <div className="fstat-v" style={{ color: "var(--text-secondary)" }}>
+              {semClassificacao}
+            </div>
+            <div className="fstat-l">Sem classificação</div>
+          </div>
           <div className="fstat q">
             <div className="fstat-v" style={{ color: "var(--green)" }}>
               {quenteCount}
             </div>
-            <div className="fstat-l">{TIER_LABEL.quente} (≥70)</div>
+            <div className="fstat-l">{TIER_LABEL.quente}</div>
           </div>
           <div className="fstat m">
             <div className="fstat-v" style={{ color: "var(--accent-secondary)" }}>
               {mornoCount}
             </div>
-            <div className="fstat-l">{TIER_LABEL.morno} (45–69)</div>
+            <div className="fstat-l">{TIER_LABEL.morno}</div>
           </div>
           <div className="fstat f">
             <div className="fstat-v" style={{ color: "var(--danger)" }}>
               {frioCount}
             </div>
-            <div className="fstat-l">{TIER_LABEL.frio} (&lt;45)</div>
+            <div className="fstat-l">{TIER_LABEL.frio}</div>
           </div>
           <div className="fstat">
             <div className="fstat-v" style={{ color: "var(--text-secondary)" }}>

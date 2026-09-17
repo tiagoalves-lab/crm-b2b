@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/mapped-types';
 import type { OpportunityStatus } from '@prisma/client';
 import { IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { SLA_TRATAMENTOS, type SlaTratamento } from '../opportunity-sla';
 import { CreateOpportunityDto } from './create-opportunity.dto';
 
 const STATUSES: OpportunityStatus[] = ['open', 'won', 'lost'];
@@ -19,4 +20,11 @@ export class UpdateOpportunityDto extends PartialType(CreateOpportunityDto) {
   @IsString()
   @MaxLength(500)
   lostReason?: string;
+
+  // Tratamento do SLA ao voltar um card de Negociação para uma etapa de
+  // proposta (2026-09-16) — obrigatório nesse movimento, ignorado nos
+  // outros. Ver opportunity-sla.ts.
+  @IsOptional()
+  @IsIn(SLA_TRATAMENTOS)
+  slaTratamento?: SlaTratamento;
 }

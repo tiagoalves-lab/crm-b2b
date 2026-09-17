@@ -11,63 +11,41 @@ import {
   createRawLead,
   discardLead,
   importRawLeadsWithContactsSpreadsheet,
-  rescoreLeads,
   updateLeadCadastro,
   updateLeadSegmento,
   updateLeadTags,
   updateLeadTier,
   type BulkResult,
+  type CreateRawLeadInput,
   type ImportResult,
   type ScoreTier,
   type UpdateLeadCadastroInput,
 } from "@/lib/api/raw-leads";
-import type { Company, LeadFonte, RawLead } from "@/lib/api/types";
+import type { Company, RawLead } from "@/lib/api/types";
 import type { FormState } from "@/app/_components/action-form";
 
-function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
-  const str = value ? String(value).trim() : "";
-  return str === "" ? undefined : str;
-}
-
-export type CreateRawLeadState = { ok: true } | { ok: false; message: string };
-
-// Chamado via useActionState (lead-form.tsx), não <form action=...> direto
-// — mesmo motivo do createCompanyAction em empresas/actions.ts: devolve o
-// resultado em vez de redirecionar mesmo no sucesso, pro form fechar o
-// modal com router.back() no client (redirect() daqui de dentro não
-// derruba o slot @modal da rota interceptada).
-export async function createRawLeadAction(
-  _prevState: CreateRawLeadState | null,
-  formData: FormData,
-): Promise<CreateRawLeadState> {
+// Cadastro manual de empresa na Prospecção (2026-09-14): o formulário em
+// modal foi apagado e o cadastro acontece na própria ficha do lead, aba
+// "Dados cadastrais" (leads/_ficha/nova-ficha.tsx). Por isso é RPC via
+// Server Action (mesma forma de setLeadCadastroAction) e devolve o lead
+// criado — a ficha precisa do id pra abrir as outras abas logo depois de
+// salvar.
+export async function createLeadAction(
+  input: CreateRawLeadInput,
+): Promise<ActionResult<RawLead>> {
   const token = await getServerAccessToken();
-  const razaoSocial = String(formData.get("razaoSocial") ?? "").trim();
+  const razaoSocial = input.razaoSocial.trim();
   if (!razaoSocial) {
     return { ok: false, message: "Preencha a razão social." };
   }
 
-  const rjHint = formData.get("emRecuperacaoJudicial");
-
   try {
-    await createRawLead(token, {
-      razaoSocial,
-      emRecuperacaoJudicial: rjHint === "" || rjHint === null ? undefined : rjHint === "true",
-      cnpj: emptyToUndefined(formData.get("cnpj")),
-      cnaePrincipal: emptyToUndefined(formData.get("cnaePrincipal")),
-      cnaeDescricao: emptyToUndefined(formData.get("cnaeDescricao")),
-      porte: emptyToUndefined(formData.get("porte")),
-      uf: emptyToUndefined(formData.get("uf")),
-      municipio: emptyToUndefined(formData.get("municipio")),
-      situacao: emptyToUndefined(formData.get("situacao")),
-      importador: formData.get("importador") === "on",
-      fonte: (emptyToUndefined(formData.get("fonte")) as LeadFonte | undefined) ?? "manual",
-    });
+    const lead = await createRawLead(token, { ...input, razaoSocial });
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: lead };
   } catch (error) {
-    return { ok: false, message: actionError(error, "Erro ao adicionar o lead.") };
+    return { ok: false, message: actionError(error, "Erro ao adicionar a empresa à triagem.") };
   }
-
-  revalidatePath("/dashboard/leads");
-  return { ok: true };
 }
 
 export async function approveOneLeadAction(formData: FormData) {
@@ -126,7 +104,7 @@ function actionError(error: unknown, fallback: string): string {
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
-// Bulk approve/discard e recalcular score são chamadas diretas (RPC) a
+// Bulk approve/discard são chamadas diretas (RPC) a
 // partir do client component da tabela (seleção vive em estado
 // client-side) — mesmo padrão de CompanyPicker em pipeline/actions.ts.
 export async function bulkApproveLeadsAction(
@@ -156,9 +134,9 @@ export async function bulkDiscardLeadsAction(
   }
 }
 
-// Classificação manual (Quente/Morno/Frio) editada direto na linha da
-// tabela — RPC via Server Action (mesmo padrão de bulkApprove/rescore),
-// não <form action>: precisa devolver o lead atualizado sem navegar.
+// Classificação (Curto/Médio/Longo Prazo) editada direto na linha da
+// tabela — RPC via Server Action (mesmo padrão de bulkApprove), não
+// <form action>: precisa devolver o lead atualizado sem navegar.
 export async function setLeadTierAction(
   id: string,
   tier: ScoreTier | null,
@@ -224,20 +202,9 @@ export async function setLeadCadastroAction(
   }
 }
 
-export async function rescoreLeadsAction(): Promise<ActionResult<{ updated: number }>> {
-  const token = await getServerAccessToken();
-  try {
-    const result = await rescoreLeads(token);
-    revalidatePath("/dashboard/leads");
-    return { ok: true, data: result };
-  } catch (error) {
-    return { ok: false, message: actionError(error, "Erro ao recalcular os scores.") };
-  }
-}
-
 // Importação em massa por planilha, modelo padrão com múltiplos contatos
 // por empresa (2026-08-03) — client component manda o File direto (mesmo
-// padrão de bulkApprove/rescore: RPC via Server Action, não <form action>,
+// padrão de bulkApprove: RPC via Server Action, não <form action>,
 // porque precisa mostrar o resultado — quantos importaram, quais linhas
 // falharam — sem navegar). Endpoint /raw-leads/import-contacts, layout de
 // cabeçalho fixo no backend.

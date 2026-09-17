@@ -100,7 +100,10 @@ Núcleo transacional do CRM.
   - `stage_id` deve pertencer ao mesmo `pipeline_id` da oportunidade.
   - Toda transição de stage gera Activity (`stage_change`) — alimenta
     relatórios de velocity/funil.
-  - `status = lost` exige `lost_reason`.
+  - `status = lost` exige `lost_reason`. A tela só oferece motivos da
+    tabela `opportunity_lost_reason` (lista única por workspace, sem
+    repetir nome ignorando maiúsculas); a oportunidade guarda o texto, e o
+    Pareto de perdas agrupa por ele.
   - Multi-moeda: guardar a moeda da transação e converter para moeda-base
     apenas em relatórios (nunca substituir o valor original).
 

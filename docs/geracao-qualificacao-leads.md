@@ -20,16 +20,16 @@ Universo bruto (Receita Federal, por CNAE)
 Enriquecimento (Econodata + filtros já existentes no crawler)
         │
         ▼
-Score / Classificação (A · B · C)
+Triagem na Prospecção (classificação manual)
         │
    ┌────┼────────────────┐
    ▼    ▼                ▼
-  A     B                C
-quente  morno            frio
+Curto  Médio           Longo
+Prazo  Prazo           Prazo
    │    │                │
-   │    └─ fila de       └─ arquivado, sem ação
-   │       pré-qualificação   imediata (pode reentrar
-   │       manual (call de    se o score mudar)
+   │    └─ fila de       └─ sem ação imediata
+   │       pré-qualificação   (pode ser reclassificado
+   │       manual (call de     a qualquer momento)
    │       descoberta)
    ▼
 Company + Opportunity no CRM,
@@ -84,46 +84,25 @@ com telefone ou e-mail, CNAE nas divisões configuradas (hoje 25–30:
 fabricação de produtos de metal → fabricação de outros equipamentos de
 transporte — perfil industrial).
 
-## 6. Modelo de score (0–100)
+## 6. Classificação do lead
 
-Pontuação proposta para priorizar dentro do universo já filtrado pelo
-crawler:
+**Decisão →** A classificação é **manual**, feita pelo time na tela de
+Prospecção: Curto Prazo, Médio Prazo, Longo Prazo ou sem classificação.
+Não existe pontuação automática por regras — nem na tela, nem como
+critério de ordenação da fila (a lista sai em ordem alfabética).
 
-| Critério | Peso | Regra |
-|---|---|---|
-| CNAE primário na faixa alvo | 25 | Peso cheio se estiver no CNAE primário; metade se aparecer só no secundário (quando `INCLUIR_CNAE_SECUNDARIO` estiver ligado) |
-| Porte | 20 | Demais = 20 · EPP = 12 (Micro já é excluído antes de chegar aqui) |
-| Tempo de mercado | 15 | > 5 anos = 15 · 2–5 anos = 8 · < 2 anos = 0 |
-| Contato disponível | 15 | Telefone **e** e-mail = 15 · só um dos dois = 8 |
-| UF prioritária | 10 | UF em território ativo = 10 · fora = 0 |
-| Sócios identificáveis (QSA) | 5 | Pelo menos 1 sócio pessoa física = 5 |
-| Importação (Econodata) | **10 — reservado, não aplicado ainda** | **Decisão pendente, ver seção 7.** Por enquanto o dado só aparece como informação de contexto no card do lead, sem entrar na soma do score. |
+**Fonte →** Usuário, 2026-09-14: o score de 0–100 que o CRM calculava
+sozinho saiu da interface inteira ("não vamos usar isso"). Ele classificava
+todo lead automaticamente por CNAE/porte/situação, o que na prática
+apontava prioridade sem o time ter olhado o lead.
 
-**Faixas:** A (quente) ≥ 70 · B (morno) 45–69 · C (frio) < 45.
+## 7. Dado de importação (Econodata)
 
-Com o peso da Econodata reservado e não aplicado, o score hoje soma no
-máximo 90 pontos — as faixas continuam válidas, só ficam mais conservadoras
-até a decisão da seção 7 ser tomada.
-
-Este cálculo ainda não está implementado em código — roda hoje só como
-conceito na prévia de interface. Próximo módulo a escrever, depois que o
-import (seção 4) estiver validado com dados reais.
-
-## 7. Decisão pendente: peso da importação (Econodata)
-
-Ainda em aberto se volume alto de importação é:
-
-- **sinal negativo** — a empresa já resolve via fornecedor estrangeiro,
-  reduzindo a chance de ela comprar de um fornecedor/distribuidor nacional; ou
-- **sinal positivo** — a empresa tem budget e demanda ativa comprovada
-  naquela categoria, o que facilita a conversa de venda.
-
-Enquanto isso não é resolvido: o volume de importação aparece no card do
-lead como **informação de contexto para o rep**, mas não entra na fórmula
-de score. Próximo passo prático — não teórico: puxar uma amostra real da
-Econodata (mesmo que manual, via CSV exportado da plataforma) para ver o
-formato dos dados disponíveis. A decisão do peso deve vir depois de olhar
-casos reais, não antes.
+O volume de importação aparece na ficha do lead como **informação de
+contexto para o rep** — ajuda a interpretar o lead, não classifica nada
+sozinho. Ler caso a caso: importar muito tanto pode significar que a
+empresa já resolve com fornecedor estrangeiro quanto que ela tem budget e
+demanda ativa na categoria.
 
 ## 8. Cadência operacional
 
@@ -133,16 +112,16 @@ casos reais, não antes.
   — mantém o staging sincronizado com a planilha mais recente.
 - Enriquecer com Econodata na mesma janela, mesmo que manual até a
   integração de formato ficar clara (seção 7).
-- Distribuir leads faixa A entre os reps — round-robin como ponto de
-  partida; evoluir para distribuição por território/setor quando o volume
+- Distribuir os leads de Curto Prazo entre os reps — round-robin como ponto
+  de partida; evoluir para distribuição por território/setor quando o volume
   justificar.
-- SLA de primeiro contato: 48h para leads A. Leads B entram em fila de
-  nutrição/descoberta sem SLA rígido — não competem pela atenção imediata
-  do rep com os leads A.
+- SLA de primeiro contato: 48h para Curto Prazo. Médio Prazo entra em fila
+  de nutrição/descoberta sem SLA rígido — não compete pela atenção imediata
+  do rep.
 
 ## 9. Do lead qualificado para o CRM
 
-Quando um lead atinge a faixa A:
+Quando um lead é classificado como Curto Prazo:
 
 1. Cria-se `Company` no workspace, com os campos capturados pelo crawler
    mais os da Econodata guardados em `custom_fields` (jsonb — ver
@@ -151,21 +130,20 @@ Quando um lead atinge a faixa A:
    "Qualificação", `owner_user_id` = rep designado pela distribuição
    round-robin.
 3. Gera-se uma `Activity` do tipo `note` registrando a origem
-   (`"Lead gerado via crawler CNAE — score {X}, faixa {A|B|C}"`), preservando
-   a rastreabilidade de onde cada oportunidade veio — útil mais adiante para
-   medir taxa de conversão por fonte/score.
+   (`"Lead gerado via crawler CNAE"`), preservando a rastreabilidade de onde
+   cada oportunidade veio — útil mais adiante para medir taxa de conversão
+   por fonte.
 
-Leads faixa B viram `Company` sem `Opportunity` — ficam disponíveis para
+Leads de Médio Prazo viram `Company` sem `Opportunity` — ficam disponíveis para
 qualificação manual sem poluir o funil de vendas ativo. Depende da Fase 1
 do CRM (`Company`/`Workspace`/RLS) estar pronta — hoje o staging (seção 4)
 é o único lugar onde os dados de fato existem.
 
 ## 10. Resumo/qualificação assistida por IA (Claude)
 
-Camada adicional em cima do score por regras (seção 6) — **não substitui
-o score, complementa**. Onde o score responde "quão prioritário é esse
-lead", o resumo por IA responde "por que, em linguagem que o rep entende
-em 5 segundos".
+Camada de apoio à classificação manual (seção 6) — **não classifica no
+lugar do time, resume**: responde "por que esse lead interessa (ou não)",
+em linguagem que o rep entende em 5 segundos.
 
 **Arquitetura:**
 
@@ -181,7 +159,7 @@ em 5 segundos".
   |---|---|
   | `resumo` | 1–2 frases sobre por que esse lead é (ou não) prioritário |
   | `red_flags` | Lista curta de pontos de atenção (ex.: sócio único, abertura recente, setor fora do core) |
-  | `leitura_importacao` | Leitura qualitativa do dado da Econodata para *aquele* lead específico — não aplica peso automático, só dá contexto |
+  | `leitura_importacao` | Leitura qualitativa do dado da Econodata para *aquele* lead específico — só dá contexto |
   | `sugestao_abordagem` | Um gancho de abordagem inicial pro rep usar no primeiro contato |
 
 - Modelo: Claude Opus 4.8, uma chamada por lead (não é tarefa aberta o
@@ -190,20 +168,13 @@ em 5 segundos".
   junto com a nota de origem já prevista na seção 9 — mesmo padrão de
   rastreabilidade.
 
-**Relação com a decisão pendente da seção 7:** o campo `leitura_importacao`
-não resolve sozinho se o peso da Econodata deve ser positivo ou negativo —
-mas acumular essas leituras qualitativas, lead a lead, é um jeito barato de
-juntar evidência antes de codificar a regra automática. Tratar como insumo
-pra decisão, não como a decisão em si.
-
-**Custo/operacional:** uma chamada por lead faixa A/B (não vale rodar em
-todo o universo bruto — só depois do filtro do crawler + score). Requer
+**Custo/operacional:** uma chamada por lead de Curto/Médio Prazo (não vale
+rodar em todo o universo bruto — só depois do filtro do crawler). Requer
 `ANTHROPIC_API_KEY` nas variáveis de ambiente (`.env`), mesmo padrão dos
 outros secrets do projeto.
 
 ---
 
-**Estado atual (2026-07-23):** crawler (seção 3) e import/staging (seção 4)
-implementados. Score (seção 6), promoção pro CRM (seção 9) e camada de IA
-(seção 10) ainda são desenho — código vem depois que o staging tiver rodado
-com dados reais.
+**Estado atual (2026-09-14):** crawler (seção 3), import/staging (seção 4) e
+triagem na Prospecção com classificação manual (seção 6) no ar. Promoção
+automática pro CRM (seção 9) e camada de IA (seção 10) ainda são desenho.

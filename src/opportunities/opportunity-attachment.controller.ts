@@ -75,6 +75,25 @@ export class OpportunityAttachmentController {
     );
   }
 
+  // Libera o anexo reservado pra gerente e representante. Sem corpo: o
+  // único estado possível é "publicado", e não há caminho de volta.
+  @Post(':attachmentId/publish')
+  publish(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('opportunityId', ParseUUIDPipe) opportunityId: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) =>
+        this.attachments.publish(tx, membership, opportunityId, attachmentId),
+    );
+  }
+
   @Delete(':attachmentId')
   @HttpCode(204)
   remove(

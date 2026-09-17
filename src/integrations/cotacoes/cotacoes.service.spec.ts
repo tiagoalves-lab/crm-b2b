@@ -425,6 +425,53 @@ describe('CotacoesService', () => {
       });
     });
 
+    it('leva a descrição do cartão pro campo Descrição da oportunidade', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(companyFake());
+
+      await service.trelloVincular({
+        ...dtoBase,
+        descricao: 'Orçar:\nMáquina GM6025D - 6KW\n\nIndicação do Gilberto',
+      });
+
+      const criacao = (deps.opportunities.create.mock.calls as unknown[][])[0];
+      expect(criacao[2]).toMatchObject({
+        description: 'Orçar:\nMáquina GM6025D - 6KW\n\nIndicação do Gilberto',
+      });
+    });
+
+    it('preenche a descrição da oportunidade que já existe só se ela estiver vazia', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({
+        id: OPPORTUNITY_ID,
+        description: null,
+        stage: { name: 'Elaboração de Propostas' },
+      });
+
+      await service.trelloVincular({ ...dtoBase, descricao: 'do cartão' });
+
+      const update = (
+        deps.tx.opportunity.update.mock.calls as unknown[][]
+      )[0][0] as { data: Record<string, unknown> };
+      expect(update.data).toEqual({ description: 'do cartão' });
+    });
+
+    it('não sobrescreve descrição já escrita no CRM', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({
+        id: OPPORTUNITY_ID,
+        description: 'texto revisado pelo vendedor',
+        stage: { name: 'Elaboração de Propostas' },
+      });
+
+      await service.trelloVincular({ ...dtoBase, descricao: 'do cartão' });
+
+      const updates = (deps.tx.opportunity.update.mock.calls as unknown[][])
+        .map((call) => call[0] as { data: Record<string, unknown> })
+        .filter((arg) => 'description' in arg.data);
+      expect(updates).toHaveLength(0);
+    });
+
     it('devolve a existente sem criar de novo quando o cartão já tem card', async () => {
       const { service, deps } = montar();
       deps.tx.opportunity.findFirst.mockResolvedValue({
@@ -688,6 +735,38 @@ describe('CotacoesService', () => {
         recente,
       ]);
       expect(gravacao.data[1].body).toContain('segunda');
+    });
+
+    it('sincronizar preenche a descrição vazia e nunca a que já tem texto', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({
+        id: OPPORTUNITY_ID,
+        description: null,
+      });
+
+      await service.trelloSincronizarComentarios({
+        card_id: CARD_ID,
+        comentarios: [],
+        descricao: 'do cartão',
+      });
+      expect(
+        (deps.tx.opportunity.update.mock.calls as unknown[][])[0][0],
+      ).toMatchObject({ data: { description: 'do cartão' } });
+
+      const outro = montar();
+      outro.deps.tx.opportunity.findFirst.mockResolvedValue({
+        id: OPPORTUNITY_ID,
+        description: 'escrita no CRM',
+      });
+      await outro.service.trelloSincronizarComentarios({
+        card_id: CARD_ID,
+        comentarios: [],
+        descricao: 'do cartão',
+      });
+      const tocou = (
+        outro.deps.tx.opportunity.update.mock.calls as unknown[][]
+      ).some((call) => 'description' in (call[0] as { data: object }).data);
+      expect(tocou).toBe(false);
     });
 
     it('não grava nada quando o cartão não tem comentário', async () => {

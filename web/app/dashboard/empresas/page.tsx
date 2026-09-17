@@ -7,7 +7,7 @@ import {
 } from "@/lib/api/companies";
 import { getMe } from "@/lib/api/me";
 import { formatDateTimeBR } from "@/lib/format-date";
-import ConfirmSubmitButton from "../membros/confirm-submit-button";
+import ConfirmSubmitButton from "../(administracao)/membros/confirm-submit-button";
 import EmpresasTable, { type EmpresaRow } from "./empresas-table";
 import { calcularCurvaAbcAction } from "./actions";
 import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
@@ -79,6 +79,7 @@ export default async function EmpresasPage({
       classe: company.curvaAbc,
       ltv: company.ltv,
       ultimaCompra: company.ultimaCompra,
+      ultimoContato: company.ultimoContato,
     }))
     .sort((a, b) =>
       (a.company.razaoSocial?.trim() || companyDisplayName(a.company)).localeCompare(

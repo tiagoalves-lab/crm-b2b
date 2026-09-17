@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
+import { comRegistroDeExclusao } from '../deletion-log/registro-exclusao.fake';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { ContactService } from './contact.service';
 
@@ -32,7 +33,7 @@ function fakeTx(
       : options.company;
   const contact = options.contact;
 
-  return {
+  return comRegistroDeExclusao({
     company: {
       findFirst: jest.fn().mockResolvedValue(company),
     },
@@ -55,7 +56,7 @@ function fakeTx(
         ),
       delete: jest.fn().mockResolvedValue({}),
     },
-  } as unknown as TenantTx;
+  } as unknown as TenantTx);
 }
 
 describe('ContactService', () => {

@@ -507,6 +507,18 @@ o cenário A do modelo de ameaça — o mais provável de todos.
   `'unsafe-eval'` (Fast Refresh) e `ws:` (HMR); em produção entra
   `upgrade-insecure-requests`.
 
+**5.3.2 — A CSP libera o Storage do Supabase só pra anexo.**
+- Decisão → `img-src` e `frame-src` aceitam, além de `'self'`/`data:`/
+  `blob:`, **apenas** a origem do projeto Supabase
+  (`NEXT_PUBLIC_SUPABASE_URL`). É por ali que sai a prévia do anexo
+  (imagem no `<img>`, PDF no `<iframe>`), sempre por URL assinada e
+  temporária. Nenhum outro host entra nessas diretivas.
+- Fonte → Bug de 2026-09-14: `frame-src 'none'` bloqueava a prévia de
+  PDF, que aparecia em branco com "Este conteúdo está bloqueado".
+- Detalhe → `frame-ancestors 'none'` continua intacto: o CRM segue
+  proibido de ser embutido por terceiros; o que mudou é só quem o CRM
+  pode embutir.
+
 **5.4 — Rate limiting.**
 - Decisão → Limite global generoso (300 req/min) + limites apertados nas
   rotas caras: importação de planilha (10/min) e sync do eGestor (3/min).

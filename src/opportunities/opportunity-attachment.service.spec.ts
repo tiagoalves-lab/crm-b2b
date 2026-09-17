@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
+import { comRegistroDeExclusao } from '../deletion-log/registro-exclusao.fake';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { SupabaseStorageService } from '../storage/supabase-storage.service';
 import { OpportunityAttachmentService } from './opportunity-attachment.service';
@@ -41,15 +42,32 @@ function fakeStorage(): SupabaseStorageService {
   } as unknown as SupabaseStorageService;
 }
 
-function fakeTx(attachment?: {
+type FakeAttachment = {
   id: string;
   opportunityId: string;
   storagePath: string;
   fileName: string;
   uploadedBy: string;
   sizeBytes: bigint | null;
-}): TenantTx {
-  return {
+  // Estado de publicação (2026-09-15): o fake assume PUBLICADO quando o
+  // teste não diz nada, que é o estado normal de um anexo; os testes de
+  // reserva passam `publishedAt: null` explícito.
+  publishedAt?: Date | null;
+};
+
+type FakeWhere = { id?: string; publishedAt?: { not: null } };
+
+function fakeTx(attachment?: FakeAttachment): TenantTx {
+  const row = attachment
+    ? { publishedAt: new Date('2026-09-01T12:00:00Z'), ...attachment }
+    : undefined;
+  // Só o filtro de publicação vira lógica de verdade aqui — é a regra
+  // nova que os testes precisam exercitar de fato.
+  const visivel = (where: FakeWhere | undefined) =>
+    row !== undefined &&
+    (where?.publishedAt === undefined || row.publishedAt !== null);
+
+  return comRegistroDeExclusao({
     opportunityAttachment: {
       create: jest
         .fn()
@@ -57,6 +75,7 @@ function fakeTx(attachment?: {
           Promise.resolve({
             id: 'attachment-1',
             createdAt: new Date(),
+            publishedAt: null,
             ...data,
             sizeBytes:
               data.sizeBytes === undefined ? null : BigInt(data.sizeBytes),
@@ -64,15 +83,25 @@ function fakeTx(attachment?: {
         ),
       findFirst: jest
         .fn()
-        .mockImplementation(({ where }: { where: { id?: string } }) =>
+        .mockImplementation(({ where }: { where: FakeWhere }) =>
           Promise.resolve(
-            attachment && where.id === attachment.id ? attachment : null,
+            row && where.id === row.id && visivel(where) ? row : null,
           ),
         ),
-      findMany: jest.fn().mockResolvedValue(attachment ? [attachment] : []),
+      findMany: jest
+        .fn()
+        .mockImplementation(({ where }: { where?: FakeWhere }) =>
+          Promise.resolve(visivel(where) ? [row] : []),
+        ),
+      update: jest
+        .fn()
+        .mockImplementation(
+          ({ data }: { data: { publishedAt: Date } }) =>
+            Promise.resolve({ ...row, ...data }),
+        ),
       delete: jest.fn().mockResolvedValue({}),
     },
-  } as unknown as TenantTx;
+  } as unknown as TenantTx);
 }
 
 describe('OpportunityAttachmentService', () => {
@@ -233,6 +262,155 @@ describe('OpportunityAttachmentService', () => {
       'attachment-1',
     );
     expect(storage.remove).toHaveBeenCalledWith(attachment.storagePath);
+  });
+
+  // ── Publicação do anexo (2026-09-15) ────────────────────────────────
+  it('anexo enviado por admin nasce reservado; por representante, já publicado', async () => {
+    const service = new OpportunityAttachmentService(
+      fakeOpportunityService(),
+      fakeStorage(),
+      policy,
+    );
+
+    const doAdmin = await service.createUploadUrl(
+      fakeTx(),
+      membership({ role: 'admin' }),
+      OPPORTUNITY_ID,
+      { fileName: 'proposta.pdf' },
+    );
+    expect(doAdmin.attachment.publishedAt).toBeNull();
+
+    const doRep = await service.createUploadUrl(
+      fakeTx(),
+      membership({ role: 'sales_rep' }),
+      OPPORTUNITY_ID,
+      { fileName: 'pedido.pdf' },
+    );
+    expect(doRep.attachment.publishedAt).toBeInstanceOf(Date);
+  });
+
+  it('CRÍTICO: anexo reservado não aparece na lista de gerente/representante', async () => {
+    const reservado: FakeAttachment = {
+      id: 'attachment-1',
+      opportunityId: OPPORTUNITY_ID,
+      storagePath: 'ws/opportunities/opp/arquivo.pdf',
+      fileName: 'a.pdf',
+      uploadedBy: 'user-admin',
+      sizeBytes: null,
+      publishedAt: null,
+    };
+    const service = new OpportunityAttachmentService(
+      fakeOpportunityService(),
+      fakeStorage(),
+      policy,
+    );
+
+    await expect(
+      service.findAll(
+        fakeTx(reservado),
+        membership({ role: 'manager' }),
+        OPPORTUNITY_ID,
+      ),
+    ).resolves.toEqual([]);
+    await expect(
+      service.findAll(
+        fakeTx(reservado),
+        membership({ role: 'sales_rep' }),
+        OPPORTUNITY_ID,
+      ),
+    ).resolves.toEqual([]);
+    await expect(
+      service.findAll(
+        fakeTx(reservado),
+        membership({ role: 'admin' }),
+        OPPORTUNITY_ID,
+      ),
+    ).resolves.toHaveLength(1);
+  });
+
+  it('CRÍTICO: download de anexo reservado responde 404 pra representante', async () => {
+    const service = new OpportunityAttachmentService(
+      fakeOpportunityService(),
+      fakeStorage(),
+      policy,
+    );
+    const tx = fakeTx({
+      id: 'attachment-1',
+      opportunityId: OPPORTUNITY_ID,
+      storagePath: 'ws/opportunities/opp/arquivo.pdf',
+      fileName: 'a.pdf',
+      uploadedBy: 'user-admin',
+      sizeBytes: null,
+      publishedAt: null,
+    });
+    await expect(
+      service.createDownloadUrl(
+        tx,
+        membership({ role: 'sales_rep' }),
+        OPPORTUNITY_ID,
+        'attachment-1',
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('publish carimba a data e não muda nada se já estava publicado', async () => {
+    const service = new OpportunityAttachmentService(
+      fakeOpportunityService(),
+      fakeStorage(),
+      policy,
+    );
+    const base: FakeAttachment = {
+      id: 'attachment-1',
+      opportunityId: OPPORTUNITY_ID,
+      storagePath: 'ws/opportunities/opp/arquivo.pdf',
+      fileName: 'a.pdf',
+      uploadedBy: 'user-admin',
+      sizeBytes: null,
+    };
+
+    const txReservado = fakeTx({ ...base, publishedAt: null });
+    const publicado = await service.publish(
+      txReservado,
+      membership({ role: 'owner' }),
+      OPPORTUNITY_ID,
+      'attachment-1',
+    );
+    expect(publicado.publishedAt).toBeInstanceOf(Date);
+
+    const txJaPublicado = fakeTx(base);
+    await service.publish(
+      txJaPublicado,
+      membership({ role: 'owner' }),
+      OPPORTUNITY_ID,
+      'attachment-1',
+    );
+    expect(
+      (txJaPublicado.opportunityAttachment.update as jest.Mock).mock.calls,
+    ).toHaveLength(0);
+  });
+
+  it('CRÍTICO: gerente não publica anexo', async () => {
+    const service = new OpportunityAttachmentService(
+      fakeOpportunityService(),
+      fakeStorage(),
+      policy,
+    );
+    const tx = fakeTx({
+      id: 'attachment-1',
+      opportunityId: OPPORTUNITY_ID,
+      storagePath: 'ws/opportunities/opp/arquivo.pdf',
+      fileName: 'a.pdf',
+      uploadedBy: 'user-1',
+      sizeBytes: null,
+    });
+    await expect(
+      service.publish(
+        tx,
+        membership({ role: 'manager' }),
+        OPPORTUNITY_ID,
+        'attachment-1',
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('CRÍTICO: representante (sales_rep) não remove nem o próprio anexo', async () => {

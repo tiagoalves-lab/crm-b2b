@@ -13,47 +13,12 @@ export const TIER_LABEL: Record<ScoreTier, string> = {
   frio: "Longo Prazo",
 };
 
-// Espelha LeadScoringService#tier no backend (src/raw-leads/lead-scoring.service.ts)
-// — só pra exibição (o score em si já vem calculado do backend).
-export function scoreTier(score: number): ScoreTier {
-  if (score >= 70) return "quente";
-  if (score >= 45) return "morno";
-  return "frio";
-}
-
-// Tier "de verdade" pra exibir/filtrar: a classificação manual (quando o
-// usuário define uma) sobrepõe o cálculo automático por score — mesma
-// regra que o backend aplica no filtro de GET /raw-leads (ver
-// RawLeadService#findAll).
-export function effectiveTier(lead: Pick<RawLead, "score" | "manualTier">): ScoreTier {
-  return lead.manualTier ?? scoreTier(lead.score);
-}
-
-// Espelha LeadScoringService#score no backend — só o texto explicativo
-// (score.reasons), pra exibir o tooltip "ⓘ" e a aba "Dados do lead"
-// (SPEC-CRM-GAMA.md §4.4, protótipo: score-why/kv "Cálculo"). O `score`
-// em si é sempre o valor persistido no backend, nunca recalculado aqui —
-// isto só reconstitui o *porquê* a partir dos mesmos campos que o
-// backend usou, sem chamada extra à API.
-export function scoreReasons(lead: Pick<RawLead, "cnaePrincipal" | "importador" | "porte" | "situacao" | "uf">): string[] {
-  const reasons: string[] = [];
-
-  const div = parseInt((lead.cnaePrincipal ?? "").slice(0, 2), 10);
-  if (div >= 25 && div <= 30) reasons.push("CNAE alvo (25–30) +40");
-  else if (div === 24) reasons.push("CNAE metalurgia próxima +20");
-  else reasons.push("CNAE fora do alvo +0");
-
-  reasons.push(lead.importador ? "Importa via Comex Stat +25" : "Não importa +0");
-
-  if (lead.porte === "GRANDE") reasons.push("Porte grande +20");
-  else if (lead.porte === "MÉDIO") reasons.push("Porte médio +13");
-  else reasons.push("Porte pequeno +5");
-
-  reasons.push(lead.situacao === "ATIVA" ? "Situação ativa +10" : "Situação irregular −20");
-
-  if (lead.uf === "RS") reasons.push("Região RS +5");
-
-  return reasons;
+// Classificação do lead: só a manual (pedido do usuário, 2026-09-14 — o
+// score automático saiu da interface inteira, "não vamos usar isso"). Um
+// lead sem classificação devolve null; antes caía numa faixa calculada a
+// partir do score, o que fazia todo lead nascer classificado sozinho.
+export function effectiveTier(lead: Pick<RawLead, "manualTier">): ScoreTier | null {
+  return lead.manualTier ?? null;
 }
 
 // 5000 (não 200): a tela de Prospecção busca tudo numa página só e
@@ -120,8 +85,8 @@ export function discardLead(token: string, id: string): Promise<RawLead> {
   });
 }
 
-// Classificação manual (Quente/Morno/Frio) — tier: null limpa a marcação e
-// volta a usar o cálculo automático por score.
+// Classificação do lead (Curto/Médio/Longo Prazo) — tier: null deixa o
+// lead sem classificação.
 export function updateLeadTier(
   token: string,
   id: string,
@@ -208,13 +173,6 @@ export function bulkDiscardLeads(token: string, ids: string[]): Promise<BulkResu
     method: "POST",
     token,
     body: { ids },
-  });
-}
-
-export function rescoreLeads(token: string): Promise<{ updated: number }> {
-  return apiFetch<{ updated: number }>("/raw-leads/rescore", {
-    method: "POST",
-    token,
   });
 }
 

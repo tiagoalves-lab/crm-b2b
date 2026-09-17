@@ -49,7 +49,7 @@ export default async function DashboardLayout({
           <span className="sidebar-tagline">CRM</span>
         </div>
 
-        <DashboardNav counts={counts} role={me.membership.role} />
+        <DashboardNav counts={counts} role={me.membership.role} permissions={me.membership.permissions} />
 
         <div className="sidebar-footer">
           <div className="avatar">{initials(me.user.name ?? me.user.email)}</div>

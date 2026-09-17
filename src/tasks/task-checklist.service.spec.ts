@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import type { TenantTx } from '../tenancy/tenant-context.service';
+import { comRegistroDeExclusao } from '../deletion-log/registro-exclusao.fake';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { TaskChecklistService } from './task-checklist.service';
 import type { TaskService } from './task.service';
@@ -24,7 +25,7 @@ function fakeTaskService(): TaskService {
 }
 
 function fakeTx(item?: { id: string; taskId: string }): TenantTx {
-  return {
+  return comRegistroDeExclusao({
     taskChecklistItem: {
       findFirst: jest
         .fn()
@@ -43,7 +44,7 @@ function fakeTx(item?: { id: string; taskId: string }): TenantTx {
         ),
       delete: jest.fn().mockResolvedValue({}),
     },
-  } as unknown as TenantTx;
+  } as unknown as TenantTx);
 }
 
 describe('TaskChecklistService', () => {
@@ -71,7 +72,7 @@ describe('TaskChecklistService', () => {
   });
 
   it('remove item existente', async () => {
-    const item = { id: 'item-1', taskId: TASK_ID };
+    const item = { id: 'item-1', taskId: TASK_ID, text: 'Item de teste' };
     const service = new TaskChecklistService(fakeTaskService());
     const tx = fakeTx(item);
     await expect(

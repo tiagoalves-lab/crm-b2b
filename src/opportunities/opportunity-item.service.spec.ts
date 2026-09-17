@@ -4,6 +4,7 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { OpportunityItemService } from './opportunity-item.service';
 import { mustTagsBeItems, uniqueItemNames } from './opportunity-tags';
 import type { OpportunityService } from './opportunity.service';
+import type { ActivityService } from '../activities/activity.service';
 
 const WORKSPACE_ID = 'workspace-1';
 const OPPORTUNITY_ID = 'opp-1';
@@ -16,6 +17,12 @@ function membership(): MembershipContext {
     role: 'sales_rep',
     status: 'active',
   };
+}
+
+// Histórico do card (2026-09-14): o service registra cada mexida na
+// lista de itens via ActivityService — nos testes basta um emit vazio.
+function fakeActivityService(): ActivityService {
+  return { emit: jest.fn().mockResolvedValue({}) } as unknown as ActivityService;
 }
 
 function fakeOpportunityService(): OpportunityService {
@@ -89,7 +96,7 @@ function fakeTx(items: FakeItem[] = []): TenantTx {
 describe('OpportunityItemService', () => {
   it('adicionar item exige visibilidade de ESCRITA na oportunidade', async () => {
     const opportunities = fakeOpportunityService();
-    const service = new OpportunityItemService(opportunities);
+    const service = new OpportunityItemService(opportunities, fakeActivityService());
     const tx = fakeTx();
     await service.create(tx, membership(), OPPORTUNITY_ID, {
       name: ' Bomba  5cv ',
@@ -103,7 +110,7 @@ describe('OpportunityItemService', () => {
   });
 
   it('normaliza espaços e coloca o item no fim da lista', async () => {
-    const service = new OpportunityItemService(fakeOpportunityService());
+    const service = new OpportunityItemService(fakeOpportunityService(), fakeActivityService());
     const tx = fakeTx([
       { id: 'a', opportunityId: OPPORTUNITY_ID, name: 'Painel', position: 1 },
     ]);
@@ -114,14 +121,14 @@ describe('OpportunityItemService', () => {
   });
 
   it('CRÍTICO: rejeita item vazio', async () => {
-    const service = new OpportunityItemService(fakeOpportunityService());
+    const service = new OpportunityItemService(fakeOpportunityService(), fakeActivityService());
     await expect(
       service.create(fakeTx(), membership(), OPPORTUNITY_ID, { name: '   ' }),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('CRÍTICO: rejeita item repetido (sem diferenciar maiúscula/minúscula)', async () => {
-    const service = new OpportunityItemService(fakeOpportunityService());
+    const service = new OpportunityItemService(fakeOpportunityService(), fakeActivityService());
     const tx = fakeTx([
       { id: 'a', opportunityId: OPPORTUNITY_ID, name: 'Painel', position: 1 },
     ]);
@@ -131,7 +138,7 @@ describe('OpportunityItemService', () => {
   });
 
   it('404 ao remover item que não pertence à oportunidade', async () => {
-    const service = new OpportunityItemService(fakeOpportunityService());
+    const service = new OpportunityItemService(fakeOpportunityService(), fakeActivityService());
     await expect(
       service.remove(fakeTx(), membership(), OPPORTUNITY_ID, 'nao-existe'),
     ).rejects.toThrow(NotFoundException);
@@ -179,7 +186,7 @@ describe('opportunity-tags', () => {
   });
 
   it('soma dos itens com valor vira o valor da oportunidade', async () => {
-    const service = new OpportunityItemService(fakeOpportunityService());
+    const service = new OpportunityItemService(fakeOpportunityService(), fakeActivityService());
     const tx = fakeTx([
       {
         id: 'a',
@@ -206,7 +213,7 @@ describe('opportunity-tags', () => {
   });
 
   it('CRÍTICO: lista sem nenhum valor não mexe no valor da oportunidade', async () => {
-    const service = new OpportunityItemService(fakeOpportunityService());
+    const service = new OpportunityItemService(fakeOpportunityService(), fakeActivityService());
     const tx = fakeTx([
       { id: 'a', opportunityId: OPPORTUNITY_ID, name: 'Painel', position: 1 },
     ]);

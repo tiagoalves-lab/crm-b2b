@@ -61,6 +61,12 @@ function memberDisplayName(userId: string, memberships: Membership[]): string {
   return m?.name?.trim() || m?.login?.trim() || `${userId.slice(0, 8)}…`;
 }
 
+const ETAPAS_PROPOSTA = new Set([
+  "Solicitação de Propostas",
+  "Elaboração de Propostas",
+  "Aprovação de Propostas",
+]);
+
 interface DescribedActivity {
   id: string;
   kind: string;
@@ -116,11 +122,18 @@ function describeActivity(
     };
   }
 
+  // Do Pipeline o feed só traz quatro eventos (filtro no backend,
+  // ActivityQueryService, 2026-09-17): criada, movida para Negociação,
+  // volta de Negociação — que o usuário quer ler como "solicitada
+  // alteração" — e fechada/perdida.
   if (activity.type === "stage_change") {
+    const voltou = ETAPAS_PROPOSTA.has(String(payload.toStageName ?? ""));
     return {
       id: activity.id,
       kind: "Oportunidade",
-      text: "Mudou de etapa",
+      text: voltou
+        ? "Solicitada alteração"
+        : `Movida para ${(payload.toStageName as string | undefined) ?? "Negociação e Fechamento"}`,
       company: companyLabel,
       occurredAt: activity.occurredAt,
       href: opportunityHref ?? "/dashboard/pipeline",
@@ -159,9 +172,9 @@ function describeActivity(
         ? "Oportunidade criada"
         : action === "status_changed"
           ? payload.to === "won"
-            ? "Fechou negócio (ganho)"
+            ? "Marcada como fechada"
             : payload.to === "lost"
-              ? "Marcou como perdida"
+              ? `Marcada como perdida${payload.lostReason ? ` — ${payload.lostReason}` : ""}`
               : "Mudou status"
           : action === "deleted"
             ? "Oportunidade arquivada"

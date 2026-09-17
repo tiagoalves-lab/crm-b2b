@@ -599,6 +599,31 @@ a {
   margin-bottom: 14px;
 }
 
+/* Confirmação discreta de ação concluída na própria tela (aba Motivos de
+   perda, 2026-09-17) — irmã do .error-banner, em verde. */
+.info-banner {
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+/* Lembrete de "salve antes de continuar" — cadastro de empresa nova na
+   Prospecção (2026-09-14). Irmão do .error-banner/.busy-banner: mesmo
+   formato, tom de aviso (não é erro, é instrução de ordem do fluxo). */
+.lembrete-salvar {
+  background: var(--warn-soft, rgba(217, 119, 6, 0.1));
+  color: var(--warn, #b45309);
+  border: 1px solid rgba(217, 119, 6, 0.28);
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
 /* Faixa de "ação em andamento" — irmã do .error-banner (mesmo formato, cor
    de acento no lugar da de perigo). Existe pra ação lenta que conversa com
    sistema de terceiro: na correção do eGestor são vários round-trips até o
@@ -845,6 +870,40 @@ a {
 .form-grid input:focus,
 .form-grid select:focus,
 .form-grid textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Descrição longa fora da grade de campos (card de cadastro da
+   oportunidade, 2026-09-04) — mesma tipografia do rótulo do form-grid. */
+.opp-desc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 16px 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.opp-desc-field textarea {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.opp-desc-field textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -1332,12 +1391,6 @@ a {
   opacity: 0.6;
 }
 
-.calendar-task.overdue {
-  background: var(--danger-soft);
-  border-left-color: var(--danger);
-  color: var(--danger);
-}
-
 /* ---------- Funil (barras horizontais) ---------- */
 .funnel-bar {
   display: flex;
@@ -1671,6 +1724,32 @@ a {
   cursor: grab;
   transition: all 0.12s;
   border-left: 2px solid var(--accent);
+  /* Âncora do indicador de SLA no canto superior direito (2026-09-14). */
+  position: relative;
+}
+
+/* Dias corridos do negócio — ver pipeline/sla.ts. */
+.card-sla {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* No card já encerrado o indicador entra na linha do título (posição
+   estática), ao lado da etiqueta Fechada/Perdida. */
+.closed-card-top .card-sla {
+  position: static;
+  margin-left: auto;
+  margin-right: 6px;
 }
 
 .card:hover {
@@ -1691,6 +1770,27 @@ a {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.3;
+  /* Espaço pro indicador de SLA, que flutua no canto (2026-09-14). */
+  padding-right: 42px;
+}
+
+/* Representante do card no quadro (2026-09-11) — linha logo abaixo da
+   razão social, discreta pra não competir com o nome da empresa. */
+.card-rep {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Abertura/previsão no card do quadro (2026-09-14). */
+.card-datas {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
 }
 
 .card-prod {
@@ -2431,27 +2531,6 @@ a.tag-chip.active {
   display: none;
 }
 
-.score-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 150px;
-}
-
-.score-mini {
-  width: 70px;
-  height: 6px;
-  background: var(--bg);
-  border-radius: 3px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-
-.score-mini-fill {
-  height: 100%;
-  border-radius: 3px;
-}
-
 .tier-tag {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -2483,12 +2562,6 @@ a.tag-chip.active {
 
 .triage-row.picked {
   background: var(--accent-soft);
-}
-
-.score-why {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  cursor: help;
 }
 
 .funnel-stat {
@@ -3161,6 +3234,43 @@ a.tag-chip.active {
   margin-top: 1px;
 }
 
+/* Anexo reservado (2026-09-15): enviado por administrador/proprietário e
+   ainda não publicado — gerente e representante nem recebem do backend.
+   A borda tracejada e o selo existem pra quem publica não confundir o
+   que a equipe já vê com o que ainda está guardado. */
+.attach-item.reservado {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: var(--surface-sunken);
+}
+
+/* Nome + selo na mesma linha: o nome trunca, o selo nunca. */
+.attach-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.attach-flag {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-secondary);
+}
+
+.icon-btn.publicar:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-secondary);
+}
+
 /* Prévia do anexo (2026-09-04): sobe por cima do modal da ficha, que
    já é z-index 100 no .overlay; 150 fica acima dele e abaixo do toast
    (200), que precisa continuar visível. */
@@ -3323,11 +3433,462 @@ a.tag-chip.active {
   border-color: var(--accent);
 }
 
+/* Caixa de escrever comentário (2026-09-14, pedido do usuário): carimbar
+   item e destacar membro ficavam sempre abertos acima do campo e ocupavam
+   meia tela. Agora são ícones no rodapé da própria caixa — fixar, carimbar,
+   destacar — e a lista de opções só aparece no clique, dentro da caixa (sem
+   posicionamento flutuante: o card vive dentro de um modal que rola). */
+.chat-composer {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 3px 4px 5px;
+}
+
+.chat-composer:focus-within {
+  border-color: var(--accent);
+}
+
+.chat-input-row .chat-composer textarea {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 6px 8px;
+  min-height: 38px;
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.composer-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.composer-tool:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.composer-tool.on {
+  background: var(--accent-soft);
+  color: var(--accent-secondary);
+}
+
+.composer-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.composer-tool-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.composer-panel {
+  border-top: 1px dashed var(--border);
+  margin-top: 4px;
+  padding: 8px 8px 2px;
+}
+
+.composer-panel .tag-pick-block {
+  margin-bottom: 0;
+}
+
 .chat-empty {
   text-align: center;
   padding: 20px;
   color: var(--text-tertiary);
   font-size: 12px;
+}
+
+/* ---------- Comentário fixado + histórico de anotações (2026-09-09) ---------- */
+/* Ícone do histórico na barra do Pipeline: azul, senão some no fundo da
+   barra (pedido do usuário, 2026-09-09). Tom claro de propósito — o azul
+   sólido ao lado é do "Nova oportunidade", que continua sendo a ação
+   principal da tela. */
+.btn-anotacoes {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+  padding: 8px 10px;
+}
+
+.btn-anotacoes:hover {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+/* Barra de ações do card de oportunidade (2026-09-14): saiu do rodapé do
+   modal e passou a ficar entre Anexos e Comentários, pra não exigir rolar
+   o histórico inteiro só pra Fechar ou Salvar. */
+.card-acoes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  margin: 4px 0 6px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Duas linhas de botões (2026-09-15): cada linha tem um grupo à esquerda
+   e outro à direita; em tela estreita o grupo da direita desce inteiro,
+   sem separar botões que andam juntos. */
+.card-acoes-linha {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-acoes-grupo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-acoes-linha .card-acoes-grupo:last-child {
+  margin-left: auto;
+}
+
+/* Linha da empresa no card da oportunidade com o menu "Mais ações"
+   alinhado à direita (2026-09-15). */
+.opp-empresa-linha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.opp-empresa-linha > span {
+  min-width: 0;
+}
+
+.mais-acoes {
+  position: relative;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.mais-acoes .btn .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.mais-acoes-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 210px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  padding: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+
+.mais-acoes-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.mais-acoes-item:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.mais-acoes-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mais-acoes-item.sucesso {
+  color: var(--green);
+}
+
+.mais-acoes-item.perigo {
+  color: var(--danger);
+}
+
+/* Campo de comentário no topo da seção: respiro antes da conversa. */
+.chat-input-topo {
+  margin-bottom: 16px;
+}
+
+/* Alerta de pendência no rodapé do card do quadro (2026-09-14) — ocupa
+   o lugar do antigo círculo com as iniciais do representante. */
+.card-pendencia {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #b8860b;
+  background: rgba(184, 134, 11, 0.12);
+  border: 1px solid rgba(184, 134, 11, 0.45);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+/* Comentário que destacou quem está lendo. */
+.chat-bubble.pendente {
+  border-color: #b8860b;
+  background: rgba(184, 134, 11, 0.07);
+}
+
+.chat-pendencia-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #b8860b;
+  border: 1px solid #b8860b;
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* Membro destacado no comentário; riscado quando já deu baixa. */
+.mencao-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-secondary);
+  background: var(--accent-secondary-soft);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.mencao-chip.resolvida {
+  color: var(--text-tertiary);
+  background: var(--surface-sunken);
+  text-decoration: line-through;
+}
+
+/* Ícone do histórico com a contagem de fixados logo abaixo
+   (2026-09-14). */
+.anotacoes-atalho {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Amarelo escurecido o suficiente pra ler sobre o fundo claro da barra —
+   amarelo puro some no branco. */
+.anotacoes-fixadas {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b8860b;
+  white-space: nowrap;
+}
+
+.chat-msg-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.chat-bubble.fixado {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.chat-pin-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* ---------- Histórico do card de oportunidade (2026-09-14) ---------- */
+.historico-resumo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+
+.historico-item {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.historico-item:last-child {
+  border-bottom: none;
+}
+
+.historico-quando {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  min-width: 118px;
+}
+
+.historico-oque {
+  flex: 1;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.historico-quem {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Modal do histórico: seção de fixadas em cima, demais embaixo. */
+.anotacoes-section + .anotacoes-section {
+  margin-top: 18px;
+}
+
+.anotacoes-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+}
+
+.anotacoes-item.fixada {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.anotacoes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.anotacoes-empresa {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-secondary);
+  text-decoration: none;
+}
+
+.anotacoes-empresa:hover {
+  text-decoration: underline;
+}
+
+.anotacoes-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.anotacoes-meta.direita {
+  margin-left: auto;
+}
+
+.anotacoes-texto {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Lido / não lido (2026-09-17), no molde das notificações do Trello:
+   barra com filtro e "Marcar tudo", bolinha por anotação. */
+.anotacoes-barra {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.anotacoes-filtro {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.anotacoes-marcar-tudo {
+  margin-left: auto;
+}
+
+.anotacoes-item.nao-lida {
+  border-left: 3px solid var(--accent-secondary);
+}
+
+.anotacoes-lido {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent-secondary);
+  background: var(--accent-secondary);
+  cursor: pointer;
+}
+
+.anotacoes-lido.lido {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.anotacoes-lido:hover {
+  box-shadow: 0 0 0 3px var(--surface-hover);
+}
+
+.anotacoes-lido:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /* ---------- Subform de oportunidades encerradas + filtro de período ---------- */
@@ -3780,32 +4341,93 @@ a.tag-chip.active {
 }
 
 /* Ocupação generosa (pedido do usuário, 2026-09-03): cresce até 760px
-   e cede espaço só quando o título/ações precisam. */
+   e cede espaço só quando o título/ações precisam. A caixa é o container
+   (borda, fundo): dentro dela ficam o input, o seletor de escopo
+   "em <tela> / em todo o CRM" (2026-09-15, modelo Mercado Livre) e a
+   lupa, lado a lado. */
 .topbar-filter {
   position: relative;
+  display: flex;
+  align-items: center;
   flex: 1 1 360px;
   min-width: 240px;
   max-width: 760px;
-}
-
-.topbar-filter input {
-  width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 46px 8px 34px;
+  padding: 3px 3px 3px 30px;
+}
+
+.topbar-filter:focus-within {
+  border-color: var(--border-strong);
+}
+
+.topbar-filter input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 5px 6px;
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
 }
 
-/* Lupa clicável no canto direito (Enter faz o mesmo): abre a Busca geral. */
-.topbar-filter-go {
+.topbar-filter input:focus {
+  outline: none;
+}
+
+.topbar-filter input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Seletor de escopo: onde a busca acontece. "em <tela atual>" filtra a
+   tela enquanto digita; "em todo o CRM" manda pra Busca geral. */
+.topbar-filter-scope {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: 45%;
+  border-left: 1px solid var(--border);
+  padding-left: 6px;
+  margin-left: 4px;
+}
+
+.topbar-filter-scope select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  max-width: 100%;
+  padding: 4px 20px 4px 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  text-overflow: ellipsis;
+}
+
+.topbar-filter-scope select:focus {
+  outline: none;
+  color: var(--text-primary);
+}
+
+.topbar-filter-scope .chev {
   position: absolute;
   right: 4px;
-  top: 4px;
-  bottom: 4px;
+  width: 13px;
+  height: 13px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* Lupa clicável no canto direito (Enter faz o mesmo). */
+.topbar-filter-go {
+  flex: 0 0 auto;
   width: 36px;
+  height: 28px;
+  margin-left: 6px;
   border: none;
   border-radius: calc(var(--radius) - 2px);
   background: var(--accent);
@@ -3817,8 +4439,11 @@ a.tag-chip.active {
 }
 
 .topbar-filter-go .ic {
+  position: static;
+  transform: none;
   width: 15px;
   height: 15px;
+  color: inherit;
 }
 
 .topbar-filter-go:disabled {
@@ -3830,16 +4455,8 @@ a.tag-chip.active {
   filter: brightness(1.1);
 }
 
-.topbar-filter input:focus {
-  outline: none;
-  border-color: var(--border-strong);
-}
-
-.topbar-filter input::placeholder {
-  color: var(--text-tertiary);
-}
-
-.topbar-filter .ic {
+/* Lupa decorativa da esquerda (só o filho direto da caixa). */
+.topbar-filter > .ic {
   position: absolute;
   left: 11px;
   top: 50%;
@@ -4161,11 +4778,144 @@ a.tag-chip.active {
   white-space: nowrap;
 }
 
-.calendar-task.overdue .calendar-task-meta {
-  color: var(--danger);
-  opacity: 0.8;
-}
-
 .calendar-task.done .calendar-task-title {
   text-decoration: line-through;
+}
+
+/* Padrão visual único no calendário (pedido do usuário, 2026-09-16):
+   tarefa e oportunidade do Pipeline no mesmo azul do botão "Nova tarefa"
+   (--accent), bem transparente pra não brigar com o fundo. Atraso não
+   muda mais a cor — aparece no texto de ajuda ao passar o mouse. */
+.calendar-task,
+.calendar-task.calendar-opp {
+  background: rgba(5, 45, 244, 0.06);
+  border-left-color: rgba(5, 45, 244, 0.5);
+  color: var(--text-primary);
+}
+
+.calendar-task .calendar-task-title {
+  color: var(--accent);
+}
+
+/* Palavra "Pipeline" no laranja da etapa do board (stage-colors.ts), pra
+   destacar a oportunidade no meio das tarefas (pedido do usuário, 2026-09-16). */
+.calendar-opp-tag {
+  color: #f2a71b;
+  font-weight: 600;
+}
+
+/* ---------- Registro de exclusões (2026-09-16) ---------- */
+/* Cada linha abre a cópia do registro apagado ali mesmo, sem outra tela. */
+.exclusao-detalhe > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.exclusao-detalhe > summary::-webkit-details-marker {
+  display: none;
+}
+
+.exclusao-detalhe > summary::before {
+  content: "▸ ";
+  color: var(--text-tertiary);
+}
+
+.exclusao-detalhe[open] > summary::before {
+  content: "▾ ";
+}
+
+.exclusao-copia {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.exclusao-lista ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.exclusao-json {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.exclusao-json summary {
+  cursor: pointer;
+  color: var(--text-tertiary);
+}
+
+.exclusao-json pre {
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------- Abas da Administração (2026-09-17) ----------
+   Estrutura das Configurações do eGestor (título + abas, uma tela por
+   aba), com o visual do próprio CRM: mesmo fundo e borda da .topbar e
+   abas no padrão das abas da ficha (.drawer-tab) — texto cinza, ativa em
+   azul com sublinhado. As telas de dentro mantêm a própria .topbar. */
+.admin-head {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 28px 0;
+}
+
+.admin-head-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  margin-bottom: 8px;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  margin: 0 -14px;
+}
+
+.admin-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.admin-tab:hover {
+  color: var(--text-primary);
+}
+
+.admin-tab[aria-current="page"] {
+  color: var(--accent-secondary);
+  border-bottom-color: var(--accent);
+}
+
+.admin-tab .ic {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 640px) {
+  .admin-head {
+    padding: 12px 16px 0;
+  }
 }

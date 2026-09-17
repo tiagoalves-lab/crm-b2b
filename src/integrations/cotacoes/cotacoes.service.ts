@@ -346,9 +346,19 @@ export class CotacoesService {
       async (tx) => {
         const existente = await tx.opportunity.findFirst({
           where: { workspaceId, trelloCardId: cardId, deletedAt: null },
-          select: { id: true, stage: { select: { name: true } } },
+          select: {
+            id: true,
+            description: true,
+            stage: { select: { name: true } },
+          },
         });
         if (existente) {
+          await this.preencherDescricaoSeVazia(
+            tx,
+            existente.id,
+            existente.description,
+            dto.descricao,
+          );
           const novos = await this.espelharComentarios(
             tx,
             existente.id,
@@ -378,6 +388,7 @@ export class CotacoesService {
           ownerUserId: owner.userId,
           amount: VALOR_INICIAL,
           currency: MOEDA_PADRAO,
+          description: dto.descricao?.trim() || undefined,
           items: dto.itens ?? [],
         });
 
@@ -440,13 +451,20 @@ export class CotacoesService {
       async (tx) => {
         const oportunidade = await tx.opportunity.findFirst({
           where: { workspaceId, trelloCardId: cardId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, description: true },
         });
         if (!oportunidade) {
           throw new NotFoundException(
             'Este cartão ainda não tem oportunidade no CRM.',
           );
         }
+
+        await this.preencherDescricaoSeVazia(
+          tx,
+          oportunidade.id,
+          oportunidade.description,
+          dto.descricao,
+        );
 
         const novos = await this.espelharComentarios(
           tx,
@@ -509,6 +527,24 @@ export class CotacoesService {
       skipDuplicates: true,
     });
     return resultado.count;
+  }
+
+  // Descrição do cartão numa oportunidade que já existe: só preenche o
+  // que está vazio. Reespelhar o cartão nunca pode apagar o que alguém
+  // escreveu no CRM — mesma regra do chat, que só acrescenta. Serve de
+  // correção pras oportunidades criadas antes de a descrição viajar.
+  private async preencherDescricaoSeVazia(
+    tx: TenantTx,
+    opportunityId: string,
+    atual: string | null,
+    descricao: string | undefined,
+  ): Promise<void> {
+    const texto = descricao?.trim() ?? '';
+    if (!texto || (atual ?? '').trim()) return;
+    await tx.opportunity.update({
+      where: { id: opportunityId },
+      data: { description: texto },
+    });
   }
 
   private async marcarSync(

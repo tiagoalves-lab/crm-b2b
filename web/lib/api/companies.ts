@@ -104,6 +104,8 @@ export interface CompanyResumo {
   // Zerados (0 / null) quando o usuário não tem permissão de ver vendas —
   // o backend omite o faturamento em vez de recusar a lista inteira.
   ultimaCompra: string | null;
+  // Interação mais recente da Timeline (anotação, ligação, reunião...).
+  ultimoContato: string | null;
 }
 
 export function listCompaniesResumo(
@@ -142,6 +144,9 @@ export interface CreateCompanyInput {
   cidade?: string;
   uf?: string;
   tags?: string[];
+  // Cartão da Receita (cnpj_lookup) já no cadastro novo — mesmo campo que
+  // a ficha atualiza pelo botão "Buscar dados".
+  customFields?: Record<string, unknown>;
 }
 
 export function createCompany(
@@ -155,9 +160,7 @@ export function getCompany(token: string, id: string): Promise<Company> {
   return apiFetch<Company>(`/companies/${id}`, { token });
 }
 
-export type UpdateCompanyInput = Partial<CreateCompanyInput> & {
-  customFields?: Record<string, unknown>;
-};
+export type UpdateCompanyInput = Partial<CreateCompanyInput>;
 
 export function updateCompany(
   token: string,

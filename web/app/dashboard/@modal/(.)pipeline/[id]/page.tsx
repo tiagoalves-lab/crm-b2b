@@ -1,7 +1,7 @@
 import { getServerAccessToken } from "@/lib/api/auth";
-import { companyDisplayName } from "@/lib/api/companies";
+import { companyRazaoSocialName } from "@/lib/api/companies";
 import { loadOpportunityDetail } from "@/app/dashboard/pipeline/_detail/load";
-import { DetailBody, DetailFooter, OpportunityDetailProvider } from "@/app/dashboard/pipeline/_detail/opportunity-detail";
+import { DetailBody, OpportunityDetailProvider } from "@/app/dashboard/pipeline/_detail/opportunity-detail";
 import OverlayModal from "@/app/dashboard/_overlay/overlay-modal";
 
 export default async function OpportunityDetailModal({
@@ -15,7 +15,7 @@ export default async function OpportunityDetailModal({
 
   return (
     <OpportunityDetailProvider data={data} isModal>
-      <OverlayModal title={companyDisplayName(data.company)} footer={<DetailFooter />} wide xl>
+      <OverlayModal title={companyRazaoSocialName(data.company)} wide xl>
         <DetailBody />
       </OverlayModal>
     </OpportunityDetailProvider>

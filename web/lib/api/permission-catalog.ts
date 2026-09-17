@@ -34,6 +34,8 @@ export const PERMISSION_MODULES = [
   "tarefas",
   "leads",
   "membros",
+  // Item "Treinamento" do menu lateral (2026-09-17) — espelho do backend.
+  "treinamento",
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 
@@ -53,6 +55,7 @@ export const MODULE_LABELS: Record<PermissionModule, string> = {
   tarefas: "Tarefas",
   leads: "Leads / Prospecção",
   membros: "Membros",
+  treinamento: "Treinamento",
 };
 
 // Agrupamento visual — sub-itens de "Empresas" (abas da ficha) aparecem
@@ -71,6 +74,7 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   tarefas: null,
   leads: null,
   membros: null,
+  treinamento: null,
 };
 
 // Nota curta por módulo pra deixar claro, na hora, quando um checkbox não
@@ -83,6 +87,8 @@ export const MODULE_HINTS: Partial<Record<PermissionModule, string>> = {
     "Só \"Ver\" controla algo aqui (a aba aparecer + a lista desta empresa). Criar/editar/excluir de uma oportunidade sempre seguem o módulo Oportunidades (geral).",
   empresas_vendas:
     "Cobre as três abas de faturamento da ficha: Vendas, ABC de Produtos e Serviços. Vem DESLIGADO para representante — o histórico de compra do cliente é informação de gestão.",
+  treinamento:
+    "Libera o item Treinamento no menu lateral, com os slides de uso do CRM. Vem DESLIGADO para todos — marque membro a membro.",
 };
 
 export const ACTION_LABELS: Record<PermissionAction, string> = {
@@ -109,6 +115,7 @@ export const MODULE_ACTIONS: Record<PermissionModule, readonly PermissionAction[
   tarefas: PERMISSION_ACTIONS,
   leads: PERMISSION_ACTIONS,
   membros: ["ver", "criar"],
+  treinamento: ["ver"],
 };
 
 const allTrue: Partial<Record<PermissionAction, boolean>> = {
@@ -149,6 +156,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: allTrue,
     leads: allTrue,
     membros: { ver: true, criar: true },
+    treinamento: viewOnly,
   },
   admin: {
     empresas_visao_geral: viewOnly,
@@ -163,6 +171,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: allTrue,
     leads: allTrue,
     membros: { ver: true, criar: true },
+    treinamento: viewOnly,
   },
   manager: {
     empresas_visao_geral: viewOnly,
@@ -177,6 +186,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: allTrue,
     leads: allTrue,
     membros: { ver: true, criar: true },
+    treinamento: { ver: false },
   },
   sales_rep: {
     empresas_visao_geral: viewOnly,
@@ -194,6 +204,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: noDelete,
     leads: noDelete,
     membros: { ver: true, criar: false },
+    treinamento: { ver: false },
   },
   readonly: {
     empresas_visao_geral: viewOnly,
@@ -208,6 +219,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: viewOnly,
     leads: viewOnly,
     membros: viewOnly,
+    treinamento: { ver: false },
   },
 };
 

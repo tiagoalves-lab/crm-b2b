@@ -1,5 +1,6 @@
 import type { MembershipRole, MembershipStatus } from '@prisma/client';
 import {
+  IsBoolean,
   IsEmail,
   IsIn,
   IsObject,
@@ -74,6 +75,11 @@ export class UpdateMembershipDto {
   @ValidateIf((_object, value) => value !== null)
   @IsUUID()
   managerId?: string | null;
+
+  // Marcação "Vendedor" (2026-09-17). Ausente = não mexer.
+  @IsOptional()
+  @IsBoolean()
+  vendedor?: boolean;
 
   // Mesmo campo/validação de CreateMembershipDto — ver comentário lá.
   @IsOptional()

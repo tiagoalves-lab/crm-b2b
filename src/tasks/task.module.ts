@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivityModule } from '../activities/activity.module';
+import { NotificationModule } from '../notifications/notification.module';
 import { PolicyModule } from '../policy/policy.module';
 import { StorageModule } from '../storage/storage.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
@@ -13,7 +14,13 @@ import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 
 @Module({
-  imports: [TenancyModule, PolicyModule, ActivityModule, StorageModule],
+  imports: [
+    TenancyModule,
+    PolicyModule,
+    ActivityModule,
+    StorageModule,
+    NotificationModule,
+  ],
   controllers: [
     TaskController,
     TaskChecklistController,

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { companyRazaoSocialName, type CompanyResumo } from "@/lib/api/companies";
-import { formatDateOnlyBR } from "@/lib/format-date";
+import { formatDateBR, formatDateOnlyBR } from "@/lib/format-date";
 import { deleteCompanyAction, restoreCompanyAction } from "./actions";
 import SubmitButton from "@/app/_components/submit-button";
 import { useTopbarQuery } from "@/app/_components/topbar-filter";
@@ -21,6 +21,7 @@ export interface EmpresaRow {
   classe: Classe | null;
   ltv: number;
   ultimaCompra: string | null;
+  ultimoContato: string | null;
 }
 
 // A é quem sustenta o faturamento e C é a ponta longa — as cores seguem
@@ -45,11 +46,11 @@ function primaryName(company: CompanyResumo): string {
 // Clicar no título da coluna ordena por ela; clicar de novo inverte. Fica
 // no navegador (não na querystring) porque a lista inteira já vem pro
 // client — mesmo critério da busca por nome logo acima.
-type SortKey = "empresa" | "tipo" | "egestor" | "cidade" | "classe" | "ltv" | "ultimaCompra";
+type SortKey = "empresa" | "tipo" | "egestor" | "cidade" | "classe" | "ltv" | "ultimaCompra" | "ultimoContato";
 
 // Colunas de dinheiro e data começam DECRESCENTES no primeiro clique: quem
 // clica em "LTV" quer ver quem mais comprou, não quem menos comprou.
-const PRIMEIRO_CLIQUE_DESC = new Set<SortKey>(["ltv", "ultimaCompra"]);
+const PRIMEIRO_CLIQUE_DESC = new Set<SortKey>(["ltv", "ultimaCompra", "ultimoContato"]);
 
 // `null` aqui quer dizer "célula vazia" (o traço na tela) — essas linhas
 // vão sempre pro fim, nas duas direções. Empresa sem cidade no meio da
@@ -72,6 +73,8 @@ function valorDaColuna(row: EmpresaRow, key: SortKey): string | number | null {
       return row.ltv > 0 ? row.ltv : null;
     case "ultimaCompra":
       return row.ultimaCompra;
+    case "ultimoContato":
+      return row.ultimoContato;
   }
 }
 
@@ -184,6 +187,11 @@ export default function EmpresasTable({
     />
   );
 
+  // Aba Leads (pedido do usuário, 2026-09-16): lead não tem faturamento,
+  // então a Classe da curva ABC sai e entra o "Último contato", que é o
+  // que importa pra quem ainda está sendo trabalhado.
+  const visaoLeads = currentFiltro === "lead";
+
   const filtroHref = (f: "todas" | "lead" | "cliente") =>
     `/dashboard/empresas?filtro=${f}${showDeleted ? "&includeDeleted=1" : ""}`;
   const deletedHref = showDeleted
@@ -218,14 +226,15 @@ export default function EmpresasTable({
               title: "Tem vínculo com o eGestor (Matriz e/ou Filial)",
             })}
             {th("cidade", "Cidade")}
-            {th("classe", "Classe")}
+            {!visaoLeads && th("classe", "Classe")}
             {th("ltv", "LTV", { alinharDireita: true })}
             {th("ultimaCompra", "Última compra")}
+            {visaoLeads && th("ultimoContato", "Último contato")}
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {visible.map(({ company, tipo, classe, ltv, ultimaCompra }) => (
+          {visible.map(({ company, tipo, classe, ltv, ultimaCompra, ultimoContato }) => (
             <tr key={company.id} className="row-clickable">
               <td>
                 <Link href={`/dashboard/empresas/${company.id}`} className="t-co">
@@ -252,18 +261,20 @@ export default function EmpresasTable({
               <td>
                 {company.cidade ? `${company.cidade}${company.uf ? `/${company.uf}` : ""}` : "—"}
               </td>
-              <td>
-                {classe ? (
-                  <span
-                    className={CLASSE_PILL[classe]}
-                    title="Curva ABC — peso desta empresa no faturamento acumulado"
-                  >
-                    {classe}
-                  </span>
-                ) : (
-                  <span style={{ color: "var(--text-tertiary)" }}>—</span>
-                )}
-              </td>
+              {!visaoLeads && (
+                <td>
+                  {classe ? (
+                    <span
+                      className={CLASSE_PILL[classe]}
+                      title="Curva ABC — peso desta empresa no faturamento acumulado"
+                    >
+                      {classe}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                  )}
+                </td>
+              )}
               <td
                 style={{
                   textAlign: "right",
@@ -276,6 +287,9 @@ export default function EmpresasTable({
               <td className="t-sub">
                 {ultimaCompra ? formatDateOnlyBR(ultimaCompra) : "—"}
               </td>
+              {visaoLeads && (
+                <td className="t-sub">{ultimoContato ? formatDateBR(ultimoContato) : "—"}</td>
+              )}
               <td>
                 <div className="cell-actions">
                   <Link href={`/dashboard/empresas/${company.id}`} className="icon-btn" title="Abrir ficha">
@@ -284,7 +298,7 @@ export default function EmpresasTable({
                       <circle cx="12" cy="12" r="3" />
                     </svg>
                   </Link>
-                  <Link href={`/dashboard/empresas/${company.id}/editar`} className="icon-btn" title="Editar">
+                  <Link href={`/dashboard/empresas/${company.id}?aba=cadastro&editar=1`} className="icon-btn" title="Editar">
                     <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
                       <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />

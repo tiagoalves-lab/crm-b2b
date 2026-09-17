@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
   useContext,
@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { screenLabelFor } from "@/app/dashboard/nav-items";
 
 // Caixa de busca do cabeçalho de TODAS as telas (pedido do usuário,
 // 2026-09-03, no modelo da "Busca geral" do eGestor). Faz duas coisas:
@@ -17,6 +18,14 @@ import {
 // - **Enter ou a lupa**: abre a Busca geral (/dashboard/busca?q=…), que
 //   procura o termo em Empresas, Contatos, Prospecção, Pipeline e Tarefas
 //   de uma vez, agrupado por seção.
+//
+// Qual dos dois acontece é o **escopo**, escolhido no seletor dentro da
+// própria caixa (pedido do usuário, 2026-09-15, no modelo do Mercado
+// Livre): "em <tela atual>" (padrão) ou "em todo o CRM". No escopo da
+// tela, digitar filtra e o Enter não sai do lugar; no escopo global o
+// filtro local é desligado (a tela para de esconder linhas) e o Enter/a
+// lupa abrem a Busca geral. Trocar pra "em todo o CRM" com o termo já
+// digitado busca na hora, sem precisar de um segundo Enter.
 //
 // O filtro local tem dois modos, decididos por quem renderiza:
 //
@@ -40,7 +49,8 @@ import {
 //
 // `localFilter={false}` desliga o filtro-enquanto-digita (usado na própria
 // tela de Busca geral: ali digitar é preparar a próxima busca, não sumir
-// com os resultados atuais).
+// com os resultados atuais — e o escopo já é o CRM inteiro, então o
+// seletor nem aparece).
 
 const FilterContext = createContext<{
   query: string;
@@ -52,7 +62,8 @@ export function TopbarFilterProvider({ children }: { children: ReactNode }) {
   return <FilterContext.Provider value={{ query, setQuery }}>{children}</FilterContext.Provider>;
 }
 
-// Texto atual do filtro (vazio fora de um provider).
+// Texto atual do filtro (vazio fora de um provider, e também quando o
+// escopo é "em todo o CRM" — aí a tela não filtra nada).
 export function useTopbarQuery(): string {
   return useContext(FilterContext)?.query ?? "";
 }
@@ -91,11 +102,25 @@ export default function TopbarFilter({
   localFilter?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const ctx = useContext(FilterContext);
-  const [local, setLocal] = useState(initialQuery);
-  const query = ctx ? ctx.query : local;
-  const setQuery = ctx ? ctx.setQuery : setLocal;
-  const domMode = ctx === null && localFilter;
+  const setCtxQuery = ctx?.setQuery;
+
+  const [text, setText] = useState(initialQuery);
+  const [scope, setScope] = useState<"tela" | "tudo">("tela");
+
+  // Sem nome de tela (Busca geral) ou sem filtro local não há o que
+  // escolher: o escopo é o CRM inteiro e o seletor não aparece.
+  const screenLabel = localFilter ? screenLabelFor(pathname) : null;
+  const filtering = screenLabel !== null && scope === "tela";
+  const domMode = ctx === null && filtering;
+
+  // Modo contexto: a tabela lê o texto daqui. No escopo global mandamos
+  // vazio, senão a tela continuaria escondendo linhas por trás da busca.
+  useEffect(() => {
+    if (!setCtxQuery) return;
+    setCtxQuery(filtering ? text : "");
+  }, [setCtxQuery, filtering, text]);
 
   useEffect(() => {
     if (!domMode) return;
@@ -105,7 +130,7 @@ export default function TopbarFilter({
     let frame = 0;
     const apply = () => {
       frame = 0;
-      const needle = normalizeForFilter(query.trim());
+      const needle = normalizeForFilter(text.trim());
       root.querySelectorAll<HTMLElement>(ROW_SELECTOR).forEach((el) => {
         const show =
           needle === "" ||
@@ -125,17 +150,22 @@ export default function TopbarFilter({
     return () => {
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
-      // Ao trocar de tela ou limpar o texto, tudo volta a aparecer.
+      // Ao trocar de tela, de escopo ou limpar o texto, tudo reaparece.
       root.querySelectorAll<HTMLElement>(ROW_SELECTOR).forEach((el) => {
         if (el.hidden) el.hidden = false;
       });
     };
-  }, [domMode, query]);
+  }, [domMode, text]);
 
-  function buscarEmTudo() {
-    const term = query.trim();
-    if (term.length < 2) return;
+  function buscarEmTudo(term: string) {
+    if (term.trim().length < 2) return;
     router.push(buscaGeralHref(term));
+  }
+
+  function submit() {
+    // Escopo "nesta tela" já filtrou enquanto digitava — Enter não navega.
+    if (filtering) return;
+    buscarEmTudo(text);
   }
 
   return (
@@ -146,25 +176,46 @@ export default function TopbarFilter({
       </svg>
       <input
         type="search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            buscarEmTudo();
+            submit();
           }
         }}
-        placeholder={placeholder ?? "Buscar cliente, contato, oportunidade, tarefa… (Enter busca em tudo)"}
+        placeholder={placeholder ?? "Buscar cliente, contato, oportunidade, tarefa…"}
         aria-label="Buscar"
         autoComplete="off"
       />
+      {screenLabel && (
+        <div className="topbar-filter-scope">
+          <select
+            aria-label="Onde buscar"
+            value={scope}
+            onChange={(event) => {
+              const next = event.target.value === "tudo" ? "tudo" : "tela";
+              setScope(next);
+              // Já tem termo digitado? Trocar pra "todo o CRM" busca na
+              // hora — esperar um Enter extra parece que nada aconteceu.
+              if (next === "tudo") buscarEmTudo(text);
+            }}
+          >
+            <option value="tela">em {screenLabel}</option>
+            <option value="tudo">em todo o CRM</option>
+          </select>
+          <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </div>
+      )}
       <button
         type="button"
         className="topbar-filter-go"
-        onClick={buscarEmTudo}
-        disabled={query.trim().length < 2}
-        title="Buscar em tudo (Enter)"
-        aria-label="Buscar em tudo"
+        onClick={submit}
+        disabled={!filtering && text.trim().length < 2}
+        title={filtering ? `Buscar em ${screenLabel}` : "Buscar em todo o CRM (Enter)"}
+        aria-label={filtering ? `Buscar em ${screenLabel}` : "Buscar em todo o CRM"}
       >
         <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
           <circle cx="11" cy="11" r="8" />

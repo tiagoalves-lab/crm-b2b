@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { companyDisplayName } from "@/lib/api/companies";
+import { companyDisplayName, companyRazaoSocialName } from "@/lib/api/companies";
 import { listMemberships } from "@/lib/api/memberships";
+import { listOpportunities } from "@/lib/api/opportunities";
+import { listPipelines } from "@/lib/api/pipelines";
 import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
-import type { Membership, Task } from "@/lib/api/types";
+import type { Membership, Opportunity, Pipeline, Task } from "@/lib/api/types";
 import { dayKeyBR, formatDateOnlyBR } from "@/lib/format-date";
 import CalendarView from "./calendar-view";
 import TarefasTable from "./tarefas-table";
@@ -53,7 +55,23 @@ export default async function TarefasPage({
   const token = await getServerAccessToken();
   const currentView: ViewName = view === "calendario" ? "calendario" : "tabela";
 
-  const [{ items: tasks }, memberships] = await Promise.all([listTasks(token), listMemberships(token)]);
+  // Propostas do Pipeline (2026-09-15) só são buscadas na visão de
+  // calendário. Quem não tem permissão de ver oportunidades recebe 403 do
+  // backend — aí o calendário mostra só as tarefas, sem derrubar a tela.
+  const [{ items: tasks }, memberships, openOpportunities, pipelines] = await Promise.all([
+    listTasks(token),
+    listMemberships(token),
+    currentView === "calendario"
+      ? listOpportunities(token, { status: "open" })
+          .then((res) => res.items)
+          .catch((): Opportunity[] => [])
+      : Promise.resolve<Opportunity[]>([]),
+    currentView === "calendario"
+      ? listPipelines(token)
+          .then((res) => res.items)
+          .catch((): Pipeline[] => [])
+      : Promise.resolve<Pipeline[]>([]),
+  ]);
 
   const baseHref = `/dashboard/tarefas?view=${currentView}${month ? `&month=${month}` : ""}`;
   const viewHref = (v: ViewName) => `/dashboard/tarefas?view=${v}${month && v === "calendario" ? `&month=${month}` : ""}`;
@@ -97,6 +115,28 @@ export default async function TarefasPage({
     vinculoLabel: targetLabel(task),
   }));
 
+  // Só oportunidade em "Negociação e Fechamento" entra no calendário
+  // (pedido do usuário, 2026-09-16) — as das etapas de proposta ficam só
+  // no quadro. É a ÚLTIMA etapa de cada pipeline, mesma referência do
+  // botão "Marcar Fechada" do card (stage.order === maxOrder).
+  const ultimaEtapa = new Set(
+    pipelines.flatMap((p) => {
+      const maior = Math.max(...p.stages.map((st) => st.order));
+      return p.stages.filter((st) => st.order === maior).map((st) => st.id);
+    }),
+  );
+  // Sem previsão de fechamento não há dia pra cair — fica só no quadro.
+  const calendarOpportunities = openOpportunities
+    .filter((opp) => opp.expectedCloseDate && !opp.deletedAt && ultimaEtapa.has(opp.stageId))
+    .map((opp) => ({
+      id: opp.id,
+      version: opp.version,
+      closeDate: opp.expectedCloseDate as string,
+      companyLabel: opp.company ? companyRazaoSocialName(opp.company) : "—",
+      amountLabel: `${opp.currency} ${Number(opp.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+      ownerLabel: memberDisplayName(opp.ownerUserId, memberships),
+    }));
+
   return (
     <>
       <div className="topbar">
@@ -134,7 +174,7 @@ export default async function TarefasPage({
         {currentView === "tabela" ? (
           <TarefasTable rows={tableRows} baseHref={baseHref} />
         ) : (
-          <CalendarView tasks={calendarRows} month={month} />
+          <CalendarView tasks={calendarRows} opportunities={calendarOpportunities} month={month} />
         )}
       </div>
     </>

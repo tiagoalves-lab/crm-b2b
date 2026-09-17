@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
+import { REFRESH_SESSION_KEY, TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { AssigneeOption } from "@/lib/api/assignee-options";
 import type { Contact } from "@/lib/api/types";
 import { createTaskModalAction, listCompanyContactsAction } from "../actions";
@@ -63,6 +63,9 @@ export default function NovaForm({
   useEffect(() => {
     if (state?.ok) {
       sessionStorage.setItem(TOAST_SESSION_KEY, "Tarefa criada");
+      // Mesma marca de refresh do cadastro de oportunidade (2026-09-15):
+      // sem ela a tarefa nova só aparecia na lista depois de um F5.
+      sessionStorage.setItem(REFRESH_SESSION_KEY, "1");
       router.back();
     }
   }, [state, router]);

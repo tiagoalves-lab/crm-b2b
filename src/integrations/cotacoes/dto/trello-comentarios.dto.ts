@@ -2,11 +2,17 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsOptional,
+  IsString,
   Matches,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { TrelloComentarioDto } from './trello-comentario.dto';
-import { TRELLO_COMENTARIOS_MAX } from './trello-vinculo.dto';
+import {
+  TRELLO_COMENTARIOS_MAX,
+  TRELLO_DESCRICAO_MAX,
+} from './trello-vinculo.dto';
 
 // Botão "Sincronizar" da tela Trello do app de cotações: reespelha o
 // chat do cartão no card do CRM. Só mensagem — a lista de itens e os
@@ -23,4 +29,13 @@ export class TrelloComentariosDto {
   @ValidateNested({ each: true })
   @Type(() => TrelloComentarioDto)
   comentarios!: TrelloComentarioDto[];
+
+  // Descrição do cartão, aplicada SÓ quando a do card está vazia — é o
+  // caminho de correção das oportunidades criadas antes de a descrição
+  // viajar no cadastro. Sincronizar continua sem sobrescrever nada que
+  // tenha sido escrito no CRM.
+  @IsOptional()
+  @IsString()
+  @MaxLength(TRELLO_DESCRICAO_MAX)
+  descricao?: string;
 }

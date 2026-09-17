@@ -20,6 +20,10 @@ import { TrelloComentarioDto } from './trello-comentario.dto';
 // não virar uma transação longa.
 export const TRELLO_COMENTARIOS_MAX = 200;
 
+// Mesmo teto do `description` do CreateOpportunityDto — é pra lá que o
+// texto vai.
+export const TRELLO_DESCRICAO_MAX = 10000;
+
 // "Cadastrar Oportunidade" na tela Trello do app de cotações: cria a
 // oportunidade no Funil Padrão a partir de um cartão da lista
 // "SOLICITAÇÃO DE PROPOSTAS". Idempotente pelo card_id — apertar duas
@@ -60,6 +64,15 @@ export class TrelloVinculoDto {
   @IsString()
   @MaxLength(120)
   representante?: string;
+
+  // Descrição do cartão, que vira a "Descrição" da oportunidade: é onde
+  // o representante escreve o que está sendo negociado (máquina,
+  // opcionais, origem da indicação). Texto simples, como o cartão — o
+  // Trello aceita markdown, mas o campo do CRM não formata.
+  @IsOptional()
+  @IsString()
+  @MaxLength(TRELLO_DESCRICAO_MAX)
+  descricao?: string;
 
   // O que o cliente pediu — vira a lista lateral de itens do card
   // (opportunity_items). Vem dos itens de checklist do cartão, revisados

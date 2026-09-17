@@ -46,6 +46,9 @@ export interface Membership {
   // total no backend), mas o campo continua vindo preenchido/null igual
   // pros dois.
   permissions?: PermissionMatrix | null;
+  // Marcação "Vendedor" (2026-09-17): só quem tem entra na lista
+  // "Representante" do card de oportunidade.
+  vendedor?: boolean;
 }
 
 export interface MeResponse {
@@ -159,6 +162,11 @@ export interface Opportunity {
   amount: string;
   currency: string;
   expectedCloseDate: string | null;
+  // SLA automático (2026-09-16): dia em que a proposta foi pra Negociação
+  // (vazio = pendente) e dia do reinício pedido pelo cliente. Ver
+  // app/dashboard/pipeline/sla.ts.
+  slaDueDate: string | null;
+  slaRevisionDate: string | null;
   // Detalhamento livre do que está sendo negociado (2026-09-04).
   description: string | null;
   status: OpportunityStatus;
@@ -167,6 +175,10 @@ export interface Opportunity {
   deletedAt: string | null;
   createdAt: string;
   closedAt: string | null;
+  // Só em GET /opportunities (lista): alguém destacou QUEM PEDIU a lista
+  // num comentário deste card e ele ainda não deu baixa (2026-09-14). É o
+  // que acende "Pendência(s) para você" no card do quadro.
+  pendenciaParaMim?: boolean;
 }
 
 // Chat de comentários do card de Oportunidade (feature nova, fora do
@@ -184,7 +196,27 @@ export interface OpportunityComment {
   // o usuário de sistema, e a tela mostra `externalAuthor` no lugar.
   externalRef?: string | null;
   externalAuthor?: string | null;
+  // Comentário fixado (2026-09-09): sobe pro topo do histórico de
+  // anotações do Pipeline. Nulo = não fixado.
+  pinnedAt?: string | null;
+  pinnedByUserId?: string | null;
+  // Membros destacados no comentário e quem já deu baixa (2026-09-14).
+  // Quem está na primeira lista e fora da segunda tem pendência no card.
+  mentionedUserIds?: string[];
+  mentionsDoneUserIds?: string[];
   createdAt: string;
+}
+
+// Linha do histórico de anotações do Pipeline (2026-09-09): o comentário
+// com a referência mínima do card de onde ele veio.
+export interface OpportunityCommentFeedItem extends OpportunityComment {
+  // Se QUEM PEDIU já leu a anotação (2026-09-17) — cada pessoa tem o seu.
+  lido: boolean;
+  opportunity: {
+    id: string;
+    status: OpportunityStatus;
+    company: CompanyRef | null;
+  };
 }
 
 // Lista lateral de itens do card (2026-09-04) — o que está sendo
@@ -348,6 +380,9 @@ export interface RawLead {
   // Mesmo indicativo de Company.emRecuperacaoJudicial acima — coluna
   // própria em raw_leads (não deriva da company associada).
   emRecuperacaoJudicial: boolean;
+  // Só vem na listagem (GET /raw-leads): interação mais recente da
+  // Timeline da empresa do lead.
+  ultimoContato?: string | null;
   createdAt: string;
   updatedAt: string;
 }

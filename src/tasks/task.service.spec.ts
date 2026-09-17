@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { ActivityService } from '../activities/activity.service';
+import type { NotificationService } from '../notifications/notification.service';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
@@ -85,11 +86,16 @@ function fakeTx(
 
 describe('TaskService', () => {
   let service: TaskService;
+  let notifications: NotificationService;
 
   beforeEach(() => {
+    notifications = {
+      avisarTarefaAtribuida: jest.fn(),
+    } as unknown as NotificationService;
     service = new TaskService(
       new PolicyService(),
       new ActivityService(new PolicyService()),
+      notifications,
     );
   });
 
@@ -286,6 +292,44 @@ describe('TaskService', () => {
     });
   });
 
+  // Aviso por e-mail de tarefa designada (2026-09-15). O envio em si é
+  // testado em notifications/notification.service.spec.ts; aqui o que
+  // importa é QUANDO o gatilho dispara.
+  describe('update — aviso de responsável', () => {
+    const existingTask = {
+      id: 'task-1',
+      workspaceId: WORKSPACE_ID,
+      assigneeUserId: USER_ID,
+      companyId: COMPANY_ID,
+      opportunityId: null,
+      status: 'pending',
+      title: 'Ligar pro cliente',
+    };
+
+    it('avisa quando o responsável muda', async () => {
+      const tx = fakeTx({ existingTask });
+      await service.update(tx, membership(), 'task-1', {
+        assigneeUserId: 'outra-pessoa',
+      });
+      expect(notifications.avisarTarefaAtribuida).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: 'task-1',
+          assigneeUserId: 'outra-pessoa',
+          actorUserId: USER_ID,
+        }),
+      );
+    });
+
+    it('não avisa quando o formulário reenvia o mesmo responsável', async () => {
+      const tx = fakeTx({ existingTask });
+      await service.update(tx, membership(), 'task-1', {
+        title: 'Título corrigido',
+        assigneeUserId: USER_ID,
+      });
+      expect(notifications.avisarTarefaAtribuida).not.toHaveBeenCalled();
+    });
+  });
+
   describe('update — contato obrigatório pra ligação/reunião/visita/e-mail', () => {
     const existingTask = {
       id: 'task-1',
@@ -389,5 +433,86 @@ describe('TaskService', () => {
       >;
       expect(update.mock.calls[0][0].data.tags).toBeUndefined();
     });
+  });
+});
+
+// Registro de exclusões (2026-09-16): duas tarefas sumiram sem rastro. A
+// exclusão tem que deixar quem, o quê e a cópia do que saiu — e nunca
+// acontecer sem esse registro.
+describe('TaskService.remove — registro de exclusões', () => {
+  const existingTask = {
+    id: 'task-1',
+    workspaceId: WORKSPACE_ID,
+    assigneeUserId: USER_ID,
+    createdBy: USER_ID,
+    companyId: COMPANY_ID,
+    opportunityId: null,
+    status: 'pending',
+    title: 'Cotar máquina',
+  };
+
+  function montar(registroFalha = false) {
+    const ordem: string[] = [];
+    const base = fakeTx({ existingTask }) as unknown as Record<string, object>;
+    const create = jest.fn().mockImplementation(() => {
+      ordem.push('registro');
+      return registroFalha
+        ? Promise.reject(new Error('falha ao gravar registro'))
+        : Promise.resolve({});
+    });
+    const del = jest.fn().mockImplementation(() => {
+      ordem.push('delete');
+      return Promise.resolve({});
+    });
+    const tx = {
+      ...base,
+      company: {
+        findFirst: jest.fn().mockResolvedValue({ razaoSocial: 'EMPRESA TESTE LTDA' }),
+      },
+      task: { ...(base.task as object), delete: del },
+      taskComment: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'c-1', body: 'Cliente pediu desconto' }]),
+      },
+      taskChecklistItem: { findMany: jest.fn().mockResolvedValue([]) },
+      taskAttachment: { findMany: jest.fn().mockResolvedValue([]) },
+      deletionLog: { create },
+    } as unknown as TenantTx;
+    const service = new TaskService(
+      new PolicyService(),
+      new ActivityService(new PolicyService()),
+      { avisarTarefaAtribuida: jest.fn() } as unknown as NotificationService,
+    );
+    return { service, tx, create, del, ordem };
+  }
+
+  it('grava o registro com título, empresa e comentários ANTES de excluir', async () => {
+    const { service, tx, create, del, ordem } = montar();
+
+    await service.remove(tx, membership(), 'task-1');
+
+    expect(ordem).toEqual(['registro', 'delete']);
+    expect(del).toHaveBeenCalledWith({ where: { id: 'task-1' } });
+    const data = create.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      workspaceId: WORKSPACE_ID,
+      actorUserId: USER_ID,
+      entidade: 'tarefa',
+      registroId: 'task-1',
+      titulo: 'Cotar máquina',
+      contexto: 'EMPRESA TESTE LTDA',
+    });
+    expect(data.snapshot.title).toBe('Cotar máquina');
+    expect(data.snapshot.comentarios).toEqual([
+      { id: 'c-1', body: 'Cliente pediu desconto' },
+    ]);
+  });
+
+  it('CRÍTICO: se o registro falhar, a tarefa não é excluída', async () => {
+    const { service, tx, del } = montar(true);
+
+    await expect(service.remove(tx, membership(), 'task-1')).rejects.toThrow(
+      'falha ao gravar registro',
+    );
+    expect(del).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,7 @@ export interface CreateMembershipInput {
   // padrão do papel (ver DEFAULT_PERMISSIONS em permission-catalog.ts,
   // nos dois lados).
   permissions?: PermissionMatrix;
+  vendedor?: boolean;
 }
 
 // Cria o login (Supabase Auth) e o Membership numa chamada só — o
@@ -55,6 +56,7 @@ export interface UpdateMembershipInput {
   // Mesmo campo de CreateMembershipInput — ausente = não mexe na matriz
   // já salva.
   permissions?: PermissionMatrix;
+  vendedor?: boolean;
 }
 
 export function updateMembership(

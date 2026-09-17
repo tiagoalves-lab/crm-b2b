@@ -4,23 +4,39 @@ import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { ApiError } from "@/lib/api/client";
-import { companyDisplayName, createCompany, lookupCnpj } from "@/lib/api/companies";
-import { createOpportunity, deleteOpportunity, updateOpportunity } from "@/lib/api/opportunities";
+import { listActivities } from "@/lib/api/activities";
+import { companyDisplayName } from "@/lib/api/companies";
+import {
+  createOpportunity,
+  deleteOpportunity,
+  reorderOpportunities,
+  updateOpportunity,
+} from "@/lib/api/opportunities";
 import { createTask, type CreateTaskInput } from "@/lib/api/tasks";
 import {
   createUploadUrl,
   deleteAttachment,
   getDownloadUrl,
   listAttachments,
+  publishAttachment,
   type OpportunityAttachment,
 } from "@/lib/api/opportunity-attachments";
-import { createComment, deleteComment } from "@/lib/api/opportunity-comments";
+import {
+  createComment,
+  deleteComment,
+  markAllCommentsRead,
+  setCommentMentions,
+  setCommentRead,
+  setCommentPinned,
+  setMentionDone,
+} from "@/lib/api/opportunity-comments";
 import { createItem, deleteItem, updateItem } from "@/lib/api/opportunity-items";
+import { createLostReason, listLostReasons, type LostReason } from "@/lib/api/opportunity-lost-reasons";
 import { createPipeline } from "@/lib/api/pipelines";
 import { approveLead } from "@/lib/api/raw-leads";
 import { searchEmpresaLead, type BuscaEmpresaLeadResult } from "@/lib/api/search";
-import type { FormState } from "@/app/_components/action-form";
-import type { Opportunity, OpportunityComment, OpportunityItem } from "@/lib/api/types";
+import type { SlaTratamento } from "./sla";
+import type { Activity, Opportunity, OpportunityComment, OpportunityItem } from "@/lib/api/types";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -50,20 +66,20 @@ export async function createPipelineAction(formData: FormData) {
 
 // Devolve o resultado em vez de redirecionar no sucesso — usado via
 // useActionState (nova/nova-card.tsx) pro modal fechar com router.back()
-// no client depois de confirmar. Mesmo motivo de createCompanyAction em
+// no client depois de confirmar. Mesmo motivo de criarEmpresaAction em
 // empresas/actions.ts: redirect() de dentro da Server Action não derruba
 // o slot @modal da rota interceptada.
 //
 // Cadastro pelo card (2026-09-04): cria a oportunidade já com a lista de
 // itens e em seguida grava o comentário inicial — com as tags escolhidas
-// — e o anexo inicial, mesma dança de tarefas/actions.ts
-// createTaskModalAction. Se comentário/anexo falharem DEPOIS de a
+// — mesma dança de tarefas/actions.ts createTaskModalAction (anexos vão
+// depois, pelo navegador). Se comentário/tarefa falharem DEPOIS de a
 // oportunidade existir, devolve ok mesmo assim (senão um segundo clique
 // criaria a oportunidade de novo) e avisa no toast o que faltou.
 export async function createOpportunityAction(
-  _prevState: ActionResult<{ toast: string }> | null,
+  _prevState: ActionResult<{ toast: string; opportunityId: string }> | null,
   formData: FormData,
-): Promise<ActionResult<{ toast: string }>> {
+): Promise<ActionResult<{ toast: string; opportunityId: string }>> {
   const token = await getServerAccessToken();
   const companyId = String(formData.get("companyId") ?? "").trim();
 
@@ -80,6 +96,7 @@ export async function createOpportunityAction(
       amount: Number(formData.get("amount")),
       currency: String(formData.get("currency") ?? "BRL").toUpperCase(),
       expectedCloseDate: emptyToUndefined(formData.get("expectedCloseDate")),
+      description: emptyToUndefined(formData.get("description")),
       items: itemsFrom(formData),
     });
   } catch (error) {
@@ -95,14 +112,8 @@ export async function createOpportunityAction(
       pendencias.push(`o comentário (${errorMessage(error)})`);
     }
   }
-  const file = formData.get("file");
-  if (file instanceof File && file.size > 0) {
-    try {
-      await enviarAnexo(token, created.id, file);
-    } catch (error) {
-      pendencias.push(`o anexo (${errorMessage(error)})`);
-    }
-  }
+  // Anexos do cadastro NÃO vêm por aqui (2026-09-17): o card manda depois,
+  // do navegador, com o id devolvido abaixo — ver nova-card.tsx.
 
   // Tarefa cadastrada junto (2026-09-04) — só se a seção "Tarefa" foi
   // aberta e preenchida no card; nasce vinculada à oportunidade nova.
@@ -132,6 +143,7 @@ export async function createOpportunityAction(
   return {
     ok: true,
     data: {
+      opportunityId: created.id,
       toast:
         pendencias.length === 0
           ? criado
@@ -156,26 +168,6 @@ function tagsFrom(formData: FormData, field: "tags" | "taskTags"): string[] {
   return formData.getAll(field).filter((t): t is string => typeof t === "string" && t.trim() !== "");
 }
 
-// O binário nunca passa pelo NestJS: o backend só assina a URL de upload;
-// quem faz o PUT é esta Server Action, direto no Storage do Supabase —
-// mesmo padrão de tarefas/actions.ts.
-async function enviarAnexo(token: string, opportunityId: string, file: File): Promise<void> {
-  const { uploadUrl } = await createUploadUrl(token, opportunityId, {
-    fileName: file.name,
-    mimeType: file.type || undefined,
-    sizeBytes: file.size,
-  });
-  const bytes = await file.arrayBuffer();
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    body: bytes,
-    headers: { "Content-Type": file.type || "application/octet-stream" },
-  });
-  if (!res.ok) {
-    throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
-  }
-}
-
 
 
 // Drag-and-drop no board (SPEC-CRM-GAMA.md §4.2) chama isso direto — não é
@@ -188,16 +180,40 @@ export async function moveOpportunityStageAction(
   opportunityId: string,
   stageId: string,
   version: number,
+  // Obrigatório só ao voltar de Negociação para uma etapa de proposta
+  // (SLA automático, 2026-09-16) — a tela pergunta antes de chamar.
+  slaTratamento?: SlaTratamento,
 ): Promise<{ ok: boolean; version?: number; error?: string }> {
   const token = await getServerAccessToken();
+  if (slaTratamento !== undefined && slaTratamento !== "erro_elaboracao" && slaTratamento !== "alteracao_cliente") {
+    return { ok: false, error: "Tratamento de SLA inválido." };
+  }
   let updated;
   try {
-    updated = await updateOpportunity(token, opportunityId, { version, stageId });
+    updated = await updateOpportunity(token, opportunityId, { version, stageId, slaTratamento });
   } catch (error) {
     return { ok: false, error: actionError(error, "Erro ao mover a oportunidade.") };
   }
   revalidatePath("/dashboard/pipeline");
   return { ok: true, version: updated.version };
+}
+
+// Nova ordem dos cards de uma coluna (2026-09-14) — arrasto vertical no
+// quadro. Não mexe na versão da oportunidade (ver
+// OpportunityService#reorder no backend), então não conflita com o
+// "Salvar" de um card aberto.
+export async function reorderOpportunitiesAction(
+  stageId: string,
+  orderedIds: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  const token = await getServerAccessToken();
+  try {
+    await reorderOpportunities(token, String(stageId), orderedIds.map(String));
+  } catch (error) {
+    return { ok: false, error: actionError(error, "Erro ao reordenar os cards.") };
+  }
+  revalidatePath("/dashboard/pipeline");
+  return { ok: true };
 }
 
 // ---------- Seletor de empresa/lead (§3.5/§4.2.1) ----------
@@ -227,38 +243,6 @@ export async function approveLeadAction(
     return { ok: false, message: actionError(error, "Erro ao aprovar o lead.") };
   }
 }
-
-export async function createCompanyFromCnpjAction(
-  cnpj: string,
-): Promise<ActionResult<{ id: string; name: string }>> {
-  const token = await getServerAccessToken();
-  try {
-    const data = await lookupCnpj(token, cnpj);
-    const company = await createCompany(token, {
-      razaoSocial: data.razaoSocial,
-      emRecuperacaoJudicial: data.emRecuperacaoJudicial,
-      fantasia: data.fantasia,
-      cpfCnpj: data.cpfCnpj,
-      tipo: data.tipo,
-      emails: data.emails,
-      fones: data.fones,
-      logradouro: data.logradouro,
-      numero: data.numero,
-      complemento: data.complemento,
-      bairro: data.bairro,
-      cep: data.cep,
-      cidade: data.cidade,
-      uf: data.uf,
-    });
-    revalidatePath("/dashboard/empresas");
-    return { ok: true, data: { id: company.id, name: companyDisplayName(company) } };
-  } catch (error) {
-    return { ok: false, message: actionError(error, "Erro ao cadastrar a empresa.") };
-  }
-}
-
-
-
 
 // ---------- Comentários (feature nova, fora do SPEC-CRM-GAMA.md) ----------
 
@@ -338,32 +322,74 @@ export async function saveOpportunityDetailAction(
   }
 }
 
-export async function markLostFormAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const token = await getServerAccessToken();
-  const id = String(formData.get("id"));
-  const version = Number(formData.get("version"));
-  const lostReason = String(formData.get("lostReason") ?? "").trim();
-  try {
-    await updateOpportunity(token, id, {
-      version,
-      status: "lost",
-      lostReason: lostReason || "Não informado",
-    });
-  } catch (error) {
-    return detailFail(error);
-  }
-  return { ok: true, message: "Oportunidade marcada como perdida" };
-}
-
+// Perda sempre com motivo da lista (2026-09-17): o modal "Por que a
+// negociação foi perdida?" só oferece motivos cadastrados — ver
+// opportunity-lost-reasons.ts.
 export async function setOpportunityStatusAction(
   id: string,
   version: number,
-  status: "won" | "open",
+  status: "won" | "open" | "lost",
+  lostReason?: string,
 ): Promise<DetailResult<Opportunity>> {
-  if (status !== "won" && status !== "open") return { ok: false, message: "Situação inválida." };
+  if (status !== "won" && status !== "open" && status !== "lost") {
+    return { ok: false, message: "Situação inválida." };
+  }
+  const motivo = lostReason?.trim();
+  if (status === "lost" && !motivo) return { ok: false, message: "Escolha o motivo da perda." };
   const token = await getServerAccessToken();
   try {
-    return { ok: true, data: await updateOpportunity(token, String(id), { version: Number(version), status }) };
+    return {
+      ok: true,
+      data: await updateOpportunity(token, String(id), {
+        version: Number(version),
+        status,
+        lostReason: status === "lost" ? motivo : undefined,
+      }),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+export async function listLostReasonsAction(): Promise<DetailResult<LostReason[]>> {
+  const token = await getServerAccessToken();
+  try {
+    return { ok: true, data: await listLostReasons(token) };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+export async function createLostReasonAction(nome: string): Promise<DetailResult<LostReason>> {
+  const texto = String(nome ?? "").trim();
+  if (!texto) return { ok: false, message: "Digite o motivo." };
+  const token = await getServerAccessToken();
+  try {
+    return { ok: true, data: await createLostReason(token, texto) };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Arrasto da oportunidade no calendário de Tarefas (2026-09-16): muda só
+// a previsão de fechamento. Mesmo molde de moveTaskDueDateAction.
+export async function moveOpportunityCloseDateAction(
+  id: string,
+  version: number,
+  dayKey: string,
+): Promise<DetailResult<Opportunity>> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dayKey))) {
+    return { ok: false, message: "Data inválida." };
+  }
+  const token = await getServerAccessToken();
+  try {
+    const data = await updateOpportunity(token, String(id), {
+      version: Number(version),
+      expectedCloseDate: String(dayKey),
+    });
+    revalidatePath("/dashboard/tarefas");
+    revalidatePath("/dashboard/pipeline");
+    return { ok: true, data };
   } catch (error) {
     return detailFail(error);
   }
@@ -383,6 +409,8 @@ export async function addOpportunityCommentAction(
   opportunityId: string,
   body: string,
   tags: string[] = [],
+  // Membros destacados no comentário (2026-09-14).
+  mentions: string[] = [],
 ): Promise<DetailResult<OpportunityComment>> {
   const text = trimOrUndefined(body);
   if (!text) return { ok: false, message: "Escreva o comentário antes de enviar." };
@@ -395,6 +423,52 @@ export async function addOpportunityCommentAction(
         String(opportunityId),
         text,
         Array.isArray(tags) ? tags.map(String) : [],
+        Array.isArray(mentions) ? mentions.map(String) : [],
+      ),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Destacar membros num comentário já publicado (2026-09-14) — a lista
+// substitui a anterior.
+export async function setOpportunityCommentMentionsAction(
+  opportunityId: string,
+  commentId: string,
+  mentions: string[],
+): Promise<DetailResult<OpportunityComment>> {
+  const token = await getServerAccessToken();
+  try {
+    return {
+      ok: true,
+      data: await setCommentMentions(
+        token,
+        String(opportunityId),
+        String(commentId),
+        Array.isArray(mentions) ? mentions.map(String) : [],
+      ),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Baixa da pendência de um comentário que destacou você (2026-09-14).
+export async function setOpportunityMentionDoneAction(
+  opportunityId: string,
+  commentId: string,
+  resolvida: boolean,
+): Promise<DetailResult<OpportunityComment>> {
+  const token = await getServerAccessToken();
+  try {
+    return {
+      ok: true,
+      data: await setMentionDone(
+        token,
+        String(opportunityId),
+        String(commentId),
+        Boolean(resolvida),
       ),
     };
   } catch (error) {
@@ -470,19 +544,95 @@ export async function removeOpportunityCommentAction(
   }
 }
 
-// O binário nunca passa pelo NestJS: o backend só assina a URL de upload;
-// quem faz o PUT é esta Server Action, direto no Storage do Supabase.
-export async function uploadOpportunityAttachmentClientAction(
+// Histórico do card (2026-09-14) — a trilha que o backend grava a cada
+// troca de etapa, edição de campo e mexida na lista de itens. Carregada
+// só quando o usuário aperta "Histórico" no rodapé do card.
+export async function listOpportunityHistoryAction(
   opportunityId: string,
-  formData: FormData,
-): Promise<DetailResult<OpportunityAttachment[]>> {
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, message: "Selecione um arquivo pra enviar." };
-  }
+): Promise<DetailResult<Activity[]>> {
   const token = await getServerAccessToken();
   try {
-    await enviarAnexo(token, String(opportunityId), file);
+    const { items } = await listActivities(token, { opportunityId: String(opportunityId) });
+    return { ok: true, data: items };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Fixar/desafixar comentário (2026-09-09) — o fixado abre no topo do
+// histórico de anotações do Pipeline (ícone da barra da tela).
+export async function setOpportunityCommentPinnedAction(
+  opportunityId: string,
+  commentId: string,
+  pinned: boolean,
+): Promise<DetailResult<OpportunityComment>> {
+  const token = await getServerAccessToken();
+  try {
+    return {
+      ok: true,
+      data: await setCommentPinned(
+        token,
+        String(opportunityId),
+        String(commentId),
+        Boolean(pinned),
+      ),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Upload pelo navegador (2026-09-17): o arquivo passava por uma Server
+// Action e a Vercel corta o corpo em 1 MB ("Body exceeded 1 MB limit" —
+// qualquer PDF maior quebrava o card). Agora a action só registra o anexo
+// e devolve a URL assinada; o navegador faz o PUT direto no Storage do
+// Supabase (origem já liberada no connect-src da CSP). Fluxo completo em
+// _detail/enviar-anexos.ts.
+export async function prepareOpportunityAttachmentAction(
+  opportunityId: string,
+  file: { fileName: string; mimeType?: string; sizeBytes: number },
+): Promise<DetailResult<{ attachmentId: string; uploadUrl: string }>> {
+  const token = await getServerAccessToken();
+  try {
+    const { attachment, uploadUrl } = await createUploadUrl(token, String(opportunityId), {
+      fileName: String(file.fileName),
+      mimeType: file.mimeType ? String(file.mimeType) : undefined,
+      sizeBytes: Number(file.sizeBytes),
+    });
+    return { ok: true, data: { attachmentId: attachment.id, uploadUrl } };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Histórico de anotações: marcar como lido (2026-09-17). Sem revalidate
+// nem redirect — a lista é client e atualiza o próprio estado.
+export async function setCommentReadAction(
+  commentId: string,
+  lido: boolean,
+): Promise<DetailResult<{ id: string; lido: boolean }>> {
+  const token = await getServerAccessToken();
+  try {
+    return { ok: true, data: await setCommentRead(token, String(commentId), Boolean(lido)) };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+export async function markAllCommentsReadAction(): Promise<DetailResult<{ marcadas: number }>> {
+  const token = await getServerAccessToken();
+  try {
+    return { ok: true, data: await markAllCommentsRead(token) };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+export async function listOpportunityAttachmentsAction(
+  opportunityId: string,
+): Promise<DetailResult<OpportunityAttachment[]>> {
+  const token = await getServerAccessToken();
+  try {
     return { ok: true, data: await listAttachments(token, String(opportunityId)) };
   } catch (error) {
     return detailFail(error);
@@ -496,6 +646,21 @@ export async function removeOpportunityAttachmentClientAction(
   const token = await getServerAccessToken();
   try {
     await deleteAttachment(token, String(opportunityId), String(attachmentId));
+    return { ok: true, data: await listAttachments(token, String(opportunityId)) };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Publicar libera o anexo pra gerente e representante — e não tem volta
+// (a confirmação fica na tela, antes de chamar aqui).
+export async function publishOpportunityAttachmentClientAction(
+  opportunityId: string,
+  attachmentId: string,
+): Promise<DetailResult<OpportunityAttachment[]>> {
+  const token = await getServerAccessToken();
+  try {
+    await publishAttachment(token, String(opportunityId), String(attachmentId));
     return { ok: true, data: await listAttachments(token, String(opportunityId)) };
   } catch (error) {
     return detailFail(error);

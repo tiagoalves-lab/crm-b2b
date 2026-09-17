@@ -57,7 +57,18 @@ export default function Toast({ renderedAt }: { renderedAt: number }) {
     // dispara de novo. A marca só cai quando o refresh chega (efeito
     // acima) — se este também for descartado por outra navegação, a
     // próxima chegada tenta outra vez.
-    if (mounted.current && sessionStorage.getItem(REFRESH_SESSION_KEY)) {
+    //
+    // Só dispara com a tela limpa: refresh DENTRO de rota interceptada
+    // re-resolve a árvore, o slot @modal/@drawer cai no default.tsx e a
+    // página cheia da mesma URL toma o lugar do modal — é o bug "abriu
+    // em tela cheia" (2026-09-04 no anexo, 2026-09-15 ao salvar empresa
+    // nova). Com modal/drawer na tela a marca fica de pé e resolve na
+    // próxima troca de tela sem overlay.
+    if (
+      mounted.current &&
+      sessionStorage.getItem(REFRESH_SESSION_KEY) &&
+      !document.querySelector(".overlay.open, .drawer.open")
+    ) {
       router.refresh();
     }
     mounted.current = true;

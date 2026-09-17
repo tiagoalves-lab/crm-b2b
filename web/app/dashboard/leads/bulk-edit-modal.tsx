@@ -5,9 +5,9 @@ import type { RawLead } from "@/lib/api/types";
 import { TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
 import { setLeadSegmentoAction, setLeadTagsAction, setLeadTierAction } from "./actions";
 
-// "" = não alterar (padrão); "auto" = limpa a classificação manual e volta
-// pro score calculado (mesmo "Automático" do <select> de cada linha da
-// tabela); os 3 valores de ScoreTier aplicam a classificação manual.
+// "" = não alterar (padrão); "auto" = limpa a classificação (mesmo "Sem
+// classificação" do <select> de cada linha da tabela); os 3 valores de
+// ScoreTier aplicam a classificação.
 type TierChoice = "" | "auto" | ScoreTier;
 
 interface FailedItem {
@@ -134,10 +134,10 @@ export default function BulkEditModal({
               />
             </label>
             <label>
-              Classificação (score)
+              Classificação
               <select value={tier} onChange={(e) => setTier(e.target.value as TierChoice)} disabled={busy}>
                 <option value="">Não alterar</option>
-                <option value="auto">Automático (score calculado)</option>
+                <option value="auto">Sem classificação</option>
                 <option value="quente">{TIER_LABEL.quente}</option>
                 <option value="morno">{TIER_LABEL.morno}</option>
                 <option value="frio">{TIER_LABEL.frio}</option>

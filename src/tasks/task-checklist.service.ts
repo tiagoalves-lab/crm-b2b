@@ -5,6 +5,7 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateChecklistItemDto } from './dto/create-checklist-item.dto';
 import type { UpdateChecklistItemDto } from './dto/update-checklist-item.dto';
 import { TaskService } from './task.service';
+import { registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 @Injectable()
 export class TaskChecklistService {
@@ -51,8 +52,20 @@ export class TaskChecklistService {
     taskId: string,
     itemId: string,
   ): Promise<void> {
-    await this.tasks.mustBeVisible(tx, membership, taskId, 'delete');
-    await this.mustExist(tx, taskId, itemId);
+    const task = await this.tasks.mustBeVisible(
+      tx,
+      membership,
+      taskId,
+      'delete',
+    );
+    const item = await this.mustExist(tx, taskId, itemId);
+    await registrarExclusao(tx, membership, {
+      entidade: 'tarefa_checklist',
+      registroId: item.id,
+      titulo: item.text,
+      contexto: task.title,
+      snapshot: item,
+    });
     await tx.taskChecklistItem.delete({ where: { id: itemId } });
   }
 

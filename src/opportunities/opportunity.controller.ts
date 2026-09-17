@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -14,6 +15,7 @@ import { TenantContextService } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import { ListOpportunitiesQueryDto } from './dto/list-opportunities-query.dto';
+import { ReorderOpportunitiesDto } from './dto/reorder-opportunities.dto';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 import { OpportunityService } from './opportunity.service';
 
@@ -51,6 +53,26 @@ export class OpportunityController {
         role: membership.role,
       },
       (tx) => this.opportunities.findAll(tx, membership, query),
+    );
+  }
+
+  // Ordem dos cards dentro de uma coluna do quadro (2026-09-14). Rota
+  // estática antes de @Get(':id')/@Patch(':id') pra não ser engolida pelo
+  // parâmetro.
+  @Post('reorder')
+  @HttpCode(204)
+  reorder(
+    @CurrentMembership() membership: MembershipContext,
+    @Body() dto: ReorderOpportunitiesDto,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) =>
+        this.opportunities.reorder(tx, membership, dto.stageId, dto.orderedIds),
     );
   }
 

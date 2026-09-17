@@ -426,7 +426,8 @@ export function DetailBody() {
         busy={busy}
         meUserId={me.user.id}
         canRemove={canDeleteOwn}
-        onUpload={handleUpload}
+        nomeDoAutor={(userId) => memberDisplayName(userId, memberships)}
+        onUpload={(files) => handleUpload(files[0])}
         onRemove={(id) =>
           void run(
             `attach:${id}`,

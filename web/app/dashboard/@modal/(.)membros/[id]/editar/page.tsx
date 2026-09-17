@@ -1,7 +1,7 @@
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { listMemberships } from "@/lib/api/memberships";
-import MemberEditForm from "@/app/dashboard/membros/member-edit-form";
+import MemberEditForm from "@/app/dashboard/(administracao)/membros/member-edit-form";
 import OverlayModal from "@/app/dashboard/_overlay/overlay-modal";
 
 export default async function EditarMembroModal({

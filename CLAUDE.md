@@ -59,7 +59,9 @@ mudar depois, muda-se a diretriz.
 Referência sob demanda: `arquitetura-dados.md` (modelo de dados),
 `geracao-qualificacao-leads.md`, `memorial-do-projeto.md` (histórico),
 `api-egestor-*.md`, `webhook-egestor.md`, `webhook-meta-leads.md`,
-`integracao-cotacoes.md` (docs técnicos das integrações).
+`integracao-cotacoes.md` (docs técnicos das integrações),
+`reports-email.md` (e-mails que o CRM envia: resumo diário + avisos de
+tarefa designada e de destaque em anotação).
 
 **Regra**: arquivo `.md` novo entra nesta lista no mesmo commit que o
 cria. Se não está aqui, não existe pro agente.

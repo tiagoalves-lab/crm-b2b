@@ -14,10 +14,10 @@ export default async function EmpresaFichaPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ aba?: string; error?: string }>;
+  searchParams: Promise<{ aba?: string; error?: string; editar?: string }>;
 }) {
   const { id } = await params;
-  const { aba, error } = await searchParams;
+  const { aba, error, editar } = await searchParams;
   const token = await getServerAccessToken();
   const data = await loadFicha(token, id);
   const { company, me } = data;
@@ -48,7 +48,7 @@ export default async function EmpresaFichaPage({
           <span className={isCliente ? "pill pill-green" : "pill pill-blue"}>
             {isCliente ? "Cliente" : "Lead"}
           </span>
-          <Link href={`/dashboard/empresas/${id}/editar`} className="btn btn-sm">
+          <Link href={`/dashboard/empresas/${id}?aba=cadastro&editar=1`} replace scroll={false} className="btn btn-sm">
             Editar
           </Link>
           <Link href="/dashboard/empresas" className="btn btn-ghost btn-sm">
@@ -68,7 +68,7 @@ export default async function EmpresaFichaPage({
 
       <div className="content" key={currentAba}>
         {error && <div className="error-banner">{error}</div>}
-        <FichaBody data={data} aba={aba} />
+        <FichaBody data={data} aba={aba} editar={editar === "1"} />
       </div>
     </>
   );

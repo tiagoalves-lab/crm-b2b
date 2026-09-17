@@ -13,6 +13,7 @@ import type { CreatePipelineDto } from './dto/create-pipeline.dto';
 import type { UpdatePipelineDto } from './dto/update-pipeline.dto';
 import type { CreateStageDto } from './dto/create-stage.dto';
 import type { UpdateStageDto } from './dto/update-stage.dto';
+import { registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 type PipelineWithStages = Pipeline & { stages: Stage[] };
 
@@ -127,7 +128,7 @@ export class PipelineService {
     id: string,
   ): Promise<void> {
     this.assertCanWrite(membership);
-    await this.mustExist(tx, membership.workspaceId, id);
+    const pipeline = await this.mustExist(tx, membership.workspaceId, id);
 
     const inUse = await tx.opportunity.count({ where: { pipelineId: id } });
     if (inUse > 0) {
@@ -136,6 +137,13 @@ export class PipelineService {
       );
     }
 
+    await registrarExclusao(tx, membership, {
+      entidade: 'pipeline',
+      registroId: pipeline.id,
+      titulo: pipeline.name,
+      contexto: null,
+      snapshot: pipeline,
+    });
     await tx.stage.deleteMany({ where: { pipelineId: id } });
     await tx.pipeline.delete({ where: { id } });
   }
@@ -191,8 +199,12 @@ export class PipelineService {
     stageId: string,
   ): Promise<void> {
     this.assertCanWrite(membership);
-    await this.mustExist(tx, membership.workspaceId, pipelineId);
-    await this.mustStageExist(tx, pipelineId, stageId);
+    const pipeline = await this.mustExist(
+      tx,
+      membership.workspaceId,
+      pipelineId,
+    );
+    const stage = await this.mustStageExist(tx, pipelineId, stageId);
 
     const inUse = await tx.opportunity.count({ where: { stageId } });
     if (inUse > 0) {
@@ -201,6 +213,13 @@ export class PipelineService {
       );
     }
 
+    await registrarExclusao(tx, membership, {
+      entidade: 'etapa',
+      registroId: stage.id,
+      titulo: stage.name,
+      contexto: pipeline.name,
+      snapshot: stage,
+    });
     await tx.stage.delete({ where: { id: stageId } });
   }
 

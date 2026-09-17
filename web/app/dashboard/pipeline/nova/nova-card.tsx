@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
+import { REFRESH_SESSION_KEY, TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { AssigneeOption } from "@/lib/api/assignee-options";
 import type { Contact, Stage } from "@/lib/api/types";
 import SubmitButton from "@/app/_components/submit-button";
@@ -12,6 +12,7 @@ import { createOpportunityAction } from "../actions";
 import { listCompanyContactsAction } from "../../tarefas/actions";
 import TipoContatoFields from "../../tarefas/tipo-contato-fields";
 import { ItemsPanel, TagPicker } from "../_detail/item-tags";
+import { enviarAnexosOportunidade } from "../_detail/enviar-anexos";
 
 // Cadastro de oportunidade no MESMO card do detalhe (pedido do usuário,
 // 2026-09-04): o formulário pequeno que existia antes (nova-form.tsx)
@@ -62,14 +63,43 @@ export default function NovaCard({
   const [withTask, setWithTask] = useState(false);
   const [companyId, setCompanyId] = useState(lockedCompanyId ?? "");
   const [contacts, setContacts] = useState<Contact[]>(initialContacts ?? []);
-  const [currency, setCurrency] = useState("BRL");
   const firstStageId = stages[0]?.id ?? "";
 
+  // Anexos escolhidos ficam aqui, fora do formulário (2026-09-17): dentro
+  // do submit eles estouravam o limite de 1 MB da Server Action. Depois
+  // que a oportunidade nasce, sobem pelo navegador (enviar-anexos.ts).
+  const [files, setFiles] = useState<File[]>([]);
+  const [enviandoAnexos, setEnviandoAnexos] = useState(false);
+
   useEffect(() => {
-    if (state?.ok) {
-      sessionStorage.setItem(TOAST_SESSION_KEY, state.data.toast);
+    if (!state?.ok) return;
+    const { opportunityId, toast } = state.data;
+    let cancelado = false;
+    async function concluir() {
+      let mensagem = toast;
+      if (files.length > 0) {
+        setEnviandoAnexos(true);
+        const { falhas } = await enviarAnexosOportunidade(opportunityId, files);
+        if (falhas.length > 0) {
+          mensagem = `${toast}, mas não deu pra enviar: ${falhas.join("; ")}. Abra o card e anexe de novo.`;
+        }
+      }
+      if (cancelado) return;
+      sessionStorage.setItem(TOAST_SESSION_KEY, mensagem);
+      // Marca de refresh pendente (2026-09-15): fechar o modal com
+      // router.back() volta pro quadro do cache do cliente, e a
+      // oportunidade recém-criada só aparecia com F5. O Toast dispara um
+      // refresh só ao aterrissar no quadro, já sem overlay na tela —
+      // mais barato que refrescar com o card ainda aberto.
+      sessionStorage.setItem(REFRESH_SESSION_KEY, "1");
       router.back();
     }
+    void concluir();
+    return () => {
+      cancelado = true;
+    };
+    // `files` fica de fora de propósito: só o resultado do submit dispara.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, router]);
 
   async function loadContactsFor(nextCompanyId: string) {
@@ -111,16 +141,11 @@ export default function NovaCard({
                 </div>
               )}
             </dd>
+            {/* Moeda saiu do formulário (pedido do usuário, 2026-09-11):
+                tudo é negociado em real. O backend continua guardando a
+                moeda, com "BRL" como padrão. */}
             <dt>Valor</dt>
             <dd>
-              <input
-                name="currency"
-                value={currency}
-                onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-                maxLength={3}
-                aria-label="Moeda"
-                style={{ width: 64, fontFamily: "var(--font-mono)" }}
-              />
               <input
                 name="amount"
                 type="number"
@@ -138,6 +163,17 @@ export default function NovaCard({
             </dd>
           </dl>
 
+          {/* Descrição longa (2026-09-04): o mesmo campo do card de
+              detalhe, pra solicitação nascer já detalhada. */}
+          <label className="opp-desc-field">
+            Descrição
+            <textarea
+              name="description"
+              rows={8}
+              placeholder="Detalhe o que está sendo negociado: modelo, opcionais, condições, prazos…"
+            />
+          </label>
+
           <div className="task-detail-section">
             <div className="drawer-section-title" style={{ marginTop: 0 }}>
               Anexos
@@ -147,10 +183,14 @@ export default function NovaCard({
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
               <div className="attach-drop-text" style={{ marginBottom: 10 }}>
-                Anexar um arquivo (foto, PDF, planilha) — opcional
+                Anexar arquivos (foto, PDF, planilha) — opcional
               </div>
               <div className="row-form" style={{ justifyContent: "center" }}>
-                <input type="file" name="file" />
+                <input
+                  type="file"
+                  multiple
+                  onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+                />
               </div>
             </div>
           </div>
@@ -246,9 +286,15 @@ export default function NovaCard({
             Fechar
           </Link>
         )}
-        <SubmitButton className="btn btn-primary" pendingLabel="Criando…">
-          Criar oportunidade
-        </SubmitButton>
+        {enviandoAnexos ? (
+          <button type="button" className="btn btn-primary" disabled aria-busy>
+            Enviando anexos…
+          </button>
+        ) : (
+          <SubmitButton className="btn btn-primary" pendingLabel="Criando…">
+            Criar oportunidade
+          </SubmitButton>
+        )}
       </div>
     </form>
   );

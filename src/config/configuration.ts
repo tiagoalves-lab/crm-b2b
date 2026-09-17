@@ -80,4 +80,63 @@ export default () => ({
     ?.split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0),
+
+  // Envio de e-mail (reports recorrentes, 2026-09-15). Opcional — mesmo
+  // raciocínio dos tokens de integração acima: sem estas variáveis o CRM
+  // sobe e funciona inteiro, só o report não sai (e o motivo fica no log
+  // e na tabela report_log, nunca em silêncio). Só o backend usa.
+  //
+  // resendApiKey: chave da API do provedor de envio. SEGREDO — nunca em
+  // web/, doc ou commit.
+  resendApiKey: process.env.RESEND_API_KEY,
+  // mailFrom: remetente, sempre um endereço no subdomínio de envio (é lá
+  // que SPF/DKIM estão publicados). Formato "Nome <caixa@dominio>".
+  mailFrom: process.env.MAIL_FROM,
+  // mailReplyTo: caixa corporativa real que recebe as respostas — o
+  // subdomínio de envio não tem caixa de entrada.
+  mailReplyTo: process.env.MAIL_REPLY_TO,
+  // reportTz: fuso usado tanto pelo agendador quanto pelo dia de
+  // referência do report. O container roda em UTC; sem isto o "resumo das
+  // 8h" sai às 5h e o "dia de hoje" vira o dia errado depois das 21h.
+  reportTz: process.env.REPORT_TZ ?? 'America/Sao_Paulo',
+  // reportCronPipeline: horário do resumo diário, em formato cron.
+  // Padrão: 8h, de segunda a sexta.
+  reportCronPipeline: process.env.REPORT_CRON_PIPELINE ?? '0 8 * * 1-5',
+  // reportFollowupHorarios: horários (HH:MM, separados por vírgula) do
+  // follow-up das cotações, em dias úteis. Lista vazia desliga o report.
+  reportFollowupHorarios: (
+    process.env.REPORT_FOLLOWUP_HORARIOS ?? '10:00,11:50,14:00,16:30'
+  )
+    .split(',')
+    .map((h) => h.trim())
+    .filter((h) => /^\d{1,2}:\d{2}$/.test(h)),
+  // reportFollowupEtapas: quais etapas do Pipeline entram no follow-up
+  // (nome exato da etapa, separado por vírgula; acento e maiúscula não
+  // importam na comparação).
+  reportFollowupEtapas: (
+    process.env.REPORT_FOLLOWUP_ETAPAS ??
+    'Solicitação de Propostas,Elaboração de Propostas,Aprovação de Propostas'
+  )
+    .split(',')
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0),
+  // reportCronConferencia: horário da conferência de falha silenciosa
+  // (report que não saiu não gera reclamação — ver ReportSchedulerService).
+  reportCronConferencia: process.env.REPORT_CRON_CONFERENCIA ?? '0 9 * * 1-5',
+  // reportTo: lista fixa de destinatários separada por vírgula. Vazio (o
+  // normal) = a lista sai do CRM: todo membro ativo que não é
+  // representante e tem e-mail de contato cadastrado. Existe só como
+  // válvula de escape pra teste ou pra incluir alguém de fora do CRM.
+  reportTo: (process.env.REPORT_TO ?? '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0),
+  // reportAlertaTo: quem recebe o aviso de que o report do dia NÃO saiu.
+  // Vazio = usa o primeiro destinatário da lista do dia.
+  reportAlertaTo: (process.env.REPORT_ALERTA_TO ?? '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0),
+  // reportAppUrl: endereço do CRM usado no botão "Abrir o CRM" do e-mail.
+  reportAppUrl: process.env.REPORT_APP_URL,
 });

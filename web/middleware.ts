@@ -35,7 +35,11 @@ function buildCsp(nonce: string, isLocalDev: boolean): string {
     // inline — não executa código.
     `style-src 'self' 'unsafe-inline'`,
 
-    `img-src 'self' data: blob:`,
+    // Anexos (imagem e PDF) são servidos por URL assinada e temporária do
+    // Storage do Supabase, que fica na mesma origem do projeto. Sem ela
+    // aqui, a prévia do anexo aparece em branco com "conteúdo bloqueado"
+    // (bug de 2026-09-14).
+    `img-src 'self' data: blob: ${supabaseOrigin}`.trim(),
     `font-src 'self' data:`,
 
     // O navegador só fala com: a própria origem (Server Actions, rota
@@ -47,10 +51,11 @@ function buildCsp(nonce: string, isLocalDev: boolean): string {
     // navegador, vai falhar aqui e este comentário explica o porquê.
     `connect-src 'self' ${supabaseOrigin}${isLocalDev ? " ws: http://localhost:*" : ""}`.trim(),
 
-    // Ninguém pode embutir o CRM num iframe (clickjacking), e o CRM não
-    // embute ninguém.
+    // Ninguém pode embutir o CRM num iframe (clickjacking). O CRM só
+    // embute o Storage do Supabase, e só pra prévia de PDF do anexo —
+    // nenhum outro host entra aqui.
     `frame-ancestors 'none'`,
-    `frame-src 'none'`,
+    `frame-src 'self' blob: ${supabaseOrigin}`.trim(),
 
     // Impede que um script injetado reescreva a base das URLs relativas
     // ou aponte um <form> pra fora.

@@ -6,7 +6,7 @@ import ImportContactsSpreadsheetForm from "./import-contacts-spreadsheet-form";
 // Ajuste de layout pedido pelo usuário (2026-08-05): "Importar planilha com
 // múltiplos contatos por empresa" saiu de um <details> solto no meio do
 // conteúdo (antes das estatísticas/tabela) e virou uma ação do cabeçalho,
-// ao lado de "Recalcular scores"/"Nova empresa" — mesmo lugar de qualquer
+// ao lado de "Nova empresa" — mesmo lugar de qualquer
 // outra ação de topo da tela. Vira um dropdown ancorado no próprio botão
 // (position: relative no wrapper, absolute no painel) em vez de navegar
 // pra um modal/rota — o form já existia pronto (ImportContactsSpreadsheetForm),

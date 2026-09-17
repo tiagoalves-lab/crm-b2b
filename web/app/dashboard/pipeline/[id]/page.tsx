@@ -1,7 +1,7 @@
 import { getServerAccessToken } from "@/lib/api/auth";
-import { companyDisplayName } from "@/lib/api/companies";
+import { companyRazaoSocialName } from "@/lib/api/companies";
 import { loadOpportunityDetail } from "../_detail/load";
-import { DetailBody, DetailFooter, OpportunityDetailProvider } from "../_detail/opportunity-detail";
+import { DetailBody, OpportunityDetailProvider } from "../_detail/opportunity-detail";
 
 // Fallback full-page (acesso direto/refresh no detalhe de uma
 // oportunidade). Em navegação normal dentro do app, essa mesma rota é
@@ -19,7 +19,7 @@ export default async function OpportunityDetailPage({
     <OpportunityDetailProvider data={data} isModal={false}>
       <div className="topbar">
         <div>
-          <div className="page-title">{companyDisplayName(data.company)}</div>
+          <div className="page-title">{companyRazaoSocialName(data.company)}</div>
           <div className="page-sub">Oportunidade</div>
         </div>
       </div>
@@ -27,9 +27,6 @@ export default async function OpportunityDetailPage({
         <div className="panel">
           <div className="panel-body">
             <DetailBody />
-          </div>
-          <div className="modal-foot">
-            <DetailFooter />
           </div>
         </div>
       </div>

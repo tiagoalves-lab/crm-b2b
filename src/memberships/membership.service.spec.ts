@@ -6,6 +6,7 @@ import {
 import type { Membership } from '@prisma/client';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
+import { comRegistroDeExclusao } from '../deletion-log/registro-exclusao.fake';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { MembershipService } from './membership.service';
 import type { SupabaseUserService } from './supabase-user.service';
@@ -38,6 +39,7 @@ function targetRow(overrides: Partial<Membership> = {}): Membership {
     joinedAt: new Date(),
     createdAt: new Date(),
     permissions: null,
+    vendedor: false,
     ...overrides,
   };
 }
@@ -46,7 +48,7 @@ function fakeTx(
   options: { target?: Membership; activeOwnerCount?: number } = {},
 ): TenantTx {
   const target = options.target ?? targetRow();
-  return {
+  return comRegistroDeExclusao({
     membership: {
       findFirst: jest
         .fn()
@@ -67,7 +69,7 @@ function fakeTx(
         ),
       delete: jest.fn().mockResolvedValue(target),
     },
-  } as unknown as TenantTx;
+  } as unknown as TenantTx);
 }
 
 function fakeSupabaseUser(): SupabaseUserService {

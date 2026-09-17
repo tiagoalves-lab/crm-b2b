@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import type { Activity, Membership } from "@/lib/api/types";
-import { effectiveTier, scoreReasons, TIER_LABEL } from "@/lib/api/raw-leads";
+import { effectiveTier, TIER_LABEL } from "@/lib/api/raw-leads";
 import { formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
 import type { LeadFicha } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
@@ -225,16 +225,8 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
             "Não"
           )}
         </dd>
-        <dt>Importador</dt>
-        <dd>{lead.importador ? <span style={{ color: "var(--green)" }}>Sim (Comex Stat)</span> : "Não"}</dd>
-        <dt>Score</dt>
-        <dd>
-          <span className={`tier-tag tier-${tier}`}>
-            {lead.score} — {TIER_LABEL[tier]}
-          </span>
-        </dd>
-        <dt>Cálculo</dt>
-        <dd style={{ fontSize: 12, color: "var(--text-secondary)" }}>{scoreReasons(lead).join(" · ")}</dd>
+        <dt>Classificação</dt>
+        <dd>{tier ? <span className={`tier-tag tier-${tier}`}>{TIER_LABEL[tier]}</span> : "Sem classificação"}</dd>
         <dt>Tags</dt>
         <dd>
           <LeadTagsEditor leadId={lead.id} tags={lead.tags} />

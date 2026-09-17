@@ -19,6 +19,7 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateMembershipDto } from './dto/create-membership.dto';
 import type { UpdateMembershipDto } from './dto/update-membership.dto';
 import { SupabaseUserService } from './supabase-user.service';
+import { registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 // Mesmo critério do PipelineService: gestão de membros (editar papel,
 // suspender, remover) é config de workspace, só owner/admin mexem. Isto é
@@ -132,6 +133,7 @@ export class MembershipService {
         status: 'active',
         joinedAt: new Date(),
         permissions: permissions,
+        vendedor: dto.vendedor ?? false,
       },
     });
   }
@@ -220,6 +222,7 @@ export class MembershipService {
         status: dto.status,
         managerId: dto.managerId,
         permissions: permissions,
+        vendedor: dto.vendedor,
       },
     });
     // Papel/status/permissões novos valem na próxima requisição do membro
@@ -293,6 +296,15 @@ export class MembershipService {
 
     // manager_id tem ON DELETE SET NULL (ver migration) — quem reportava
     // pra esse membro fica sem gerente automaticamente, sem violar FK.
+    // Nome do membro vem do Supabase Auth (fora da transação); aqui fica o
+    // papel, e a tela resolve o nome pelo userId guardado na cópia.
+    await registrarExclusao(tx, membership, {
+      entidade: 'membro',
+      registroId: existing.id,
+      titulo: `Membro (${existing.role})`,
+      contexto: null,
+      snapshot: existing,
+    });
     const removed = await tx.membership.delete({ where: { id: existing.id } });
     this.membershipCache?.invalidate(existing.userId);
     return removed;

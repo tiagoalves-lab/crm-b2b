@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, type Company, type RawLead } from '@prisma/client';
 import { ActivityService } from '../activities/activity.service';
+import { ultimoContatoPorEmpresa } from '../activities/ultimo-contato';
 import type {
   PaginatedResult,
   SemTimeline,
@@ -323,7 +324,7 @@ export class RawLeadService {
     tx: TenantTx,
     membership: MembershipContext,
     query: ListRawLeadsQueryDto,
-  ): Promise<PaginatedResult<RawLead>> {
+  ): Promise<PaginatedResult<RawLead & { ultimoContato: string | null }>> {
     if (!this.policy.canModule(membership, 'leads', 'ver')) {
       throw new ForbiddenException('Sem permissão para ver leads.');
     }
@@ -384,7 +385,27 @@ export class RawLeadService {
       tx.rawLead.count({ where }),
     ]);
 
-    return { items, total, page, pageSize };
+    // Coluna "Último contato" — a Timeline do lead é a da empresa criada
+    // junto com ele (promotedCompanyId).
+    const ultimoContato = await ultimoContatoPorEmpresa(
+      tx,
+      membership.workspaceId,
+      items
+        .map((l) => l.promotedCompanyId)
+        .filter((id): id is string => id !== null),
+    );
+
+    return {
+      items: items.map((l) => ({
+        ...l,
+        ultimoContato: l.promotedCompanyId
+          ? (ultimoContato.get(l.promotedCompanyId) ?? null)
+          : null,
+      })),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   async findOne(

@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { MembershipRole } from "@/lib/api/types";
+import { hasPermission } from "@/lib/api/permission-catalog";
+import type { MembershipRole, PermissionMatrix } from "@/lib/api/types";
+import { NAV_ITEMS, pathMatches } from "./nav-items";
 
 // Ícones (feather-style, 24x24 viewBox) copiados 1:1 do sidebar de
 // gama-crm-mvp.html — mesmo path data, só trocando a tag <svg> pra JSX.
@@ -50,6 +52,23 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M1 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" />
     </>
   ),
+  // "mail" (feather-icons) — tela "E-mail automático" (Administração,
+  // 2026-09-15): configuração dos relatórios recorrentes por e-mail.
+  email: (
+    <>
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+      <path d="M22 6l-10 7L2 6" />
+    </>
+  ),
+  // "trash-2" (feather-icons) — Registro de exclusões (2026-09-16).
+  exclusoes: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+    </>
+  ),
   // "link-2" (feather-icons) — não existe no protótipo, tela nova
   // (Integração eGestor, docs/roadmap.md itens 9.3/9.6).
   egestor: (
@@ -59,9 +78,30 @@ const ICONS: Record<string, React.ReactNode> = {
       <line x1="8" y1="12" x2="16" y2="12" />
     </>
   ),
+  // "settings" (feather-icons) — item único "Administração" (2026-09-17).
+  admin: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </>
+  ),
+  // "book-open" (feather-icons) — item Treinamento (2026-09-17).
+  treinamento: (
+    <>
+      <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
+      <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+    </>
+  ),
+  // "x-octagon" (feather-icons) — aba Motivos de perda (2026-09-17).
+  motivos: (
+    <>
+      <path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2z" />
+      <path d="M15 9l-6 6M9 9l6 6" />
+    </>
+  ),
 };
 
-function Icon({ name }: { name: string }) {
+export function Icon({ name }: { name: string }) {
   return (
     <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       {ICONS[name]}
@@ -76,42 +116,21 @@ interface NavCounts {
   empresas: number;
 }
 
-// Agrupamento espelha 1:1 o sidebar de gama-crm-mvp.html (Comercial /
-// Cadastros / Análise). Membros não existe no protótipo — vai num grupo
-// próprio ("Administração") em vez de forçar dentro de um dos três grupos
-// originais, mesmo padrão do protótipo de grupo com um item só (Análise).
-// `roles` ausente = visível pra qualquer papel (padrão de Membros, cuja
-// listagem todo mundo vê — só ações dentro da tela são restritas). Item
-// com `roles` só aparece pra quem estiver na lista — "Integração eGestor"
-// é o primeiro caso disso no nav (pedido direto do usuário, 2026-08-10):
-// dispara chamada pro eGestor de produção, não é ação de representante.
-const items: Array<{
-  href: string;
-  label: string;
-  group: string;
-  icon: string;
-  count?: "leads" | "pipeline" | "tarefas" | "empresas";
-  roles?: MembershipRole[];
-}> = [
-  { href: "/dashboard", label: "Painel", group: "Comercial", icon: "painel" },
-  { href: "/dashboard/leads", label: "Prospecção", group: "Comercial", icon: "leads", count: "leads" },
-  { href: "/dashboard/pipeline", label: "Pipeline", group: "Comercial", icon: "pipeline", count: "pipeline" },
-  { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" },
-  { href: "/dashboard/empresas", label: "Empresas", group: "Cadastros", icon: "empresas", count: "empresas" },
-  { href: "/dashboard/relatorios", label: "Relatórios", group: "Análise", icon: "relatorios" },
-  { href: "/dashboard/membros", label: "Membros", group: "Administração", icon: "membros" },
-  {
-    href: "/dashboard/integracao-egestor",
-    label: "Integração eGestor",
-    group: "Administração",
-    icon: "egestor",
-    roles: ["owner", "admin"],
-  },
-];
-
-export default function DashboardNav({ counts, role }: { counts: NavCounts; role: MembershipRole }) {
+export default function DashboardNav({
+  counts,
+  role,
+  permissions,
+}: {
+  counts: NavCounts;
+  role: MembershipRole;
+  permissions: PermissionMatrix | null | undefined;
+}) {
   const pathname = usePathname();
-  const visibleItems = items.filter((item) => !item.roles || item.roles.includes(role));
+  const visibleItems = NAV_ITEMS.filter(
+    (item) =>
+      (!item.roles || item.roles.includes(role)) &&
+      (!item.permission || hasPermission(role, permissions, item.permission, "ver")),
+  );
   let lastGroup = "";
 
   return (
@@ -120,13 +139,16 @@ export default function DashboardNav({ counts, role }: { counts: NavCounts; role
         const showGroup = item.group !== lastGroup;
         lastGroup = item.group;
         const count = item.count ? counts[item.count] : undefined;
+        const ativo = item.matches
+          ? item.matches.some((prefixo) => pathMatches(pathname, prefixo))
+          : pathname === item.href;
         return (
           <div key={item.href}>
             {showGroup && <span className="nav-label">{item.group}</span>}
             <Link
               href={item.href}
               className="nav-item"
-              aria-current={pathname === item.href ? "page" : undefined}
+              aria-current={ativo ? "page" : undefined}
             >
               <Icon name={item.icon} />
               {item.label}

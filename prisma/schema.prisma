@@ -193,6 +193,10 @@ model Workspace {
   egestorWriteEchoes   EgestorWriteEcho[]
   egestorInteractionLogs EgestorInteractionLog[]
   metaLeadsWebhookEvents MetaLeadsWebhookEvent[]
+  reportLogs    ReportLog[]
+  deletionLogs  DeletionLog[]
+  reportConfigs ReportConfig[]
+  opportunityLostReasons OpportunityLostReason[]
 
   @@map("workspaces")
 }
@@ -221,6 +225,9 @@ model Membership {
   // "ws_and_role_select" mais abaixo neste arquivo, que continuam
   // intactas.
   permissions Json?
+  // Marcação "Vendedor" (2026-09-17): só membro marcado entra na lista
+  // "Representante" do card de oportunidade. Independe do papel.
+  vendedor    Boolean          @default(false)
 
   workspace Workspace    @relation(fields: [workspaceId], references: [id])
   manager   Membership?  @relation("MembershipHierarchy", fields: [managerId], references: [id])
@@ -828,6 +835,13 @@ model Opportunity {
   // Trello. Texto simples, sem formatação.
   description       String?           @db.Text
   expectedCloseDate DateTime?         @map("expected_close_date") @db.Date
+  // SLA da proposta, automático (2026-09-16) — ver
+  // src/opportunities/opportunity-sla.ts. Ninguém digita:
+  // slaDueDate = dia em que a proposta saiu das etapas de proposta
+  // (vazio = pendente, a conta corre até hoje); slaRevisionDate = dia em
+  // que o cliente pediu alteração e a contagem reiniciou.
+  slaDueDate        DateTime?         @map("sla_due_date") @db.Date
+  slaRevisionDate   DateTime?         @map("sla_revision_date") @db.Date
   status            OpportunityStatus @default(open)
   lostReason        String?           @map("lost_reason")
   version           Int               @default(1)
@@ -851,6 +865,11 @@ model Opportunity {
   stage          Stage      @relation(fields: [stageId], references: [id])
   tasks          Task[]
   activities     Activity[]
+  // Ordem do card dentro da coluna do Pipeline (2026-09-14) — gravada
+  // pelo arrasto vertical. NULL = nunca posicionado à mão; a listagem
+  // joga os nulos pro fim e cai na ordem por data de criação.
+  position       Int?
+
   comments       OpportunityComment[]
   attachments    OpportunityAttachment[]
   items          OpportunityItem[]
@@ -887,6 +906,22 @@ model OpportunityComment {
   // sentinela de sistema e o nome de verdade mora aqui — é o que a tela
   // mostra no lugar do id cru. NULL em comentário escrito aqui dentro.
   externalAuthor String? @map("external_author")
+  // Comentário fixado (2026-09-09): sobe pro topo do histórico de
+  // anotações do Pipeline. NULL = não fixado. O índice parcial por
+  // pinned_at está no SQL da migration 20260909120000_comentario_fixado
+  // (Prisma não declara índice parcial no schema).
+  pinnedAt      DateTime? @map("pinned_at")
+  pinnedByUserId String?  @map("pinned_by_user_id") @db.Uuid
+  // Membros destacados no comentário e quem já deu baixa (2026-09-14).
+  // Enquanto o id de alguém estiver na primeira lista e fora da segunda,
+  // o card mostra "Pendência(s) para você" no quadro do Pipeline pra essa
+  // pessoa. Índice GIN em mentioned_user_ids na migration
+  // 20260914140000_comentario_mencao.
+  mentionedUserIds    String[] @map("mentioned_user_ids") @db.Uuid
+  mentionsDoneUserIds String[] @map("mentions_done_user_ids") @db.Uuid
+  // Quem já marcou a anotação como lida no histórico de anotações do
+  // Pipeline (2026-09-17). Migration 20260917180000_comentario_lido.
+  readByUserIds String[] @default([]) @map("read_by_user_ids") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at")
 
   opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
@@ -925,6 +960,11 @@ model OpportunityAttachment {
   sizeBytes     BigInt?  @map("size_bytes")
   uploadedBy    String   @map("uploaded_by") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at")
+  // Publicação do anexo (2026-09-15): NULL = reservado, visível só pra
+  // owner/admin; data = liberado também pra gerente e representante.
+  // Anexo enviado por gerente/representante já nasce com data. Publicar
+  // não tem volta — pra tirar da vista, exclui-se e envia-se outro.
+  publishedAt   DateTime? @map("published_at")
 
   opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
 
@@ -1052,4 +1092,138 @@ model Activity {
 
   @@index([workspaceId])
   @@map("activities")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ReportLog — uma linha por report recorrente enviado por e-mail
+// (resumo diário do Pipeline, 2026-09-15). Existe por dois motivos:
+//
+// 1. Idempotência: o `@@unique([workspaceId, tipo, refDia])` é o que
+//    garante "um e-mail por dia" mesmo com redeploy, restart ou disparo
+//    manual pela tela — o agendador consulta antes de montar o report.
+//    A trava do lado do provedor (Idempotency-Key) é a segunda camada,
+//    ver MailService.
+// 2. Falha silenciosa: report que não sai não gera reclamação (ninguém
+//    sente falta de um e-mail que nunca chegou). O job de conferência
+//    lê esta tabela mais tarde no mesmo dia e avisa se não houver
+//    registro `enviado`.
+// ─────────────────────────────────────────────────────────────────────────
+
+model ReportLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  // Qual report ("pipeline-diario"). Texto, não enum: report novo não
+  // deve exigir migration de tipo.
+  tipo        String
+  // Dia de referência no fuso de Brasília ("2026-09-15"), NÃO derivado de
+  // `criadoEm` — o container roda em UTC e às 21h de Brasília já é o dia
+  // seguinte lá. Ver report-scheduler.service.ts#diaDeHoje.
+  refDia      String   @map("ref_dia")
+  // "enviado" | "falha"
+  status      String
+  // Id da mensagem no provedor de envio — é por ele que se rastreia
+  // entrega/bounce no painel quando alguém diz que não recebeu.
+  messageId   String?  @map("message_id")
+  // Quantos endereços entraram no envio (0 quando não havia ninguém
+  // elegível — caso legítimo, não é falha).
+  destinatarios Int    @default(0)
+  erro        String?
+  criadoEm    DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, tipo, refDia])
+  @@index([workspaceId, criadoEm])
+  @@map("report_log")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ReportConfig — configuração dos reports por e-mail feita na tela
+// "E-mail automático" (Administração), 2026-09-15.
+//
+// Antes isto vivia em variável de ambiente, o que obrigava um deploy pra
+// mudar um horário. Agora mora no banco: o agendador lê a cada minuto (ver
+// ReportSchedulerService#tick) e a mudança vale na hora, sem reiniciar
+// nada.
+//
+// Uma linha por tipo de report (`pipeline-diario`, `pipeline-followup`).
+// Linha ausente = ainda não configurado: o service devolve o padrão vindo
+// do ambiente, que é o que estava valendo antes desta tela existir.
+// ─────────────────────────────────────────────────────────────────────────
+
+model ReportConfig {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  tipo        String
+  ativo       Boolean  @default(true)
+  // Horários de disparo no formato "HH:MM", fuso de Brasília. O resumo
+  // diário usa um; o follow-up, vários.
+  horarios    String[] @default([])
+  // Só de segunda a sexta (padrão) ou todo dia.
+  diasUteis   Boolean  @default(true) @map("dias_uteis")
+  // Etapas do Pipeline que entram no report — só o follow-up usa; no
+  // resumo diário a lista fica vazia e significa "todas".
+  etapas      String[] @default([])
+  // Quem recebe ESTE report (user_id de auth.users). Lista vazia = todos
+  // os elegíveis (todo membro ativo que não é representante) — é o padrão
+  // e o que valia antes da lista existir. Preenchida, manda só pra quem
+  // está nela. Ver ReportConfigService#salvar: só entra quem é elegível,
+  // pra ninguém conseguir incluir representante por aqui.
+  destinatarios String[] @default([])
+  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+  atualizadoPor  String?  @map("atualizado_por") @db.Uuid
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, tipo])
+  @@map("report_config")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DeletionLog — registro de exclusões (pedido do usuário, 2026-09-16).
+// Toda exclusão feita pelas telas grava uma linha na MESMA transação do
+// delete: quem, quando, o quê e a cópia do registro antes de sair (é o que
+// permite recadastrar). Só inserção — sem policy de UPDATE/DELETE no banco.
+// Ver src/deletion-log/registrar-exclusao.ts.
+// ─────────────────────────────────────────────────────────────────────────
+model DeletionLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.Uuid
+  // "tarefa", "oportunidade", "empresa"… — lista em ENTIDADES_EXCLUIDAS.
+  // Texto, não enum: tipo novo não deve exigir migration.
+  entidade    String
+  registroId  String   @map("registro_id") @db.Uuid
+  titulo      String
+  contexto    String?
+  snapshot    Json     @default("{}")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, criadoEm])
+  @@index([workspaceId, entidade, criadoEm])
+  @@map("deletion_log")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// OpportunityLostReason — lista de motivos de perda (2026-09-17). O modal
+// "Por que a negociação foi perdida?" oferece estes motivos e deixa
+// cadastrar um novo. A oportunidade continua guardando o TEXTO em
+// Opportunity.lostReason (não um id): o Pareto agrupa por esse texto, e
+// a lista só garante que o mesmo motivo seja escrito sempre igual.
+// Único por workspace sem diferenciar maiúsculas (índice em lower(nome),
+// na migration — o Prisma não expressa índice por expressão).
+// ─────────────────────────────────────────────────────────────────────────
+model OpportunityLostReason {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  nome        String
+  criadoPor   String?  @map("criado_por") @db.Uuid
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("opportunity_lost_reason")
 }

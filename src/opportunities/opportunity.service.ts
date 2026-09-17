@@ -22,8 +22,14 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import type { ListOpportunitiesQueryDto } from './dto/list-opportunities-query.dto';
 import type { UpdateOpportunityDto } from './dto/update-opportunity.dto';
+import {
+  ehEtapaDeProposta,
+  hojeComoData,
+  type SlaTratamento,
+} from './opportunity-sla';
 import { uniqueItemNames } from './opportunity-tags';
 import { COMPANY_REF_SELECT, type CompanyRef } from '../companies/company-ref';
+import { nomeDaEmpresa, registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 // open -> won/lost (fechamento); won/lost -> open (reabertura explícita,
 // limpa lostReason/closedAt). Bloqueia won<->lost direto — precisa reabrir
@@ -37,7 +43,35 @@ import { COMPANY_REF_SELECT, type CompanyRef } from '../companies/company-ref';
 // consulta na mesma transação — custa a mesma ida que um include, mas não
 // depende de include em relação obrigatória: empresa invisível pelo RLS
 // vira null em vez de erro de consistência do Prisma.
-export type OpportunityListItem = Opportunity & { company: CompanyRef | null };
+// `pendenciaParaMim` (2026-09-14): alguém destacou QUEM ESTÁ PEDINDO a
+// lista num comentário deste card e ele ainda não deu baixa — o quadro
+// acende o alerta "Pendência(s) para você". É sempre relativo a quem
+// pergunta, nunca um estado global do card.
+export type OpportunityListItem = Opportunity & {
+  company: CompanyRef | null;
+  pendenciaParaMim: boolean;
+};
+
+// Campos do card cuja edição entra no histórico (2026-09-14), com o
+// valor anterior e o novo. `status`/`stageId` ficam de fora porque têm
+// registro próprio (status_changed e stage_change).
+const camposEditaveis = [
+  'companyId',
+  'ownerUserId',
+  'amount',
+  'currency',
+  'expectedCloseDate',
+  'description',
+] as const satisfies readonly (keyof Opportunity)[];
+
+// Valor gravado no histórico: texto simples, comparável. Decimal do
+// Prisma e Date não sobrevivem a uma comparação direta (objetos), e o
+// payload é JSON.
+function valorParaHistorico(valor: unknown): string | null {
+  if (valor === null || valor === undefined) return null;
+  if (valor instanceof Date) return valor.toISOString();
+  return String(valor);
+}
 
 const ALLOWED_TRANSITIONS: Record<OpportunityStatus, OpportunityStatus[]> = {
   open: ['won', 'lost'],
@@ -75,7 +109,7 @@ export class OpportunityService {
     const ownerUserId = dto.ownerUserId ?? membership.userId;
     await assertActiveMembership(tx, membership.workspaceId, ownerUserId);
     await this.mustCompanyExist(tx, membership.workspaceId, dto.companyId);
-    await this.mustStageBelongToPipeline(
+    const stage = await this.mustStageBelongToPipeline(
       tx,
       membership.workspaceId,
       dto.pipelineId,
@@ -94,6 +128,9 @@ export class OpportunityService {
         expectedCloseDate: dto.expectedCloseDate
           ? new Date(dto.expectedCloseDate)
           : undefined,
+        // SLA automático (opportunity-sla.ts): nasce pendente numa etapa
+        // de proposta; cadastrada direto em Negociação, já nasce fechado.
+        slaDueDate: ehEtapaDeProposta(stage) ? null : hojeComoData(),
         description: dto.description,
         status: 'open',
       },
@@ -164,7 +201,13 @@ export class OpportunityService {
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
+        // Ordem escolhida à mão no quadro primeiro (2026-09-14); quem
+        // nunca foi arrastado (position NULL) fica depois, na ordem de
+        // sempre — mais recente primeiro.
+        orderBy: [
+          { position: { sort: 'asc', nulls: 'last' } },
+          { createdAt: 'desc' },
+        ],
       }),
       tx.opportunity.count({ where }),
     ]);
@@ -178,9 +221,29 @@ export class OpportunityService {
           })
         : [];
     const companyById = new Map(companies.map((c) => [c.id, c]));
+
+    // Pendência para quem está olhando (2026-09-14): existe comentário
+    // neste card que destacou este usuário e em que ele ainda não deu
+    // baixa. Uma consulta só pra página inteira — é o que acende o
+    // triângulo amarelo no card do quadro.
+    const comDestaque =
+      rows.length > 0
+        ? await tx.opportunityComment.findMany({
+            where: {
+              opportunityId: { in: rows.map((o) => o.id) },
+              mentionedUserIds: { has: membership.userId },
+              NOT: { mentionsDoneUserIds: { has: membership.userId } },
+            },
+            select: { opportunityId: true },
+            distinct: ['opportunityId'],
+          })
+        : [];
+    const pendentes = new Set(comDestaque.map((c) => c.opportunityId));
+
     const items = rows.map((o) => ({
       ...o,
       company: companyById.get(o.companyId) ?? null,
+      pendenciaParaMim: pendentes.has(o.id),
     }));
 
     return { items, total, page, pageSize };
@@ -209,6 +272,41 @@ export class OpportunityService {
         ) < NOW() - (${staleDays} || ' days')::interval
     `;
     return rows.map((r) => r.id);
+  }
+
+  // Ordem dos cards dentro de uma coluna do quadro (2026-09-14). O
+  // frontend manda a coluna inteira na ordem que ficou depois do arrasto e
+  // cada card recebe a posição pelo índice — sem cálculo de "meio termo"
+  // entre dois vizinhos, que é onde esse tipo de recurso costuma criar
+  // empate e ordem instável.
+  //
+  // De propósito NÃO mexe em `version` nem emite Activity: prioridade
+  // visual não é mudança do negócio (mesmo raciocínio de
+  // OpportunityItemService#sincronizarValor, que documenta por que
+  // incrementar a versão aqui derrubaria o "Salvar" de um card aberto).
+  async reorder(
+    tx: TenantTx,
+    membership: MembershipContext,
+    stageId: string,
+    orderedIds: string[],
+  ): Promise<void> {
+    if (orderedIds.length === 0) return;
+
+    for (const id of orderedIds) {
+      const opportunity = await this.mustBeVisible(tx, membership, id, 'write');
+      if (opportunity.stageId !== stageId) {
+        throw new BadRequestException(
+          'Todas as oportunidades precisam estar na etapa informada.',
+        );
+      }
+    }
+
+    for (const [index, id] of orderedIds.entries()) {
+      await tx.opportunity.updateMany({
+        where: { id, workspaceId: membership.workspaceId },
+        data: { position: index },
+      });
+    }
   }
 
   async findOne(
@@ -279,6 +377,12 @@ export class OpportunityService {
 
     if (dto.ownerUserId) {
       await assertActiveMembership(tx, membership.workspaceId, dto.ownerUserId);
+      // Trocar o representante só pra membro marcado como Vendedor
+      // (2026-09-17). Salvar o card sem mexer no dono não cai aqui — o
+      // card de antes da marcação continua salvável.
+      if (dto.ownerUserId !== existing.ownerUserId) {
+        await this.mustBeVendedor(tx, membership.workspaceId, dto.ownerUserId);
+      }
     }
     if (dto.companyId) {
       await this.mustCompanyExist(tx, membership.workspaceId, dto.companyId);
@@ -292,6 +396,12 @@ export class OpportunityService {
         ? null
         : existing.closedAt;
 
+    const sla = this.proximoSla(existing, {
+      fromStage,
+      toStage,
+      tratamento: dto.slaTratamento,
+    });
+
     const result = await tx.opportunity.updateMany({
       where: { id: existing.id, version: existing.version },
       data: {
@@ -304,6 +414,8 @@ export class OpportunityService {
         expectedCloseDate: dto.expectedCloseDate
           ? new Date(dto.expectedCloseDate)
           : undefined,
+        slaDueDate: sla.slaDueDate,
+        slaRevisionDate: sla.slaRevisionDate,
         description: dto.description,
         status: nextStatus,
         lostReason: nextLostReason,
@@ -336,7 +448,16 @@ export class OpportunityService {
         payload: {
           fromStageId: fromStage.id,
           toStageId: toStage.id,
+          // Nome das etapas gravado junto (2026-09-14): o histórico do
+          // card escreve "de X para Y" sem ir buscar o pipeline, e o
+          // registro continua legível mesmo se a etapa for renomeada
+          // depois.
+          fromStageName: fromStage.name,
+          toStageName: toStage.name,
           backward: toStage.order < fromStage.order,
+          // Tratamento do SLA escolhido ao voltar de Negociação
+          // (2026-09-16) — só existe nesse movimento.
+          ...(sla.tratamento ? { slaTratamento: sla.tratamento } : {}),
         },
         opportunityId: updated.id,
       });
@@ -355,22 +476,25 @@ export class OpportunityService {
         opportunityId: updated.id,
       });
     }
-    const otherFieldsChanged = [
-      dto.companyId,
-      dto.ownerUserId,
-      dto.amount,
-      dto.currency,
-      dto.expectedCloseDate,
-    ].some((value) => value !== undefined);
-    if (otherFieldsChanged) {
+    // Edição do card (2026-09-14): registra o que mudou, de que valor
+    // pra qual. Antes ia só a LISTA de nomes de campo tocados — o
+    // histórico dizia "editou valor" sem dizer de quanto pra quanto, e
+    // `description` nem entrava na conta.
+    const changes = camposEditaveis
+      .filter((campo) => dto[campo] !== undefined)
+      .map((campo) => ({
+        field: campo,
+        from: valorParaHistorico(existing[campo]),
+        to: valorParaHistorico(updated[campo]),
+      }))
+      .filter((mudanca) => mudanca.from !== mudanca.to);
+
+    if (changes.length > 0) {
       await this.activities.emit(tx, {
         workspaceId: membership.workspaceId,
         actorUserId: membership.userId,
         type: 'field_update',
-        payload: {
-          action: 'updated',
-          fields: Object.keys(dto).filter((key) => key !== 'version'),
-        },
+        payload: { action: 'updated', changes },
         opportunityId: updated.id,
       });
     }
@@ -384,6 +508,18 @@ export class OpportunityService {
     id: string,
   ): Promise<Opportunity> {
     const existing = await this.mustBeVisible(tx, membership, id, 'delete');
+
+    const itens = await tx.opportunityItem.findMany({
+      where: { opportunityId: existing.id },
+    });
+    await registrarExclusao(tx, membership, {
+      entidade: 'oportunidade',
+      registroId: existing.id,
+      titulo:
+        (await nomeDaEmpresa(tx, existing.companyId)) ?? 'Oportunidade',
+      contexto: null,
+      snapshot: { ...existing, itens },
+    });
 
     const deleted = await tx.opportunity.update({
       where: { id: existing.id },
@@ -441,6 +577,48 @@ export class OpportunityService {
     return restored;
   }
 
+  // Próximo estado do SLA (ver opportunity-sla.ts). Campo ausente no
+  // retorno = não mexe.
+  private proximoSla(
+    existing: Opportunity,
+    mudanca: {
+      fromStage: Stage | null;
+      toStage: Stage | null;
+      tratamento: SlaTratamento | undefined;
+    },
+  ): {
+    slaDueDate?: Date | null;
+    slaRevisionDate?: Date;
+    tratamento?: SlaTratamento;
+  } {
+    const { fromStage, toStage, tratamento } = mudanca;
+
+    if (fromStage && toStage) {
+      const deProposta = ehEtapaDeProposta(fromStage);
+      const paraProposta = ehEtapaDeProposta(toStage);
+
+      if (deProposta && !paraProposta) {
+        return existing.slaDueDate ? {} : { slaDueDate: hojeComoData() };
+      }
+      if (!deProposta && paraProposta) {
+        if (!tratamento) {
+          throw new BadRequestException(
+            'Ao voltar o card para uma etapa de proposta, informe o tratamento do SLA.',
+          );
+        }
+        return tratamento === 'alteracao_cliente'
+          ? { slaDueDate: null, slaRevisionDate: hojeComoData(), tratamento }
+          : { slaDueDate: null, tratamento };
+      }
+      return {};
+    }
+
+    // Ganhar, perder ou reabrir não mexe no SLA (pedido do usuário,
+    // 2026-09-16): ele mede a conclusão da PROPOSTA, não o aceite ou a
+    // recusa do cliente.
+    return {};
+  }
+
   private assertValidTransition(
     from: OpportunityStatus,
     to: OpportunityStatus,
@@ -449,6 +627,22 @@ export class OpportunityService {
     if (!ALLOWED_TRANSITIONS[from].includes(to)) {
       throw new BadRequestException(
         `Transição de status "${from}" para "${to}" não é permitida — reabra a oportunidade (status "open") primeiro.`,
+      );
+    }
+  }
+
+  private async mustBeVendedor(
+    tx: TenantTx,
+    workspaceId: string,
+    userId: string,
+  ): Promise<void> {
+    const member = await tx.membership.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      select: { vendedor: true },
+    });
+    if (!member?.vendedor) {
+      throw new BadRequestException(
+        'Só membro marcado como Vendedor pode ser o representante do card.',
       );
     }
   }

@@ -1,13 +1,16 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
-import { companyDisplayName } from "@/lib/api/companies";
+import { listMemberships } from "@/lib/api/memberships";
+import { companyRazaoSocialName } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
+import { contarComentariosFixados } from "@/lib/api/opportunity-comments";
 import { listPipelines } from "@/lib/api/pipelines";
 import type { Opportunity } from "@/lib/api/types";
 import { dayKeyBR, formatDateBR } from "@/lib/format-date";
 import { createPipelineAction } from "./actions";
 import PipelineBoard from "./pipeline-board";
+import { calcularSla, slaSelo, slaTitulo } from "./sla";
 import SubmitButton from "@/app/_components/submit-button";
 import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
 
@@ -57,11 +60,17 @@ export default async function PipelinePage({
 }) {
   const { error, mes, periodo, ini, fim } = await searchParams;
   const token = await getServerAccessToken();
-  const [me, { items: pipelines }, { items: opportunities }] = await Promise.all([
-    getMe(token),
-    listPipelines(token),
-    listOpportunities(token),
-  ]);
+  // memberships (2026-09-11): nome do representante no card do quadro.
+  // fixados (2026-09-14): quantas anotações estão fixadas, mostrado
+  // abaixo do ícone de histórico.
+  const [me, { items: pipelines }, { items: opportunities }, memberships, fixados] =
+    await Promise.all([
+      getMe(token),
+      listPipelines(token),
+      listOpportunities(token),
+      listMemberships(token),
+      contarComentariosFixados(token),
+    ]);
 
   const canManagePipeline =
     me.membership.role === "owner" || me.membership.role === "admin";
@@ -102,20 +111,19 @@ export default async function PipelinePage({
 
   // Nome da empresa vem embutido em cada oportunidade (GET /opportunities,
   // 2026-09-04) — a tela parou de baixar a base inteira de empresas.
-  const companyName = (opp: Opportunity) => (opp.company ? companyDisplayName(opp.company) : "—");
+  // Razão social também nos cards de encerradas (2026-09-11), pra bater
+  // com o quadro.
+  const companyName = (opp: Opportunity) => (opp.company ? companyRazaoSocialName(opp.company) : "—");
 
   const pipelineOpps = opportunities.filter((o) => o.pipelineId === pipeline.id && !o.deletedAt);
   const openOpps = pipelineOpps.filter((o) => o.status === "open");
   const wonOpps = pipelineOpps.filter((o) => o.status === "won");
   const lostOpps = pipelineOpps.filter((o) => o.status === "lost");
 
-  // Previsão ponderada = Σ(amount × probability/100) das oportunidades
-  // abertas (SPEC-CRM-GAMA.md §4.2).
-  const stageById = new Map(stages.map((s) => [s.id, s]));
-  const previsaoPonderada = openOpps.reduce((sum, o) => {
-    const prob = stageById.get(o.stageId)?.probability ?? 0;
-    return sum + Number(o.amount) * (prob / 100);
-  }, 0);
+  // Valor em aberto = soma simples do valor das oportunidades abertas
+  // (2026-09-14). Antes era ponderado pela probabilidade da etapa, o que
+  // exibia um número que não existia em card nenhum do quadro.
+  const valorEmAberto = openOpps.reduce((sum, o) => sum + Number(o.amount), 0);
 
   const taxaFechamentoGlobal =
     wonOpps.length + lostOpps.length > 0
@@ -161,6 +169,27 @@ export default async function PipelinePage({
           <div className="page-sub">Ciclo de vida da venda · unidade: R$</div>
         </div>
         <TopbarFilter placeholder="Buscar oportunidade por empresa..." />
+        {/* Histórico de anotações (2026-09-09): tudo que foi comentado
+            nos cards num lugar só, fixados em cima. Abre em modal. Abaixo
+            do ícone, quantas anotações estão fixadas (2026-09-14). */}
+        <div className="anotacoes-atalho">
+          <Link
+            href="/dashboard/pipeline/anotacoes"
+            className="btn btn-anotacoes"
+            title="Histórico de anotações dos cards"
+            aria-label="Histórico de anotações dos cards"
+          >
+            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+              <path d="M8 9h8M8 13h5" />
+            </svg>
+          </Link>
+          {fixados !== null && (
+            <span className="anotacoes-fixadas">
+              {fixados === 1 ? "1 comentário fixado" : `${fixados} comentários fixados`}
+            </span>
+          )}
+        </div>
         <Link href="/dashboard/pipeline/nova" className="btn btn-primary">
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" />
@@ -178,8 +207,8 @@ export default async function PipelinePage({
             <div className="stat-value">{taxaFechamentoGlobal}%</div>
           </div>
           <div className="stat-tile blue">
-            <div className="stat-label">Previsão ponderada</div>
-            <div className="stat-value">{brl(previsaoPonderada)}</div>
+            <div className="stat-label">Valor em aberto</div>
+            <div className="stat-value">{brl(valorEmAberto)}</div>
           </div>
           <div className="stat-tile">
             <div className="stat-label">Ganhas / encerradas</div>
@@ -189,7 +218,12 @@ export default async function PipelinePage({
           </div>
         </div>
 
-        <PipelineBoard stages={stages} openOpportunities={openOpps} currentUserId={me.user.id} />
+        <PipelineBoard
+          stages={stages}
+          openOpportunities={openOpps}
+          currentUserId={me.user.id}
+          memberships={memberships}
+        />
 
         <div className="closed-section">
           <div className="closed-head">
@@ -277,9 +311,20 @@ export default async function PipelinePage({
                   <Link key={opp.id} href={`/dashboard/pipeline/${opp.id}`} className={`closed-card ${won ? "ganho" : "perdido"}`}>
                     <div className="closed-card-top">
                       <span className="closed-co">{companyName(opp)}</span>
+                      {/* SLA da proposta, automático
+                          (2026-09-16) — ver sla.ts. */}
+                      <span className="card-sla" title={slaTitulo(calcularSla(opp))}>
+                        {slaSelo(calcularSla(opp))}
+                      </span>
                       <span className={`closed-tag ${won ? "ganho" : "perdido"}`}>{won ? "Fechada" : "Perdida"}</span>
                     </div>
-                    <div className="closed-prod">{fmtDate(opp.closedAt)}</div>
+                    {/* Abertura e fechamento no card (2026-09-14) —
+                        mesma informação do card do quadro, aqui com a
+                        data real de encerramento. */}
+                    <div className="closed-prod">
+                      Aberta {fmtDate(opp.createdAt)} · {won ? "Fechada" : "Perdida"}{" "}
+                      {fmtDate(opp.closedAt)}
+                    </div>
                     <div className="closed-foot">
                       <span className={`closed-val ${won ? "ganho" : "perdido"}`}>{brl(Number(opp.amount), opp.currency)}</span>
                       {!won && opp.lostReason && <span className="closed-motivo">{opp.lostReason}</span>}

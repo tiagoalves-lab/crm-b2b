@@ -40,6 +40,8 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     amount: 1000 as unknown as Opportunity['amount'],
     currency: 'BRL',
     expectedCloseDate: null,
+    slaDueDate: null,
+    slaRevisionDate: null,
     description: null,
     status: 'open',
     lostReason: null,
@@ -48,6 +50,8 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     createdAt: new Date(),
     updatedAt: new Date(),
     closedAt: null,
+    // Ordem no quadro (2026-09-14) — null = nunca arrastado.
+    position: null,
     trelloCardId: null,
     trelloCardUrl: null,
     trelloSyncEm: null,
@@ -285,6 +289,92 @@ describe('OpportunityService', () => {
       );
       expect(stageChangeCall).toBeDefined();
       expect(stageChangeCall?.[0].data.payload.backward).toBe(true);
+    });
+  });
+
+  // SLA automático (2026-09-16) — ver opportunity-sla.ts.
+  describe('SLA automático', () => {
+    const PROPOSTA = stage({
+      id: STAGE_ID,
+      name: 'Elaboração de Propostas',
+      order: 2,
+    });
+    const NEGOCIACAO = stage({
+      id: OTHER_STAGE_ID,
+      name: 'Negociação e Fechamento',
+      order: 4,
+    });
+
+    function dataGravada(tx: TenantTx): Record<string, unknown> {
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- jest.fn() não usa `this`
+      const mock = tx.opportunity.updateMany as unknown as jest.Mock<
+        unknown,
+        [{ data: Record<string, unknown> }]
+      >;
+      return mock.mock.calls[0][0].data;
+    }
+
+    it('entrar em Negociação fecha o SLA no dia', async () => {
+      const tx = fakeTx({
+        stagesById: { [STAGE_ID]: PROPOSTA, [OTHER_STAGE_ID]: NEGOCIACAO },
+      });
+      await service.update(tx, membership(), OPPORTUNITY_ID, {
+        version: 1,
+        stageId: OTHER_STAGE_ID,
+      });
+      expect(dataGravada(tx).slaDueDate).toBeInstanceOf(Date);
+    });
+
+    it('voltar de Negociação sem tratamento é recusado', async () => {
+      const tx = fakeTx({
+        opportunity: baseOpportunity({
+          stageId: OTHER_STAGE_ID,
+          slaDueDate: new Date(),
+        }),
+        stagesById: { [STAGE_ID]: PROPOSTA, [OTHER_STAGE_ID]: NEGOCIACAO },
+      });
+      await expect(
+        service.update(tx, membership(), OPPORTUNITY_ID, {
+          version: 1,
+          stageId: STAGE_ID,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('erro na elaboração reabre o SLA sem reiniciar a contagem', async () => {
+      const tx = fakeTx({
+        opportunity: baseOpportunity({
+          stageId: OTHER_STAGE_ID,
+          slaDueDate: new Date(),
+        }),
+        stagesById: { [STAGE_ID]: PROPOSTA, [OTHER_STAGE_ID]: NEGOCIACAO },
+      });
+      await service.update(tx, membership(), OPPORTUNITY_ID, {
+        version: 1,
+        stageId: STAGE_ID,
+        slaTratamento: 'erro_elaboracao',
+      });
+      const data = dataGravada(tx);
+      expect(data.slaDueDate).toBeNull();
+      expect(data.slaRevisionDate).toBeUndefined();
+    });
+
+    it('alteração do cliente reabre o SLA e reinicia a contagem hoje', async () => {
+      const tx = fakeTx({
+        opportunity: baseOpportunity({
+          stageId: OTHER_STAGE_ID,
+          slaDueDate: new Date(),
+        }),
+        stagesById: { [STAGE_ID]: PROPOSTA, [OTHER_STAGE_ID]: NEGOCIACAO },
+      });
+      await service.update(tx, membership(), OPPORTUNITY_ID, {
+        version: 1,
+        stageId: STAGE_ID,
+        slaTratamento: 'alteracao_cliente',
+      });
+      const data = dataGravada(tx);
+      expect(data.slaDueDate).toBeNull();
+      expect(data.slaRevisionDate).toBeInstanceOf(Date);
     });
   });
 });

@@ -4,12 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { OpportunityItem } from '@prisma/client';
+import { ActivityService } from '../activities/activity.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateItemDto } from './dto/create-item.dto';
 import type { UpdateItemDto } from './dto/update-item.dto';
 import { ITEMS_MAX, normalizeItemName } from './opportunity-tags';
 import { OpportunityService } from './opportunity.service';
+import { nomeDaEmpresa, registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 // Lista lateral de itens do card de Oportunidade (2026-09-04) — ver
 // opportunity-tags.ts pra regra das tags que nascem daqui.
@@ -19,7 +21,28 @@ import { OpportunityService } from './opportunity.service';
 // campo nasceu: o usuário orça item a item e quer o total no card.
 @Injectable()
 export class OpportunityItemService {
-  constructor(private readonly opportunities: OpportunityService) {}
+  constructor(
+    private readonly opportunities: OpportunityService,
+    private readonly activities: ActivityService,
+  ) {}
+
+  // Mexer na lista de itens é edição do card e entra no histórico
+  // (2026-09-14) — sem isso o relatório mostraria o valor da
+  // oportunidade mudando sozinho, já que a soma dos itens é que manda.
+  private registrar(
+    tx: TenantTx,
+    membership: MembershipContext,
+    opportunityId: string,
+    payload: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.activities.emit(tx, {
+      workspaceId: membership.workspaceId,
+      actorUserId: membership.userId,
+      type: 'field_update',
+      payload,
+      opportunityId,
+    });
+  }
 
   // Mexer na lista exige "write" na oportunidade (quem pode editar o
   // negócio define o que está sendo negociado) — diferente do comentário,
@@ -67,6 +90,11 @@ export class OpportunityItemService {
       },
     });
     await this.sincronizarValor(tx, opportunityId);
+    await this.registrar(tx, membership, opportunityId, {
+      action: 'item_added',
+      item: item.name,
+      to: item.amount === null ? null : String(item.amount),
+    });
     return item;
   }
 
@@ -118,6 +146,13 @@ export class OpportunityItemService {
       },
     });
     await this.sincronizarValor(tx, opportunityId);
+    await this.registrar(tx, membership, opportunityId, {
+      action: 'item_updated',
+      item: item.name,
+      nomeAnterior: existing.name === item.name ? undefined : existing.name,
+      from: existing.amount === null ? null : String(existing.amount),
+      to: item.amount === null ? null : String(item.amount),
+    });
     return item;
   }
 
@@ -127,7 +162,7 @@ export class OpportunityItemService {
     opportunityId: string,
     itemId: string,
   ): Promise<void> {
-    await this.opportunities.mustBeVisible(
+    const opportunity = await this.opportunities.mustBeVisible(
       tx,
       membership,
       opportunityId,
@@ -139,8 +174,20 @@ export class OpportunityItemService {
     if (!item) {
       throw new NotFoundException('Item não encontrado.');
     }
+    await registrarExclusao(tx, membership, {
+      entidade: 'oportunidade_item',
+      registroId: item.id,
+      titulo: item.name,
+      contexto: await nomeDaEmpresa(tx, opportunity.companyId),
+      snapshot: item,
+    });
     await tx.opportunityItem.delete({ where: { id: item.id } });
     await this.sincronizarValor(tx, opportunityId);
+    await this.registrar(tx, membership, opportunityId, {
+      action: 'item_removed',
+      item: item.name,
+      from: item.amount === null ? null : String(item.amount),
+    });
   }
 
   // Soma dos itens vira o valor da oportunidade. Só quando algum item

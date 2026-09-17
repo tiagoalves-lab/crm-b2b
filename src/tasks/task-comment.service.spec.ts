@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
+import { comRegistroDeExclusao } from '../deletion-log/registro-exclusao.fake';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { TaskCommentService } from './task-comment.service';
 import type { TaskService } from './task.service';
@@ -32,7 +33,7 @@ function fakeTx(comment?: {
   taskId: string;
   authorUserId: string;
 }): TenantTx {
-  return {
+  return comRegistroDeExclusao({
     taskComment: {
       create: jest
         .fn()
@@ -46,7 +47,7 @@ function fakeTx(comment?: {
         ),
       delete: jest.fn().mockResolvedValue({}),
     },
-  } as unknown as TenantTx;
+  } as unknown as TenantTx);
 }
 
 describe('TaskCommentService', () => {
@@ -80,6 +81,7 @@ describe('TaskCommentService', () => {
     const comment = {
       id: 'comment-1',
       taskId: TASK_ID,
+      body: 'Comentário de teste',
       authorUserId: 'outro-user',
     };
     const service = new TaskCommentService(fakeTaskService(), policy);
@@ -98,6 +100,7 @@ describe('TaskCommentService', () => {
     const comment = {
       id: 'comment-1',
       taskId: TASK_ID,
+      body: 'Comentário de teste',
       authorUserId: 'user-1',
     };
     const service = new TaskCommentService(fakeTaskService(), policy);
@@ -116,6 +119,7 @@ describe('TaskCommentService', () => {
     const comment = {
       id: 'comment-1',
       taskId: TASK_ID,
+      body: 'Comentário de teste',
       authorUserId: 'user-1',
     };
     const service = new TaskCommentService(fakeTaskService(), policy);

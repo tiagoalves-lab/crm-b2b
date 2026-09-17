@@ -13,6 +13,7 @@ import type {
 import { ActivityService } from '../activities/activity.service';
 import { assertActiveMembership } from '../common/assert-active-membership';
 import type { PaginatedResult } from '../companies/company.service';
+import { NotificationService } from '../notifications/notification.service';
 import { PolicyService } from '../policy/policy.service';
 import type { OwnerScopeFilter } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
@@ -28,6 +29,7 @@ import {
   type CompanyRef,
   type OpportunityRef,
 } from '../companies/company-ref';
+import { nomeDaEmpresa, registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 const NO_MATCH_SENTINEL = '__none__';
 
@@ -52,6 +54,7 @@ export class TaskService {
   constructor(
     private readonly policy: PolicyService,
     private readonly activities: ActivityService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async create(
@@ -116,6 +119,15 @@ export class TaskService {
       payload: { action: 'created', title: task.title, taskId: task.id },
       companyId: dto.companyId,
       opportunityId: dto.opportunityId,
+    });
+
+    // Aviso por e-mail pra quem ficou com a tarefa (2026-09-15). Sai fora
+    // desta transação e nunca lança — ver NotificationService.
+    this.notifications.avisarTarefaAtribuida({
+      workspaceId: membership.workspaceId,
+      taskId: task.id,
+      assigneeUserId: task.assigneeUserId,
+      actorUserId: membership.userId,
     });
 
     return task;
@@ -263,6 +275,22 @@ export class TaskService {
       },
     });
 
+    // Aviso por e-mail só quando o responsável REALMENTE mudou
+    // (2026-09-15): a tela manda o formulário inteiro a cada salvamento,
+    // então comparar com o valor anterior é o que impede um e-mail a cada
+    // correção de título.
+    if (
+      dto.assigneeUserId &&
+      dto.assigneeUserId !== existing.assigneeUserId
+    ) {
+      this.notifications.avisarTarefaAtribuida({
+        workspaceId: membership.workspaceId,
+        taskId: updated.id,
+        assigneeUserId: dto.assigneeUserId,
+        actorUserId: membership.userId,
+      });
+    }
+
     // Só emite Activity na conclusão — edits triviais de título/data não
     // valem virar entrada no log (poluiria a timeline sem agregar nada).
     if (dto.status === 'done' && existing.status !== 'done') {
@@ -308,7 +336,32 @@ export class TaskService {
     const existing = await this.mustBeVisible(tx, membership, id, 'delete');
     // Sem soft delete — Task não tem deletedAt no schema, e
     // docs/arquitetura-dados.md só pede soft delete pra
-    // Company/Opportunity. Assimetria intencional, não descuido.
+    // Company/Opportunity. Assimetria intencional, não descuido. Por isso
+    // a cópia no registro de exclusões leva junto o que sai em cascata.
+    const comentarios = await tx.taskComment.findMany({
+      where: { taskId: existing.id },
+    });
+    const checklist = await tx.taskChecklistItem.findMany({
+      where: { taskId: existing.id },
+    });
+    const anexos = await tx.taskAttachment.findMany({
+      where: { taskId: existing.id },
+    });
+    let companyId = existing.companyId;
+    if (!companyId && existing.opportunityId) {
+      const opp = await tx.opportunity.findFirst({
+        where: { id: existing.opportunityId },
+        select: { companyId: true },
+      });
+      companyId = opp?.companyId ?? null;
+    }
+    await registrarExclusao(tx, membership, {
+      entidade: 'tarefa',
+      registroId: existing.id,
+      titulo: existing.title,
+      contexto: await nomeDaEmpresa(tx, companyId),
+      snapshot: { ...existing, comentarios, checklist, anexos },
+    });
     await tx.task.delete({ where: { id: existing.id } });
   }
 

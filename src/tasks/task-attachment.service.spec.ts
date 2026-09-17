@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
+import { comRegistroDeExclusao } from '../deletion-log/registro-exclusao.fake';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { SupabaseStorageService } from '../storage/supabase-storage.service';
 import { TaskAttachmentService } from './task-attachment.service';
@@ -49,7 +50,7 @@ function fakeTx(attachment?: {
   uploadedBy: string;
   sizeBytes: bigint | null;
 }): TenantTx {
-  return {
+  return comRegistroDeExclusao({
     taskAttachment: {
       create: jest
         .fn()
@@ -72,7 +73,7 @@ function fakeTx(attachment?: {
       findMany: jest.fn().mockResolvedValue(attachment ? [attachment] : []),
       delete: jest.fn().mockResolvedValue({}),
     },
-  } as unknown as TenantTx;
+  } as unknown as TenantTx);
 }
 
 describe('TaskAttachmentService', () => {

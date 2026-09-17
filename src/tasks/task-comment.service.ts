@@ -9,6 +9,7 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateCommentDto } from './dto/create-comment.dto';
 import { TaskService } from './task.service';
+import { registrarExclusao, resumo } from '../deletion-log/registrar-exclusao';
 
 @Injectable()
 export class TaskCommentService {
@@ -43,7 +44,12 @@ export class TaskCommentService {
     // MembershipService/PipelineService) — representante não remove nem o
     // próprio comentário, mais restrito que "só o autor remove" abaixo.
     this.policy.assertCanDelete(membership, 'tarefas');
-    await this.tasks.mustBeVisible(tx, membership, taskId, 'read');
+    const task = await this.tasks.mustBeVisible(
+      tx,
+      membership,
+      taskId,
+      'read',
+    );
     const comment = await tx.taskComment.findFirst({
       where: { id: commentId, taskId },
     });
@@ -53,6 +59,13 @@ export class TaskCommentService {
     if (comment.authorUserId !== membership.userId) {
       throw new ForbiddenException('Só o autor pode remover o comentário.');
     }
+    await registrarExclusao(tx, membership, {
+      entidade: 'tarefa_comentario',
+      registroId: comment.id,
+      titulo: resumo(comment.body),
+      contexto: task.title,
+      snapshot: comment,
+    });
     await tx.taskComment.delete({ where: { id: commentId } });
   }
 }

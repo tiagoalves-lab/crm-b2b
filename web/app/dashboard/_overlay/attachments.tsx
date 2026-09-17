@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { formatDateTimeBR } from "@/lib/format-date";
+
 // Bloco de anexos das fichas ricas (card de Oportunidade e ficha de
 // Tarefa), 2026-09-04. Nasceu de dois pedidos do usuário no mesmo dia:
 //
@@ -24,6 +26,10 @@ export interface AttachmentRow {
   mimeType: string | null;
   sizeBytes: number | null;
   uploadedBy: string;
+  createdAt: string;
+  // Só o card de Oportunidade usa publicação (2026-09-15); a ficha de
+  // Tarefa não passa o campo, e aí nenhum selo aparece.
+  publishedAt?: string | null;
 }
 
 type Kind = "pdf" | "imagem" | "planilha" | "outro";
@@ -104,8 +110,12 @@ export function AttachmentsSection({
   busy,
   meUserId,
   canRemove,
+  canPublish = false,
+  multiple = false,
+  nomeDoAutor,
   onUpload,
   onRemove,
+  onPublish,
   getUrl,
 }: {
   attachments: AttachmentRow[];
@@ -114,8 +124,22 @@ export function AttachmentsSection({
   busy: string | null;
   meUserId: string;
   canRemove: boolean;
-  onUpload: (file: File) => void;
+  // Publicação do anexo (card de Oportunidade, 2026-09-15): arquivo
+  // enviado por administrador/proprietário entra reservado e só some do
+  // "reservado" quando alguém desse nível publica. Quem não pode
+  // publicar nem recebe esses anexos do backend — a tela só mostra o
+  // selo e o botão pra quem pode.
+  canPublish?: boolean;
+  // Quem enviou o anexo aparece com nome de gente, não com id: a ficha
+  // já carrega a lista de membros e resolve o nome (pedido do usuário,
+  // 2026-09-14 — mostrar data/hora e quem inseriu cada arquivo).
+  nomeDoAutor: (userId: string) => string;
+  // Vários arquivos numa escolha só (card de Oportunidade, 2026-09-17);
+  // a ficha de Tarefa segue com um por vez e recebe sempre 1 item.
+  multiple?: boolean;
+  onUpload: (files: File[]) => void;
   onRemove: (id: string) => void;
+  onPublish?: (id: string) => void;
   getUrl: (id: string) => Promise<string | null>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -137,13 +161,14 @@ export function AttachmentsSection({
           type="file"
           ref={fileRef}
           hidden
+          multiple={multiple}
           disabled={ocupado}
           onChange={(event) => {
-            const file = event.target.files?.[0];
+            const files = Array.from(event.target.files ?? []);
             // O envio começa na hora de escolher — o valor é limpo já,
             // pra dar pra reenviar o mesmo arquivo depois se precisar.
             event.target.value = "";
-            if (file) onUpload(file);
+            if (files.length > 0) onUpload(files);
           }}
         />
         <button
@@ -162,8 +187,10 @@ export function AttachmentsSection({
       ) : (
         attachments.map((att) => {
           const kind = attachKind(att.mimeType);
+          // null = reservado; undefined = ficha que não usa publicação.
+          const reservado = att.publishedAt === null;
           return (
-            <div key={att.id} className="attach-item">
+            <div key={att.id} className={`attach-item${reservado ? " reservado" : ""}`}>
               <div className={`attach-icon ${kind}`}>
                 <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -178,12 +205,42 @@ export function AttachmentsSection({
                 aria-busy={busy === `download:${att.id}` || undefined}
                 onClick={() => void abrir(att)}
               >
-                <div className="attach-name">{att.fileName}</div>
+                <div className="attach-name-row">
+                  <div className="attach-name">{att.fileName}</div>
+                  {reservado && <span className="attach-flag">Não publicado</span>}
+                </div>
                 <div className="attach-meta">
                   {kind.toUpperCase()}
                   {att.sizeBytes !== null ? ` · ${formatBytes(att.sizeBytes)}` : ""}
                 </div>
+                <div className="attach-meta">
+                  {`Enviado por ${nomeDoAutor(att.uploadedBy)} · ${formatDateTimeBR(att.createdAt)}`}
+                </div>
               </button>
+              {reservado && canPublish && onPublish && (
+                <button
+                  type="button"
+                  className="icon-btn publicar"
+                  title="Publicar para gerente e representante"
+                  disabled={ocupado}
+                  aria-busy={busy === `publish:${att.id}` || undefined}
+                  onClick={() => {
+                    // Não tem desfazer: confirma antes de liberar.
+                    if (
+                      window.confirm(
+                        `Publicar "${att.fileName}"? Gerente e representante passam a ver o arquivo, e isso não tem volta — só excluindo o anexo.`,
+                      )
+                    ) {
+                      onPublish(att.id);
+                    }
+                  }}
+                >
+                  <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              )}
               {att.uploadedBy === meUserId && canRemove && (
                 <button
                   type="button"

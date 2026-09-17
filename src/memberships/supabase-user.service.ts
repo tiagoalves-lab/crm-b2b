@@ -64,10 +64,29 @@ export interface MemberIdentity {
   email: string | null;
 }
 
+// Quanto tempo o nome/login de cada membro fica válido em memória antes
+// de ser buscado de novo no Supabase Auth (2026-09-11).
+const IDENTITY_TTL_MS = 5 * 60 * 1000;
+// Espera mínima antes de tentar de novo depois de uma falha.
+const IDENTITY_RETRY_MS = 30 * 1000;
+
 @Injectable()
 export class SupabaseUserService {
   private readonly logger = new Logger(SupabaseUserService.name);
   private client: SupabaseClient | null = null;
+  // Último retrato bom de nome/login/e-mail por usuário (2026-09-11). O
+  // motivo é um bug real: a chamada à Admin API do Supabase falhou em
+  // produção (5,5 s e erro de rede) bem na hora em que o usuário abriu o
+  // card de oportunidade, e a tela mostrou o id cru ("51da42eb…") no
+  // lugar do nome do representante. Com o retrato guardado, uma falha
+  // ocasional não apaga mais o nome de ninguém — e a maioria das
+  // requisições nem sai do processo.
+  private identityCache = new Map<string, MemberIdentity>();
+  private identityCacheAt = 0;
+  // Quando a última tentativa falhou — segura novas tentativas por
+  // IDENTITY_RETRY_MS pra uma indisponibilidade do Supabase Auth não
+  // pendurar 5 s em CADA requisição da tela (foi o que aconteceu).
+  private identityFailAt = 0;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -119,6 +138,7 @@ export class SupabaseUserService {
         'Erro ao criar usuário: resposta vazia do Supabase.',
       );
     }
+    this.invalidarIdentidades();
     return { id: data.user.id };
   }
 
@@ -129,40 +149,67 @@ export class SupabaseUserService {
   // chamada é uma requisição HTTP pro Supabase Auth — segurar a
   // transação aberta esperando ela é como o pool já estourou antes, ver
   // memória do projeto). Falha aqui não pode derrubar a tela inteira de
-  // Membros: se o Admin API falhar (ex.: key ainda não configurada),
-  // devolve mapa vazio e a UI cai pro fallback de ID curto.
+  // Membros — e, desde 2026-09-11, também não pode APAGAR os nomes: a
+  // resposta vem do último retrato bom guardado no processo
+  // (identityCache), que só é substituído quando uma consulta nova dá
+  // certo. Mapa vazio agora só no primeiro acesso depois de subir o
+  // servidor, se a Admin API estiver fora.
   async getIdentities(userIds: string[]): Promise<Map<string, MemberIdentity>> {
     const map = new Map<string, MemberIdentity>();
     if (userIds.length === 0) return map;
+
+    const vencido = Date.now() - this.identityCacheAt >= IDENTITY_TTL_MS;
+    const faltaAlguem = userIds.some((id) => !this.identityCache.has(id));
+    if (vencido || faltaAlguem) {
+      await this.refreshIdentities();
+    }
+
+    for (const id of userIds) {
+      const identity = this.identityCache.get(id);
+      if (identity) map.set(id, identity);
+    }
+    return map;
+  }
+
+  // Best-effort: em qualquer falha, mantém o retrato anterior de pé e só
+  // registra o aviso — quem chama continua servindo os nomes que já tinha.
+  private async refreshIdentities(): Promise<void> {
+    if (Date.now() - this.identityFailAt < IDENTITY_RETRY_MS) return;
 
     let client: SupabaseClient;
     try {
       client = this.getClient();
     } catch (err) {
+      this.identityFailAt = Date.now();
       this.logger.warn(
         `getIdentities: client indisponível — ${(err as Error).message}`,
       );
-      return map;
+      return;
     }
 
-    const wanted = new Set(userIds);
     const { data, error } = await client.auth.admin.listUsers({
       perPage: 1000,
     });
     if (error || !data) {
+      // Detalhe do erro no log: a falha de 2026-09-11 veio só como "{}"
+      // (erro de rede do SDK), sem nome nem status — insuficiente pra
+      // saber se foi timeout, credencial ou indisponibilidade.
+      this.identityFailAt = Date.now();
       this.logger.warn(
-        `getIdentities: listUsers falhou — ${error?.message ?? 'resposta vazia'}`,
+        `getIdentities: listUsers falhou — ${error?.name ?? 'sem nome'}/${
+          error?.status ?? 'sem status'
+        }: ${error?.message || 'resposta vazia'}`,
       );
-      return map;
+      return;
     }
 
+    const novo = new Map<string, MemberIdentity>();
     for (const user of data.users) {
-      if (!wanted.has(user.id)) continue;
       const meta = user.user_metadata as Record<string, unknown> | null;
       const metaName = meta?.name;
       const metaEmail = meta?.email;
       const metaLogin = meta?.login;
-      map.set(user.id, {
+      novo.set(user.id, {
         // Prefere o login ORIGINAL guardado em user_metadata.login (ver
         // createUser/updateUserLogin) — só cai pro fromAuthEmail
         // (minúsculo, sem capitalização) em conta antiga que nunca teve
@@ -176,7 +223,16 @@ export class SupabaseUserService {
           typeof metaEmail === 'string' && metaEmail.trim() ? metaEmail : null,
       });
     }
-    return map;
+    this.identityCache = novo;
+    this.identityCacheAt = Date.now();
+    this.identityFailAt = 0;
+  }
+
+  // Membro criado ou renomeado: o retrato guardado envelheceu na hora —
+  // a próxima leitura busca de novo no Supabase Auth.
+  private invalidarIdentidades(): void {
+    this.identityCacheAt = 0;
+    this.identityFailAt = 0;
   }
 
   // Corrige nome/e-mail exibidos de um membro já existente (ver
@@ -224,7 +280,9 @@ export class SupabaseUserService {
       this.logger.warn(
         `updateUserProfile: falhou pra ${userId} — ${error.message}`,
       );
+      return;
     }
+    this.invalidarIdentidades();
   }
 
   // Troca o login (o identificador de acesso, ver comentário no topo do
@@ -269,6 +327,7 @@ export class SupabaseUserService {
         `Erro ao atualizar login: ${error.message}`,
       );
     }
+    this.invalidarIdentidades();
   }
 
   // Redefine a senha do login — não existe "ver senha" possível (Supabase

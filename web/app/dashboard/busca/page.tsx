@@ -157,7 +157,7 @@ export default async function BuscaGeralPage({
               ))}
             </Secao>
 
-            <Secao titulo="Prospecção" itens={result.prospeccao} colunas={["Empresa", "CNPJ", "Cidade/UF", "Situação", "Qualificação"]}>
+            <Secao titulo="Prospecção" itens={result.prospeccao} colunas={["Empresa", "CNPJ", "Cidade/UF", "Situação", "Classificação"]}>
               {result.prospeccao?.map((l) => (
                 <tr key={l.id} className="row-clickable">
                   <td>
@@ -177,10 +177,11 @@ export default async function BuscaGeralPage({
                     </span>
                   </td>
                   <td>
-                    <span className={`tier-tag tier-${effectiveTier(l)}`}>{l.score}</span>{" "}
-                    <span className="t-sub" style={{ display: "inline" }}>
-                      {TIER_LABEL[effectiveTier(l)]}
-                    </span>
+                    {effectiveTier(l) ? (
+                      <span className={`tier-tag tier-${effectiveTier(l)}`}>{TIER_LABEL[effectiveTier(l)!]}</span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
               ))}

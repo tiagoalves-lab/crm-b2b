@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { effectiveTier } from "@/lib/api/raw-leads";
 import { loadLeadFicha } from "../_ficha/load";
 import FichaTabs from "../_ficha/ficha-tabs";
 import FichaBody from "../_ficha/ficha-body";
@@ -23,7 +22,6 @@ export default async function LeadFichaPage({
   const token = await getServerAccessToken();
   const data = await loadLeadFicha(token, id);
   const { lead, activities, tasks, contacts } = data;
-  const tier = effectiveTier(lead);
 
   return (
     <>
@@ -36,7 +34,6 @@ export default async function LeadFichaPage({
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className={`tier-tag tier-${tier}`}>score {lead.score}</span>
           {lead.status !== "novo" && <span className="pill pill-gray">{lead.status}</span>}
           {lead.status === "novo" && (
             <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>

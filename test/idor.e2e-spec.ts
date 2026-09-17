@@ -77,6 +77,11 @@ const RECURSOS_ADMIN = [
   '/memberships/',
   '/integrations/egestor/contatos/',
   '/integrations/egestor/sync/',
+  // Tela "E-mail automático" (2026-09-15): configuração dos reports
+  // recorrentes e disparo manual. Não tem dono por representante — é
+  // configuração do workspace, e o controller exige owner/admin. Teste do
+  // 403 logo abaixo do bloco do eGestor.
+  '/reports/',
 ];
 
 // Rotas deliberadamente PÚBLICAS (sem JWT). Cada uma precisa autenticar
@@ -289,6 +294,41 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       expect(Number(opp?.amount)).toBe(12345);
     }, 20000);
 
+    // Rota nova de 2026-09-04 (valor por item da lista lateral). Mesmo
+    // caso grave do PATCH acima: escrever num item da oportunidade
+    // alheia mudaria o VALOR dela, porque a soma dos itens vira o valor
+    // do card.
+    it('PATCH /opportunities/:id/items/:itemId de outro representante responde 404', async () => {
+      const item = await withTenant(prisma, admin.userId, workspace.id, (tx) =>
+        tx.opportunityItem.create({
+          data: {
+            opportunityId: doDono.opportunities,
+            name: 'Item do outro',
+            position: 1,
+          },
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .patch(`/opportunities/${doDono.opportunities}/items/${item.id}`)
+        .send({ amount: 999999 });
+      expect(res.status).toBe(404);
+
+      const depois = await withTenant(prisma, admin.userId, workspace.id, (tx) =>
+        tx.opportunityItem.findUnique({ where: { id: item.id } }),
+      );
+      expect(depois?.amount).toBeNull();
+
+      const opp = await withTenant(prisma, admin.userId, workspace.id, (tx) =>
+        tx.opportunity.findUnique({ where: { id: doDono.opportunities } }),
+      );
+      expect(Number(opp?.amount)).toBe(12345);
+
+      await withTenant(prisma, admin.userId, workspace.id, (tx) =>
+        tx.opportunityItem.delete({ where: { id: item.id } }),
+      );
+    }, 20000);
+
     it('PATCH /raw-leads/:id/tier de outro representante responde 404', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/raw-leads/${doDono['raw-leads']}/tier`)
@@ -362,6 +402,38 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       );
       expect(res.status).toBe(403);
     }, 20000);
+  });
+
+  // Tela "E-mail automático" (2026-09-15) — configuração dos reports por
+  // e-mail e disparo manual. Só owner/admin: um representante não pode
+  // mudar horário, nem descobrir a lista de destinatários, nem forçar um
+  // disparo.
+  describe('reports (E-mail automático) — só owner/admin', () => {
+    it('GET /reports/config responde 403 pra sales_rep', async () => {
+      const res = await request(app.getHttpServer()).get('/reports/config');
+      expect(res.status).toBe(403);
+    }, 20000);
+
+    it('PATCH /reports/config/:tipo responde 403 pra sales_rep', async () => {
+      // Corpo válido de propósito (mesmo motivo do bloco do eGestor
+      // acima): body inválido morreria no ValidationPipe, antes da
+      // checagem de papel.
+      const res = await request(app.getHttpServer())
+        .patch('/reports/config/pipeline-diario')
+        .send({ ativo: false });
+      expect(res.status).toBe(403);
+    }, 20000);
+
+    it.each(['enviar', 'testar'])(
+      'POST /reports/pipeline-diario/%s responde 403 pra sales_rep',
+      async (acao) => {
+        const res = await request(app.getHttpServer()).post(
+          `/reports/pipeline-diario/${acao}?para=alguem@exemplo.com.br`,
+        );
+        expect(res.status).toBe(403);
+      },
+      20000,
+    );
   });
 
   describe('rota pública (webhook do eGestor) — sem JWT, autentica por token', () => {

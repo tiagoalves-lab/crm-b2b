@@ -11,7 +11,7 @@ import { cadastroFromLookup, formatCnpj } from "./cnpj-lookup-fields";
 // aqui que o vendedor completa na hora da qualificação. Ao salvar, consulta
 // a Receita (mesma busca por CNPJ do "Novo lead") e manda tudo de uma vez —
 // CNPJ, razão social, CNAE, porte, situação, cidade/UF — pro backend
-// regravar o lead e recalcular o score. Se a consulta falhar (Receita fora
+// regravar o lead. Se a consulta falhar (Receita fora
 // do ar, CNPJ não encontrado), oferece salvar só o CNPJ.
 //
 // Dentro de modal/drawer o refresh é via useRefresh(), nunca
@@ -177,8 +177,7 @@ export default function LeadCnpjEditor({
         </button>
       )}
       <p className="t-sub" style={{ marginTop: 6 }}>
-        Preencha o CNPJ e o CRM completa razão social, CNAE, porte e situação pela Receita Federal,
-        recalculando o score.
+        Preencha o CNPJ e o CRM completa razão social, CNAE, porte e situação pela Receita Federal.
       </p>
     </div>
   );

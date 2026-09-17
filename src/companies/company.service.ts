@@ -13,11 +13,13 @@ import {
   sanitizeRazaoSocial,
 } from '../common/sanitize-razao-social';
 import { ActivityService } from '../activities/activity.service';
+import { ultimoContatoPorEmpresa } from '../activities/ultimo-contato';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateCompanyDto } from './dto/create-company.dto';
 import type { UpdateCompanyDto } from './dto/update-company.dto';
+import { registrarExclusao } from '../deletion-log/registrar-exclusao';
 
 export interface PaginatedResult<T> {
   items: T[];
@@ -55,6 +57,8 @@ export interface CompanyResumo {
   temEgestor: boolean;
   ltv: number;
   ultimaCompra: string | null;
+  // Interação mais recente da Timeline — ver ultimoContatoPorEmpresa.
+  ultimoContato: string | null;
 }
 
 interface FaturamentoDaEmpresa {
@@ -390,6 +394,12 @@ export class CompanyService {
         : Promise.resolve(new Map<string, FaturamentoDaEmpresa>()),
     ]);
 
+    const ultimoContato = await ultimoContatoPorEmpresa(
+      tx,
+      membership.workspaceId,
+      companies.map((c) => c.id),
+    );
+
     const items = companies.map(({ egestorContato, ...c }) => {
       const stats = faturamento.get(c.id);
       return {
@@ -397,6 +407,7 @@ export class CompanyService {
         temEgestor: egestorContato !== null,
         ltv: stats?.ltv ?? 0,
         ultimaCompra: stats?.ultimaCompra ?? null,
+        ultimoContato: ultimoContato.get(c.id) ?? null,
       };
     });
 
@@ -546,6 +557,18 @@ export class CompanyService {
     id: string,
   ): Promise<Company> {
     const existing = await this.mustBeVisible(tx, membership, id, 'delete');
+
+    await registrarExclusao(tx, membership, {
+      entidade: 'empresa',
+      registroId: existing.id,
+      titulo:
+        existing.razaoSocial?.trim() ||
+        existing.fantasia?.trim() ||
+        existing.nomeParaContato?.trim() ||
+        'Empresa',
+      contexto: existing.cpfCnpj ?? null,
+      snapshot: existing,
+    });
 
     const deleted = await tx.company.update({
       where: { id: existing.id },

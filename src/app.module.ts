@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ActivityModule } from './activities/activity.module';
 import { AppController } from './app.controller';
@@ -20,6 +21,8 @@ import { PipelineModule } from './pipelines/pipeline.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RawLeadModule } from './raw-leads/raw-lead.module';
+import { ReportModule } from './reports/report.module';
+import { DeletionLogModule } from './deletion-log/deletion-log.module';
 import { SalesHistoryModule } from './sales-history/sales-history.module';
 import { SearchModule } from './search/search.module';
 import { TaskModule } from './tasks/task.module';
@@ -38,6 +41,10 @@ import { UserThrottlerGuard } from './common/throttler/user-throttler.guard';
       validate,
     }),
     PrismaModule,
+    // Agendador do resumo diário por e-mail (src/reports). forRoot() só
+    // liga o motor de cron; o horário de cada job fica no próprio
+    // ReportSchedulerService.
+    ScheduleModule.forRoot(),
     // Rate limiting (docs/seguranca.md, decisão 5.4). O limite default é
     // generoso de propósito: uma única navegação no CRM dispara várias
     // chamadas ao backend, porque cada tela é Server Component e busca
@@ -66,6 +73,8 @@ import { UserThrottlerGuard } from './common/throttler/user-throttler.guard';
     MetaLeadsModule,
     CotacoesModule,
     CountsModule,
+    ReportModule,
+    DeletionLogModule,
   ],
   controllers: [AppController, MeController],
   providers: [

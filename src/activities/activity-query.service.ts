@@ -26,6 +26,62 @@ export type ActivityListItem = Activity & {
   opportunity: OpportunityRef | null;
 };
 
+// Etapas de proposta — mesma lista de opportunity-sla.ts. O que não é
+// proposta é Negociação e Fechamento.
+const ETAPAS_PROPOSTA = [
+  'Solicitação de Propostas',
+  'Elaboração de Propostas',
+  'Aprovação de Propostas',
+];
+const deEtapaProposta = (campo: 'fromStageName' | 'toStageName') => ({
+  OR: ETAPAS_PROPOSTA.map((nome) => ({
+    payload: { path: [campo], equals: nome },
+  })),
+});
+
+// "Últimas atividades" do Painel (pedido do usuário, 2026-09-17): do
+// Pipeline só entram quatro eventos — oportunidade criada, movida para
+// Negociação e Fechamento, volta de Negociação (mostrada como "solicitada
+// alteração") e marcada como fechada ou perdida. Edição de campo, itens,
+// troca entre etapas de proposta, exclusão e reabertura ficam de fora.
+// Filtro no banco (e não na tela) pra página continuar vindo cheia.
+//
+// Os outros módulos não mudam: registro manual (note/call/email) e tarefa
+// ligada a oportunidade (payload com taskId) passam como antes.
+export const FEED_OPORTUNIDADE_FILTRO: Prisma.ActivityWhereInput = {
+  OR: [
+    { opportunityId: null },
+    { type: { in: ['note', 'call', 'email'] } },
+    { payload: { path: ['taskId'], string_starts_with: '' } },
+    {
+      type: 'field_update',
+      payload: { path: ['action'], equals: 'created' },
+    },
+    {
+      type: 'field_update',
+      AND: [
+        { payload: { path: ['action'], equals: 'status_changed' } },
+        {
+          OR: [
+            { payload: { path: ['to'], equals: 'won' } },
+            { payload: { path: ['to'], equals: 'lost' } },
+          ],
+        },
+      ],
+    },
+    // Entrou em Negociação: saiu de proposta pra etapa que não é proposta.
+    {
+      type: 'stage_change',
+      AND: [deEtapaProposta('fromStageName'), { NOT: deEtapaProposta('toStageName') }],
+    },
+    // Voltou de Negociação pra uma etapa de proposta.
+    {
+      type: 'stage_change',
+      AND: [{ NOT: deEtapaProposta('fromStageName') }, deEtapaProposta('toStageName')],
+    },
+  ],
+};
+
 @Injectable()
 export class ActivityQueryService {
   constructor(private readonly policy: PolicyService) {}
@@ -79,6 +135,7 @@ export class ActivityQueryService {
               ],
             }
           : {}),
+        AND: [FEED_OPORTUNIDADE_FILTRO],
       };
     }
 

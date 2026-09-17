@@ -11,6 +11,7 @@ import ContactItem from "./contact-item";
 import AddContactForm from "./add-contact-form";
 import SubmitButton from "@/app/_components/submit-button";
 import ActionForm from "@/app/_components/action-form";
+import EditarCadastro from "./editar-cadastro";
 
 const SUBTIPO_LABEL: Record<string, string> = {
   nota: "Anotação",
@@ -140,7 +141,18 @@ function ActivityItem({
 // e a versão full-page (fallback de acesso direto), que só diferem na
 // moldura em volta (ver empresas/[id]/page.tsx e
 // @drawer/(.)empresas/[id]/page.tsx).
-export default function FichaBody({ data, aba }: { data: FichaData; aba?: string }) {
+// `editar` (2026-09-16): a aba "Dados cadastrais" troca a leitura pelo
+// formulário de edição (editar-cadastro.tsx) — é o destino de todo botão
+// "Editar" de empresa.
+export default function FichaBody({
+  data,
+  aba,
+  editar = false,
+}: {
+  data: FichaData;
+  aba?: string;
+  editar?: boolean;
+}) {
   const { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts, memberships } = data;
   const currentAba = currentAbaOf(aba);
   const abaHref = (a: string) => `/dashboard/empresas/${company.id}?aba=${a}`;
@@ -219,6 +231,10 @@ export default function FichaBody({ data, aba }: { data: FichaData; aba?: string
         )}
       </>
     );
+  }
+
+  if (currentAba === "cadastro" && editar) {
+    return <EditarCadastro company={company} />;
   }
 
   if (currentAba === "cadastro") {

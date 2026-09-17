@@ -51,6 +51,11 @@ export const PERMISSION_MODULES = [
   'tarefas',
   'leads',
   'membros',
+  // Item "Treinamento" do menu lateral, abaixo de Administração (pedido do usuário, 2026-09-17):
+  // slides de treinamento dos menus. Só 'ver' — não há o que criar/editar.
+  // Nasce DESLIGADO para todo papel sem bypass; o usuário libera membro a
+  // membro (começou só pelo gerente).
+  'treinamento',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 
@@ -85,6 +90,7 @@ export const MODULE_ACTIONS: Record<
   tarefas: PERMISSION_ACTIONS,
   leads: PERMISSION_ACTIONS,
   membros: ['ver', 'criar'],
+  treinamento: ['ver'],
 };
 
 // Agrupamento visual só (subpágina de Permissões) — sem efeito na
@@ -102,6 +108,7 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   tarefas: null,
   leads: null,
   membros: null,
+  treinamento: null,
 };
 
 export type PermissionMatrix = {
@@ -156,6 +163,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: allTrue,
     leads: allTrue,
     membros: { ver: true, criar: true },
+    treinamento: viewOnly,
   },
   admin: {
     empresas_visao_geral: viewOnly,
@@ -170,6 +178,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: allTrue,
     leads: allTrue,
     membros: { ver: true, criar: true },
+    treinamento: viewOnly,
   },
   // Manager: mesmo critério de sempre — dono do registro ou subordinado
   // (escopo, inalterado) pode excluir; contatos/membros continuam fora do
@@ -190,6 +199,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: allTrue,
     leads: allTrue,
     membros: membrosManagerDefault,
+    treinamento: { ver: false },
   },
   // sales_rep: nunca exclui (regra antiga, 2026-08-06, "mais restrita que
   // o resto do modelo de ownership" — ver comentário histórico que estava
@@ -213,6 +223,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: noDelete,
     leads: noDelete,
     membros: membrosSalesRepDefault,
+    treinamento: { ver: false },
   },
   // readonly: só lê, em qualquer módulo (regra antiga: "action !== 'read'
   // → false" pra este papel).
@@ -229,6 +240,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     tarefas: viewOnly,
     leads: viewOnly,
     membros: viewOnly,
+    treinamento: { ver: false },
   },
 };
 

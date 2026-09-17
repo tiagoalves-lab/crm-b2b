@@ -11,6 +11,10 @@ export interface OpportunityAttachment {
   sizeBytes: number | null;
   uploadedBy: string;
   createdAt: string;
+  // Publicação (2026-09-15): null = reservado, só owner/admin enxergam.
+  // Quem não pode publicar nunca recebe um anexo reservado do backend —
+  // este campo é só pra tela mostrar o selo e o botão de publicar.
+  publishedAt: string | null;
 }
 
 export function listAttachments(token: string, opportunityId: string): Promise<OpportunityAttachment[]> {
@@ -51,6 +55,18 @@ export function getDownloadUrl(
   return apiFetch<{ url: string; fileName: string }>(
     `/opportunities/${opportunityId}/attachments/${attachmentId}/download`,
     { token },
+  );
+}
+
+// Libera o anexo pra gerente e representante. Sem volta.
+export function publishAttachment(
+  token: string,
+  opportunityId: string,
+  attachmentId: string,
+): Promise<OpportunityAttachment> {
+  return apiFetch<OpportunityAttachment>(
+    `/opportunities/${opportunityId}/attachments/${attachmentId}/publish`,
+    { method: "POST", token },
   );
 }
 

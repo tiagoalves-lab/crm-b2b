@@ -1,5 +1,6 @@
 import type { MembershipRole } from '@prisma/client';
 import {
+  IsBoolean,
   IsEmail,
   IsIn,
   IsObject,
@@ -55,6 +56,12 @@ export class CreateMembershipDto {
   @IsOptional()
   @IsUUID()
   managerId?: string;
+
+  // Marcação "Vendedor" (2026-09-17) — entra na lista "Representante" do
+  // card de oportunidade. Ausente = não marcado.
+  @IsOptional()
+  @IsBoolean()
+  vendedor?: boolean;
 
   // Matriz granular da subpágina de Permissões (web/app/dashboard/membros)
   // — shape validado de verdade em MembershipService#create via

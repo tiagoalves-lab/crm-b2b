@@ -5,7 +5,8 @@ import { getServerAccessToken } from "@/lib/api/auth";
 import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { createActivity } from "@/lib/api/activities";
 import { createContact, deleteContact, updateContact } from "@/lib/api/contacts";
-import type { Activity, Contact, PessoaTipo } from "@/lib/api/types";
+import type { Activity, Company, Contact, PessoaTipo } from "@/lib/api/types";
+import type { CnpjLookupResult, CreateCompanyInput } from "@/lib/api/companies";
 import {
   calcularCurvaAbc,
   createCompany,
@@ -95,38 +96,60 @@ function parseCompanyFields(formData: FormData) {
   };
 }
 
-export type CreateCompanyState = { ok: true } | { ok: false; message: string };
+export type CriarEmpresaResult =
+  | { ok: true; data: Company }
+  | { ok: false; message: string };
 
-// Chamado via useActionState (company-form.tsx), não `<form action=...>`
-// direto — devolve o resultado em vez de redirecionar mesmo no sucesso,
-// pro form fechar o modal com router.push no client depois de confirmar
-// que criou. redirect() daqui de dentro tecnicamente atualiza a URL, mas
-// não derruba o slot @modal da rota interceptada (bug conhecido do Next
-// App Router com Server Action + intercepting routes) — o modal ficava
-// aberto com o registro já salvo.
-export async function createCompanyAction(
-  _prevState: CreateCompanyState | null,
-  formData: FormData,
-): Promise<CreateCompanyState> {
+// Retrato do cartão CNPJ da Receita — mesmo formato gravado pelo botão
+// "Buscar dados" da ficha (refreshCnpjDataAction abaixo) e lido pela aba
+// "Dados cadastrais" (empresas/_ficha/ficha-body.tsx#CnpjLookupSnapshot).
+// Uma função só pros dois caminhos: cadastro novo e atualização.
+function snapshotDoLookup(lookup: CnpjLookupResult) {
+  return {
+    situacaoCadastral: lookup.situacaoCadastral ?? null,
+    dataAbertura: lookup.dataAbertura ?? null,
+    porte: lookup.porte ?? null,
+    naturezaJuridica: lookup.naturezaJuridica ?? null,
+    cnaePrincipal: lookup.cnaePrincipal ?? null,
+    cnaeSecundarios: lookup.cnaeSecundarios ?? [],
+    estabelecimento: lookup.estabelecimento ?? null,
+    telefoneReceita: lookup.fones[0] ?? null,
+    emailReceita: lookup.emails[0] ?? null,
+    fonteFederal: "Receita Federal · BrasilAPI",
+    buscadoEm: new Date().toISOString(),
+  };
+}
+
+// Cadastro de empresa nova (2026-09-15): RPC via Server Action, como o
+// createLeadAction da Prospecção — a ficha de cadastro
+// (empresas/_ficha/nova-ficha.tsx) precisa do id de volta pra abrir a
+// ficha salva logo em seguida. `cnpjLookup` é o retorno da consulta que o
+// usuário fez no próprio formulário: vira o cartão da Receita da ficha,
+// pra ela não pedir a mesma consulta de novo.
+export async function criarEmpresaAction(
+  input: CreateCompanyInput & { cnpjLookup?: CnpjLookupResult },
+): Promise<CriarEmpresaResult> {
   const token = await getServerAccessToken();
-  const fields = parseCompanyFields(formData);
+  const { cnpjLookup, ...fields } = input;
 
   // Company não tem mais campo obrigatório fixo (ver schema.prisma) —
   // exige aqui, não no backend, que ao menos um identificador esteja
   // preenchido, senão a lista/cards ficam com "Empresa sem nome"
   // (fallback de companyDisplayName).
-  if (!fields.razaoSocial && !fields.fantasia) {
-    return { ok: false, message: "Preencha Razão social ou Fantasia." };
+  if (!fields.razaoSocial?.trim() && !fields.fantasia?.trim()) {
+    return { ok: false, message: "Preencha razão social ou fantasia." };
   }
 
   try {
-    await createCompany(token, fields);
+    const company = await createCompany(token, {
+      ...fields,
+      customFields: cnpjLookup ? { cnpj_lookup: snapshotDoLookup(cnpjLookup) } : undefined,
+    });
+    revalidatePath("/dashboard/empresas");
+    return { ok: true, data: company };
   } catch (error) {
     return { ok: false, message: errorMessage(error) };
   }
-
-  revalidatePath("/dashboard/empresas");
-  return { ok: true };
 }
 
 export async function deleteCompanyAction(formData: FormData) {
@@ -179,7 +202,7 @@ export async function calcularCurvaAbcAction() {
 }
 
 // Edição (modal/página "Editar empresa"): devolve resultado, sem redirect
-// (2026-09-03) — company-form.tsx fecha o modal com router.back().
+// (2026-09-03) — usada pela edição dentro da ficha (_ficha/editar-cadastro.tsx).
 export async function updateCompanyAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const token = await getServerAccessToken();
   const id = String(formData.get("id"));
@@ -267,19 +290,7 @@ export async function refreshCnpjDataAction(_prev: FormState, formData: FormData
       uf: lookup.uf,
       customFields: {
         ...current.customFields,
-        cnpj_lookup: {
-          situacaoCadastral: lookup.situacaoCadastral ?? null,
-          dataAbertura: lookup.dataAbertura ?? null,
-          porte: lookup.porte ?? null,
-          naturezaJuridica: lookup.naturezaJuridica ?? null,
-          cnaePrincipal: lookup.cnaePrincipal ?? null,
-          cnaeSecundarios: lookup.cnaeSecundarios ?? [],
-          estabelecimento: lookup.estabelecimento ?? null,
-          telefoneReceita: lookup.fones[0] ?? null,
-          emailReceita: lookup.emails[0] ?? null,
-          fonteFederal: "Receita Federal · BrasilAPI",
-          buscadoEm: new Date().toISOString(),
-        },
+        cnpj_lookup: snapshotDoLookup(lookup),
       },
     });
   } catch (error) {

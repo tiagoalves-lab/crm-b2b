@@ -1,5 +1,4 @@
 import { getServerAccessToken } from "@/lib/api/auth";
-import { effectiveTier } from "@/lib/api/raw-leads";
 import { loadLeadFicha } from "@/app/dashboard/leads/_ficha/load";
 import FichaTabs from "@/app/dashboard/leads/_ficha/ficha-tabs";
 import FichaBody from "@/app/dashboard/leads/_ficha/ficha-body";
@@ -21,7 +20,6 @@ export default async function LeadFichaDrawer({
   const token = await getServerAccessToken();
   const data = await loadLeadFicha(token, id);
   const { lead, activities, tasks, contacts } = data;
-  const tier = effectiveTier(lead);
 
   return (
     <OverlayDrawer
@@ -34,9 +32,6 @@ export default async function LeadFichaDrawer({
           </div>
           <div className="row-form" style={{ marginTop: 10 }}>
             <span className="pill pill-blue">Prospecção· triagem</span>
-            <span className={`tier-tag tier-${tier}`} style={{ fontSize: 11 }}>
-              score {lead.score}
-            </span>
             {lead.status !== "novo" && <span className="pill pill-gray">{lead.status}</span>}
             {lead.status === "novo" && (
               <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
