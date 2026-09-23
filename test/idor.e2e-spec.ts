@@ -625,6 +625,18 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       );
     }, 20000);
 
+    it('recusa busca ao vivo de cliente com token forjado', async () => {
+      // Query válida de propósito: com `q` fora do formato o 400 do
+      // ValidationPipe passaria verde sem exercitar o token.
+      const res = await request(app.getHttpServer())
+        .get('/integrations/cotacoes/companies/busca?q=empresa')
+        .set('Authorization', 'Bearer token-forjado-de-proposito');
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
     it('recusa gravação de cadastro com token forjado', async () => {
       const res = await request(app.getHttpServer())
         .post('/integrations/cotacoes/clientes')

@@ -786,7 +786,7 @@ describe('CotacoesService', () => {
   });
 
   describe('listCompanies', () => {
-    it('exclui lead-triagem, exige cpf_cnpj e mapeia os campos do espelho', async () => {
+    it('inclui cliente e lead aprovado, exige cpf_cnpj e mapeia os campos do espelho', async () => {
       const { service, deps } = montar();
       deps.tx.company.findMany.mockResolvedValue([companyFake()]);
 
@@ -800,7 +800,20 @@ describe('CotacoesService', () => {
       };
       expect(args.where.deletedAt).toBeNull();
       expect(args.where.cpfCnpj).toEqual({ not: null });
-      expect(args.where.NOT).toEqual({ tags: { has: 'lead-triagem' } });
+      // Elegibilidade: fora só quem ficou parado na triagem. Cliente com
+      // as duas tags e lead aprovado entram — foi o que fez a empresa
+      // recém-convertida sumir da busca do orçamento (2026-09-23).
+      expect(args.where.OR).toEqual([
+        { NOT: { tags: { has: 'lead-triagem' } } },
+        { tags: { has: 'cliente' } },
+        {
+          originLeads: {
+            some: {
+              OR: [{ status: 'aprovado' }, { convertedAt: { not: null } }],
+            },
+          },
+        },
+      ]);
 
       expect(res.proxima_pagina).toBeNull();
       expect(res.itens).toHaveLength(1);
@@ -841,6 +854,54 @@ describe('CotacoesService', () => {
       expect(args.where.updatedAt?.gt.toISOString()).toBe(
         '2026-08-28T10:00:00.000Z',
       );
+    });
+  });
+
+  describe('buscarCompanies', () => {
+    it('busca por nome e por CNPJ mantendo o filtro de elegibilidade', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findMany.mockResolvedValue([companyFake()]);
+
+      const res = await service.buscarCompanies({ q: '13.704.423' });
+
+      const args = (
+        deps.tx.company.findMany.mock.calls as unknown[][]
+      )[0][0] as {
+        where: { AND: [unknown, { OR: unknown[] }] };
+        take: number;
+      };
+      // Elegibilidade e texto ficam em AND separados: um `OR` solto no
+      // mesmo objeto sobrescreveria o outro em silêncio.
+      expect(args.where.AND[0]).toHaveProperty('OR');
+      expect(args.where.AND[1].OR).toEqual([
+        { razaoSocial: { contains: '13.704.423', mode: 'insensitive' } },
+        { fantasia: { contains: '13.704.423', mode: 'insensitive' } },
+        // O banco guarda só dígitos — o CNPJ digitado com pontuação casa.
+        { cpfCnpj: { contains: '13704423' } },
+      ]);
+      expect(args.take).toBe(20);
+      expect(res.itens).toHaveLength(1);
+    });
+
+    it('ignora termo curto sem ir ao banco', async () => {
+      const { service, deps } = montar();
+
+      const res = await service.buscarCompanies({ q: 'ga' });
+
+      expect(res.itens).toEqual([]);
+      expect(deps.tx.company.findMany).not.toHaveBeenCalled();
+    });
+
+    it('não procura por CNPJ quando o termo tem poucos dígitos', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findMany.mockResolvedValue([]);
+
+      await service.buscarCompanies({ q: 'gar1' });
+
+      const args = (
+        deps.tx.company.findMany.mock.calls as unknown[][]
+      )[0][0] as { where: { AND: [unknown, { OR: unknown[] }] } };
+      expect(args.where.AND[1].OR).toHaveLength(2);
     });
   });
 });

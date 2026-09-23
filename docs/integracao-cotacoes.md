@@ -40,9 +40,27 @@ navegador do app de cotações nunca fala com esta API e nunca vê o token.
 Query: `pagina` (default 1), `tamanho` (default 200, máx 500), `desde`
 (ISO-8601, opcional — marca d'água incremental).
 
-Escopo fixo: workspace `gama`, `deleted_at` nulo, `cpf_cnpj` preenchido,
-**sem** a tag `lead-triagem` (company-lead em triagem não é empresa de
-verdade — mesmo critério da tela Empresas). Ordenado por `updated_at, id`.
+Escopo fixo: workspace `gama`, `deleted_at` nulo, `cpf_cnpj` preenchido e
+**elegível pras cotações** (`elegivelParaCotacoes`, ver abaixo). Ordenado
+por `updated_at, id`.
+
+### Quem é "cliente" pras cotações (2026-09-23)
+
+Fora fica só o lead **parado na triagem**. Entram:
+
+- company sem a tag `lead-triagem` (o caso original);
+- company com a tag `cliente`, mesmo carregando `lead-triagem` junto — são
+  136 clientes do ERP, que só perdem a tag de triagem se comprarem depois
+  da importação (`egestor-contato-promote.service.ts`);
+- company cujo lead da Prospecção foi **aprovado ou convertido**
+  (`RawLead.status = aprovado` ou `convertedAt` preenchido).
+
+Até esta data o filtro era só `NOT tags has 'lead-triagem'`, e os dois
+últimos casos sumiam da busca de cliente do app de cotações: uma empresa
+aprovada na Prospecção de manhã não podia ser cotada à tarde, e a tela
+ainda oferecia recadastrá-la pelo CNPJ. O recorte mora num lugar só e vale
+igual aqui e na busca ao vivo — duas definições de "cliente" divergiriam
+em silêncio.
 
 Resposta:
 
@@ -67,6 +85,24 @@ Resposta:
   varredura seguinte. Ela recua 5 min de propósito: company alterada durante
   uma varredura paginada poderia escapar da janela; a repescagem é barata
   porque o upsert do espelho (casado por CNPJ) é idempotente.
+
+## `GET /integrations/cotacoes/companies/busca` — busca ao vivo (2026-09-23)
+
+Query: `q` (texto, mín. 3 caracteres) e `tamanho` (default 20, máx 50).
+Resposta: `{ "itens": [...] }` com os mesmos campos da varredura.
+
+Casa por razão social, fantasia e — quando o termo tem 4+ dígitos — por
+`cpf_cnpj` (o banco guarda só dígitos, então CNPJ digitado com pontuação
+funciona). Mesmo `elegivelParaCotacoes` da varredura.
+
+Existe porque o espelho do app de cotações só atualiza por varredura: quem
+está montando um orçamento ou cadastrando a oportunidade de um cartão do
+Trello precisa enxergar a empresa que nasceu aqui há minutos. O app pinta a
+lista com o espelho e corrige com esta resposta; ela é a palavra final —
+é depois dela que a tela pode afirmar que o cliente não existe.
+
+Sem paginação de propósito: quem chama está escolhendo numa lista curta,
+não varrendo a base.
 
 ## `POST /integrations/cotacoes/clientes` — cadastro vindo da cotação
 

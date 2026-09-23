@@ -16,6 +16,7 @@ import {
   type TenantTx,
 } from '../../tenancy/tenant-context.service';
 import type { MembershipContext } from '../../tenancy/tenant-membership.guard';
+import { BuscarCompaniesQueryDto } from './dto/buscar-companies-query.dto';
 import { ListCompaniesQueryDto } from './dto/list-companies-query.dto';
 import { TrelloComentarioDto } from './dto/trello-comentario.dto';
 import { TrelloComentariosDto } from './dto/trello-comentarios.dto';
@@ -32,6 +33,14 @@ const DEFAULT_WORKSPACE_SLUG = 'gama';
 const SYSTEM_ACTOR_USER_ID = '00000000-0000-4000-8000-000000000000';
 
 const PAGE_SIZE_PADRAO = 200;
+
+// Busca ao vivo do app de cotações: o usuário escolhe uma empresa numa
+// lista curta, não pagina resultado. Mínimos existem pra uma tecla solta
+// não varrer a base inteira; o CNPJ aceita menos porque 4 dígitos já
+// separam bem (e é assim que se digita um CNPJ pela metade).
+const BUSCA_LIMITE_PADRAO = 20;
+const BUSCA_TERMO_MIN = 3;
+const BUSCA_CNPJ_MIN = 4;
 
 // Folga da marca d'água devolvida ao app de cotações: uma company alterada
 // enquanto a varredura paginada roda pode ter updated_at menor que o fim da
@@ -131,9 +140,33 @@ export class CotacoesService {
     }
   }
 
+  // Quem o app de cotações enxerga: empresa de verdade, ou seja, tudo que
+  // NÃO ficou parado na triagem da Prospecção. O critério era só
+  // `NOT tags has 'lead-triagem'`, igual à tela Empresas, e deixava de fora
+  // dois casos que existem de verdade na base (2026-09-23):
+  //   • o cliente do ERP que carrega as DUAS tags ('cliente' e
+  //     'lead-triagem') — 136 empresas; a graduação do eGestor só tira a
+  //     tag de quem comprou depois da importação;
+  //   • o lead aprovado/convertido na Prospecção cuja company manteve a
+  //     tag — quem cota precisa achá-lo no mesmo dia em que ele virou
+  //     negociação, que é justamente quando o cartão do Trello chega.
+  // Lead ainda em triagem continua fora: não é cliente e poluiria a busca
+  // do orçamento com 1.500 prospects.
+  private readonly elegivelParaCotacoes: Prisma.CompanyWhereInput = {
+    OR: [
+      { NOT: { tags: { has: 'lead-triagem' } } },
+      { tags: { has: 'cliente' } },
+      {
+        originLeads: {
+          some: {
+            OR: [{ status: 'aprovado' }, { convertedAt: { not: null } }],
+          },
+        },
+      },
+    ],
+  };
+
   // Varredura paginada pro espelho de clientes do app de cotações.
-  // Company-lead em triagem (tag "lead-triagem") fica de fora — não é
-  // empresa de verdade até ser aprovada, mesmo critério da tela Empresas.
   async listCompanies(query: ListCompaniesQueryDto): Promise<{
     itens: CompanyParaCotacoes[];
     proxima_pagina: number | null;
@@ -151,7 +184,7 @@ export class CotacoesService {
             workspaceId,
             deletedAt: null,
             cpfCnpj: { not: null },
-            NOT: { tags: { has: 'lead-triagem' } },
+            ...this.elegivelParaCotacoes,
             ...(query.desde
               ? { updatedAt: { gt: new Date(query.desde) } }
               : {}),
@@ -172,6 +205,58 @@ export class CotacoesService {
       proxima_pagina: temMais ? pagina + 1 : null,
       agora: new Date(Date.now() - MARCA_DAGUA_FOLGA_MS).toISOString(),
     };
+  }
+
+  // Busca ao vivo pelo app de cotações (2026-09-23). A varredura acima
+  // alimenta um espelho que só atualiza de tempos em tempos; quem está
+  // montando um orçamento ou cadastrando a oportunidade de um cartão do
+  // Trello precisa enxergar a empresa que nasceu no CRM agora — esperar o
+  // próximo tick fazia a tela dizer "não existe" e convidar a recadastrar
+  // pelo CNPJ quem já estava aqui. Mesmo recorte de elegibilidade da
+  // varredura, para que as duas fontes nunca discordem sobre quem existe.
+  async buscarCompanies(
+    query: BuscarCompaniesQueryDto,
+  ): Promise<{ itens: CompanyParaCotacoes[] }> {
+    const termo = (query.q ?? '').trim();
+    const limite = query.tamanho ?? BUSCA_LIMITE_PADRAO;
+    // Termo curto demais devolveria meia base por uma tecla solta.
+    if (termo.length < BUSCA_TERMO_MIN) return { itens: [] };
+
+    const digitos = termo.replace(/\D/g, '');
+    const workspaceId = await this.workspaceId();
+
+    const rows = await this.tenantContext.run(
+      this.ctxSistema(workspaceId),
+      (tx) =>
+        tx.company.findMany({
+          where: {
+            workspaceId,
+            deletedAt: null,
+            cpfCnpj: { not: null },
+            // Os dois OR moram em AND separados de propósito: elegibilidade
+            // e texto buscado são condições diferentes, e um `OR` solto no
+            // mesmo objeto sobrescreveria o outro em silêncio.
+            AND: [
+              this.elegivelParaCotacoes,
+              {
+                OR: [
+                  { razaoSocial: { contains: termo, mode: 'insensitive' } },
+                  { fantasia: { contains: termo, mode: 'insensitive' } },
+                  // CNPJ digitado com ponto/barra ou só o começo dos
+                  // dígitos — o banco guarda só dígitos.
+                  ...(digitos.length >= BUSCA_CNPJ_MIN
+                    ? [{ cpfCnpj: { contains: digitos } }]
+                    : []),
+                ],
+              },
+            ],
+          },
+          orderBy: [{ razaoSocial: 'asc' }],
+          take: limite,
+        }),
+    );
+
+    return { itens: rows.map((c) => this.paraCotacoes(c)) };
   }
 
   // Cadastro vindo do app de cotações (regra 3.10 das regras de negócio):

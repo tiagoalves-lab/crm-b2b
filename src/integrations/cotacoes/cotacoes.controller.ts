@@ -10,6 +10,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../auth/public.decorator';
 import { CotacoesService } from './cotacoes.service';
+import { BuscarCompaniesQueryDto } from './dto/buscar-companies-query.dto';
 import { ListCompaniesQueryDto } from './dto/list-companies-query.dto';
 import { TrelloComentariosDto } from './dto/trello-comentarios.dto';
 import { TrelloStatusQueryDto } from './dto/trello-status-query.dto';
@@ -39,6 +40,23 @@ export class CotacoesController {
   ) {
     this.cotacoes.assertTokenValido(authorization);
     return this.cotacoes.listCompanies(query);
+  }
+
+  // Busca ao vivo de cliente (2026-09-23) — usada pelo modal de escolher
+  // cliente do orçamento e pelo cadastro de oportunidade a partir do
+  // cartão do Trello. Existe porque o espelho do app só atualiza a cada
+  // varredura, e empresa criada no CRM há minutos precisa aparecer na
+  // hora. Limite por IP mais alto que o da varredura: aqui é uma chamada
+  // por termo digitado, não uma por hora.
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Public()
+  @Get('companies/busca')
+  async buscarCompanies(
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: BuscarCompaniesQueryDto,
+  ) {
+    this.cotacoes.assertTokenValido(authorization);
+    return this.cotacoes.buscarCompanies(query);
   }
 
   // Cadastro/edição de cliente vindo da cotação — upsert por CNPJ (regra
