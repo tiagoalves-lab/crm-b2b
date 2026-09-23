@@ -62,8 +62,13 @@ export async function registrarExclusao(
       contexto: dados.contexto ?? null,
       // Ida e volta por JSON: Date vira texto ISO e Decimal do Prisma vira
       // texto — o que a coluna jsonb aceita.
+      // BigInt (tamanho de anexo em bytes) não tem serialização nativa e
+      // derruba o JSON.stringify, então vira texto aqui — sem isso,
+      // excluir anexo respondia 500.
       snapshot: JSON.parse(
-        JSON.stringify(dados.snapshot ?? {}),
+        JSON.stringify(dados.snapshot ?? {}, (_chave, valor: unknown) =>
+          typeof valor === 'bigint' ? valor.toString() : valor,
+        ),
       ) as Prisma.InputJsonValue,
     },
   });

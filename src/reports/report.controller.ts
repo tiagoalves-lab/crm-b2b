@@ -19,6 +19,7 @@ import {
   ReportConfigService,
   TIPOS_CONFIGURAVEIS,
   TIPO_FOLLOWUP,
+  TIPO_LEAD_META,
   type TipoReport,
 } from './report-config.service';
 import { ReportSchedulerService } from './report-scheduler.service';
@@ -30,7 +31,7 @@ import { ReportService } from './report.service';
 // profundidade, mesmo padrão da Integração eGestor).
 const PAPEIS_PERMITIDOS = new Set<MembershipRole>(['owner', 'admin']);
 
-const MAX_LOG = 20;
+const MAX_LOG = 40;
 
 @Controller('reports')
 export class ReportController {
@@ -116,6 +117,13 @@ export class ReportController {
   ) {
     this.assertPermitido(membership);
     const tipoValido = this.assertTipo(tipo);
+    // O aviso de lead sai quando o lead chega — não existe "enviar agora"
+    // sem um lead novo para anunciar.
+    if (tipoValido === TIPO_LEAD_META) {
+      throw new BadRequestException(
+        'O aviso de lead novo sai sozinho quando um lead entra. Use o envio de teste para conferir o layout.',
+      );
+    }
     return tipoValido === TIPO_FOLLOWUP
       ? this.scheduler.enviarFollowup()
       : this.scheduler.enviarDiario();
@@ -138,6 +146,9 @@ export class ReportController {
       throw new BadRequestException(
         'Informe o e-mail de destino em ?para=alguem@dominio.',
       );
+    }
+    if (tipoValido === TIPO_LEAD_META) {
+      return this.scheduler.enviarLeadMetaTeste(destinatario);
     }
     return tipoValido === TIPO_FOLLOWUP
       ? this.scheduler.enviarFollowupTeste(destinatario)

@@ -21,6 +21,42 @@ export function effectiveTier(lead: Pick<RawLead, "manualTier">): ScoreTier | nu
   return lead.manualTier ?? null;
 }
 
+// Faixa do funil de vendas em que o lead está (2026-09-18) — régua ÚNICA,
+// usada pelas abas da Prospecção, pela coluna "Funil" da Busca geral e
+// pelo funil do Painel. Espelha as decisões 6.1/6.2/6.6:
+//
+//   Prospect        → na fila, ainda sem prazo de investimento informado
+//   Lead qualificado → prazo informado ao SDR, ainda sem proposta
+//   Lead convertido → saiu da triagem; é a proposta que o torna convertido
+//   Descartado      → saiu do funil
+//
+// Antes cada tela escrevia isso do seu jeito ("Aprovado" na Busca geral,
+// aba na Prospecção), e o mesmo lead aparecia com nome diferente em cada
+// lugar.
+export type FaixaFunil = "prospect" | "qualificado" | "convertido" | "descartado";
+
+export const FAIXA_FUNIL_LABEL: Record<FaixaFunil, string> = {
+  prospect: "Prospect",
+  qualificado: "Lead qualificado",
+  convertido: "Lead convertido",
+  descartado: "Descartado",
+};
+
+export const FAIXA_FUNIL_PILL: Record<FaixaFunil, string> = {
+  prospect: "pill pill-blue",
+  qualificado: "pill pill-amber",
+  convertido: "pill pill-green",
+  descartado: "pill pill-gray",
+};
+
+export function faixaDoFunil(
+  lead: Pick<RawLead, "status" | "manualTier">,
+): FaixaFunil {
+  if (lead.status === "descartado") return "descartado";
+  if (lead.status === "aprovado") return "convertido";
+  return effectiveTier(lead) === null ? "prospect" : "qualificado";
+}
+
 // 5000 (não 200): a tela de Prospecção busca tudo numa página só e
 // filtra/ordena no client, sem paginação de verdade (mesmo padrão de
 // approvedLeads/descartadosItems) — um teto baixo aqui faz lead de score
@@ -196,10 +232,12 @@ export const CONTACTS_TEMPLATE_HEADERS = [
   "Porte",
   "Situação Cadastral",
   "Abertura",
-  "Sócios (QSA)",
-  "Importador",
+  // Dono do lead (2026-09-23): aceita nome, login ou e-mail do membro;
+  // vazio = fica com quem está importando. "Sócios (QSA)" e "Importador"
+  // saíram do modelo no mesmo pedido.
+  "Representante",
   // Tags livres da Prospecção (2026-08-06, pedido direto do usuário —
-  // não existia neste modelo) — mesmo separador "|" de Sócios (QSA).
+  // não existia neste modelo) — separadas por "|" na mesma célula.
   "Tags",
   "Contato Nome",
   "Contato Cargo",

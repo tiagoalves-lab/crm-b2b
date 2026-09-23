@@ -36,6 +36,8 @@ export const PERMISSION_MODULES = [
   "membros",
   // Item "Treinamento" do menu lateral (2026-09-17) — espelho do backend.
   "treinamento",
+  // Telefonia (2026-09-23) — espelho do backend. "Criar" é ligar pelo CRM.
+  "telefonia",
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 
@@ -56,6 +58,7 @@ export const MODULE_LABELS: Record<PermissionModule, string> = {
   leads: "Leads / Prospecção",
   membros: "Membros",
   treinamento: "Treinamento",
+  telefonia: "Telefonia",
 };
 
 // Agrupamento visual — sub-itens de "Empresas" (abas da ficha) aparecem
@@ -75,6 +78,7 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   leads: null,
   membros: null,
   treinamento: null,
+  telefonia: null,
 };
 
 // Nota curta por módulo pra deixar claro, na hora, quando um checkbox não
@@ -87,6 +91,8 @@ export const MODULE_HINTS: Partial<Record<PermissionModule, string>> = {
     "Só \"Ver\" controla algo aqui (a aba aparecer + a lista desta empresa). Criar/editar/excluir de uma oportunidade sempre seguem o módulo Oportunidades (geral).",
   empresas_vendas:
     "Cobre as três abas de faturamento da ficha: Vendas, ABC de Produtos e Serviços. Vem DESLIGADO para representante — o histórico de compra do cliente é informação de gestão.",
+  telefonia:
+    "\"Criar\" é poder ligar pelo CRM; \"Ver\" é enxergar o histórico de chamadas. A ligação sai pelo programa de telefone instalado no computador (MicroSIP).",
   treinamento:
     "Libera o item Treinamento no menu lateral, com os slides de uso do CRM. Vem DESLIGADO para todos — marque membro a membro.",
 };
@@ -116,6 +122,7 @@ export const MODULE_ACTIONS: Record<PermissionModule, readonly PermissionAction[
   leads: PERMISSION_ACTIONS,
   membros: ["ver", "criar"],
   treinamento: ["ver"],
+  telefonia: ["ver", "criar"],
 };
 
 const allTrue: Partial<Record<PermissionAction, boolean>> = {
@@ -130,6 +137,10 @@ const noDelete: Partial<Record<PermissionAction, boolean>> = {
   criar: true,
   editar: true,
   excluir: false,
+};
+const telefoniaCompleta: Partial<Record<PermissionAction, boolean>> = {
+  ver: true,
+  criar: true,
 };
 const contatosDefault: Partial<Record<PermissionAction, boolean>> = {
   ver: true,
@@ -157,6 +168,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: allTrue,
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
+    telefonia: telefoniaCompleta,
   },
   admin: {
     empresas_visao_geral: viewOnly,
@@ -172,6 +184,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: allTrue,
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
+    telefonia: telefoniaCompleta,
   },
   manager: {
     empresas_visao_geral: viewOnly,
@@ -187,6 +200,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: allTrue,
     membros: { ver: true, criar: true },
     treinamento: { ver: false },
+    telefonia: telefoniaCompleta,
   },
   sales_rep: {
     empresas_visao_geral: viewOnly,
@@ -205,6 +219,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: noDelete,
     membros: { ver: true, criar: false },
     treinamento: { ver: false },
+    telefonia: telefoniaCompleta,
   },
   readonly: {
     empresas_visao_geral: viewOnly,
@@ -220,6 +235,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: viewOnly,
     membros: viewOnly,
     treinamento: { ver: false },
+    telefonia: viewOnly,
   },
 };
 

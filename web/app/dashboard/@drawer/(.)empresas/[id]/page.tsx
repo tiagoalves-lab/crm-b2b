@@ -4,7 +4,7 @@ import FichaTabs from "@/app/dashboard/empresas/_ficha/ficha-tabs";
 import FichaBody from "@/app/dashboard/empresas/_ficha/ficha-body";
 import OverlayDrawer from "@/app/dashboard/_overlay/overlay-drawer";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { companyRazaoSocialName } from "@/lib/api/companies";
+import { companyRazaoSocialName, ehClienteDaCarteira } from "@/lib/api/companies";
 import { hasPermission } from "@/lib/api/permission-catalog";
 
 export default async function EmpresaFichaDrawer({
@@ -25,11 +25,10 @@ export default async function EmpresaFichaDrawer({
     "empresas_vendas",
     "ver",
   );
-  // Mesmo critério da lista (web/app/dashboard/empresas/page.tsx#tipoOf):
-  // tag "cliente" (dado real da importação), não presença de Opportunity
-  // "won" — pipeline novo começou do zero, sem negócio pros clientes já
-  // existentes antes dele.
-  const isCliente = company.tags.includes("cliente");
+  // Mesma régua da lista e da busca geral, calculada no backend
+  // (src/companies/cliente-regra.ts): cliente é quem já comprou — pedido
+  // emitido no eGestor ou oportunidade ganha no CRM.
+  const isCliente = ehClienteDaCarteira(company);
 
   return (
     <OverlayDrawer
@@ -60,6 +59,7 @@ export default async function EmpresaFichaDrawer({
           aba={aba}
           counts={contagensDaFicha(data)}
           podeVerVendas={podeVerVendas}
+          isCliente={isCliente}
         />
       }
     >

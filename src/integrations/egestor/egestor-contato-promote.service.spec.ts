@@ -27,6 +27,10 @@ function criarTx(
     companyCreateResult?: Record<string, unknown>;
     companyFindResult?: Record<string, unknown> | null;
     espelhoFindResult?: Record<string, unknown> | null;
+    // Empresa já comprou? É o que decide a "graduação" desde a decisão
+    // 6.11 (2026-09-18) — cadastro de cliente no eGestor sem pedido
+    // continua na Prospecção.
+    jaComprou?: boolean;
   } = {},
 ) {
   const companyCreate = jest
@@ -65,6 +69,12 @@ function criarTx(
       deleteMany: contactDeleteMany,
     },
     rawLead: { updateMany: rawLeadUpdateMany },
+    salesHistory: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue(overrides.jaComprou ? { id: 'venda-1' } : null),
+    },
+    opportunity: { findFirst: jest.fn().mockResolvedValue(null) },
   } as unknown as Parameters<EgestorContatoPromoteService['promoverLinha']>[0];
 }
 
@@ -106,11 +116,12 @@ describe('EgestorContatoPromoteService', () => {
       expect(summary.criadasNovas).toBe(0);
     });
 
-    it('"graduar" uma Company de lead-triagem pra cliente ao vincular por dedupe', async () => {
+    it('"graduar" uma Company de lead-triagem pra cliente quando ela já comprou', async () => {
       const service = new EgestorContatoPromoteService();
       const tx = criarTx({
         queryRawResult: [{ id: 'company-lead' }],
         companyFindResult: { tags: ['lead-triagem'] },
+        jaComprou: true,
       });
       const summary = EgestorContatoPromoteService.novoSummaryVazio();
 
@@ -124,6 +135,26 @@ describe('EgestorContatoPromoteService', () => {
         where: { promotedCompanyId: 'company-lead', status: 'novo' },
         data: { status: 'aprovado' },
       });
+    });
+
+    it('NÃO tira da Prospecção a company que o eGestor diz cliente mas que nunca comprou (decisão 6.11)', async () => {
+      const service = new EgestorContatoPromoteService();
+      const tx = criarTx({
+        queryRawResult: [{ id: 'company-lead' }],
+        companyFindResult: { tags: ['lead-triagem'] },
+        jaComprou: false,
+      });
+      const summary = EgestorContatoPromoteService.novoSummaryVazio();
+
+      await service.promoverLinha(tx, 'ws-1', linha() as never, summary);
+
+      // A tag "cliente" entra (é o que o ERP diz), mas "lead-triagem"
+      // FICA: sem pedido emitido, a empresa continua sendo prospecção.
+      expect(tx.company.update).toHaveBeenCalledWith({
+        where: { id: 'company-lead' },
+        data: { tags: ['lead-triagem', 'cliente'] },
+      });
+      expect(tx.rawLead.updateMany).not.toHaveBeenCalled();
     });
 
     it('linha já promovida (companyId presente) não repete dedupe/criação', async () => {

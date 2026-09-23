@@ -34,8 +34,12 @@ export interface CompanyGroup {
   cnaePrincipal?: string;
   porte?: string;
   situacao: string;
-  importador: boolean;
-  socios?: string[];
+  // Nome/login/e-mail do representante escrito na planilha (pedido do
+  // usuário, 2026-09-23) — quem resolve isso pro membro do CRM é o
+  // RawLeadService (precisa de banco + Supabase Auth, que não cabem num
+  // parser puro). Vazio = o lead fica com quem está importando, como
+  // sempre foi.
+  representante?: string;
   tags?: string[];
   dtAbertura?: string;
   contacts: ContactRow[];
@@ -61,8 +65,7 @@ type TemplateKey =
   | 'porte'
   | 'situacao'
   | 'abertura'
-  | 'socios'
-  | 'importador'
+  | 'representante'
   | 'tags'
   | 'contatoNome'
   | 'contatoCargo'
@@ -83,11 +86,13 @@ export const CONTACTS_TEMPLATE_COLUMNS: Array<{
   { key: 'porte', header: 'Porte' },
   { key: 'situacao', header: 'Situação Cadastral' },
   { key: 'abertura', header: 'Abertura' },
-  { key: 'socios', header: 'Sócios (QSA)' },
-  { key: 'importador', header: 'Importador' },
+  // Dono do lead (2026-09-23). "Sócios (QSA)" e "Importador" saíram do
+  // modelo no mesmo pedido — o quadro societário não era exibido em
+  // nenhuma tela e o indicativo de importador continua vindo dos outros
+  // caminhos de cadastro (crawler/form manual), que não usam este modelo.
+  { key: 'representante', header: 'Representante' },
   // Tags livres da Prospecção (RawLead.tags, pedido do usuário,
-  // 2026-08-06) — mesmo separador "|" de Sócios (QSA) acima, por
-  // consistência dentro deste mesmo modelo.
+  // 2026-08-06) — separadas por "|" dentro da mesma célula.
   { key: 'tags', header: 'Tags' },
   { key: 'contatoNome', header: 'Contato Nome' },
   { key: 'contatoCargo', header: 'Contato Cargo' },
@@ -203,15 +208,10 @@ export async function parseContactsSpreadsheet(
     let group = groups.get(cnpjDigits);
     if (!group) {
       const fantasiaRaw = col('fantasia', row);
-      const socios = col('socios', row)
-        .split('|')
-        .map((s) => s.trim())
-        .filter(Boolean);
       const tags = col('tags', row)
         .split('|')
         .map((s) => s.trim())
         .filter(Boolean);
-      const importadorRaw = col('importador', row).toLowerCase();
 
       group = {
         firstRow: rowNumber,
@@ -225,8 +225,7 @@ export async function parseContactsSpreadsheet(
         cnaePrincipal: col('cnae', row) || undefined,
         porte: normalizePorte(col('porte', row)),
         situacao: col('situacao', row).toUpperCase() || 'ATIVA',
-        importador: TRUTHY.includes(importadorRaw),
-        socios: socios.length ? socios : undefined,
+        representante: col('representante', row) || undefined,
         tags: tags.length ? tags : undefined,
         dtAbertura: normalizeAbertura(col('abertura', row)),
         contacts: [],

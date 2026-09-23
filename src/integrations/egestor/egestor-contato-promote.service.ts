@@ -5,6 +5,7 @@ import { sanitizeRazaoSocial } from '../../common/sanitize-razao-social';
 import type { TenantTx } from '../../tenancy/tenant-context.service';
 import { extrairContatoArray } from './egestor.types';
 import type { EgestorContatoRaw } from './egestor.types';
+import { jaComprou } from '../../companies/cliente-regra';
 
 export interface PromoteSummary {
   promovidas: number;
@@ -120,19 +121,24 @@ export class EgestorContatoPromoteService {
         if (existingId) {
           // Nunca sobrescreve cadastro manual já existente (mesma
           // filosofia do merge entre representantes, 2026-08-06) — só
-          // garante que ela conte como Cliente e, se era uma company de
-          // Prospecção ainda não aprovada (tag "lead-triagem"), "graduar"
-          // ela — o eGestor confirma que é cliente de verdade, não faz
-          // sentido continuar escondida em triagem (mesmo GET /companies
-          // que filtra por essa tag esconderia esta empresa mesmo já
-          // marcada "cliente" — bug real achado promovendo as primeiras
-          // 213 linhas em 2026-08-07, corrigido aqui).
+          // registra a tag "cliente" (o eGestor classifica assim) e, se
+          // era uma company de Prospecção ainda não aprovada (tag
+          // "lead-triagem"), "graduar" ela.
+          //
+          // Graduar passou a exigir COMPRA (2026-09-18, decisão 6.11):
+          // estar cadastrado como cliente no ERP não basta — 145 cadastros
+          // do eGestor nunca emitiram pedido. Sem compra, a empresa
+          // continua na Prospecção, senão a próxima promoção arrancaria
+          // dali justamente os prospects que o usuário mandou pra lá.
           const atual = await tx.company.findUniqueOrThrow({
             where: { id: existingId },
             select: { tags: true },
           });
-          const eraLeadTriagem = atual.tags.includes('lead-triagem');
-          const tagsNovas = atual.tags.filter((t) => t !== 'lead-triagem');
+          const comprou = await jaComprou(tx, workspaceId, existingId);
+          const eraLeadTriagem = atual.tags.includes('lead-triagem') && comprou;
+          const tagsNovas = eraLeadTriagem
+            ? atual.tags.filter((t) => t !== 'lead-triagem')
+            : [...atual.tags];
           if (!tagsNovas.includes('cliente')) tagsNovas.push('cliente');
           if (tagsNovas.length !== atual.tags.length || eraLeadTriagem) {
             await tx.company.update({

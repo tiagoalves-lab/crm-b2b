@@ -1391,6 +1391,272 @@ a {
   opacity: 0.6;
 }
 
+/* Painel: funil e gráfico do pipeline dividem a largura ao meio
+   (2026-09-18, pedido do usuário). Vira uma coluna no mesmo ponto de
+   quebra do resto da tela. */
+.painel-duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 1100px) {
+  .painel-duo {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Funil de vendas do Painel ----------
+   Quatro faixas que vão estreitando: nome, movimento do período e a
+   pendência à esquerda, o número de hoje à direita, seta com a taxa de
+   passagem entre as faixas e o círculo de fechados no fim. A faixa
+   inteira é clicável. */
+.funil {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.funil-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.fchip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 100px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Palavra dentro da pastilha (2026-09-18) — o número sozinho era lido
+   como "o total desta faixa"; a palavra diz o que ele é. */
+.fchip small {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.85;
+  margin-left: 5px;
+}
+
+/* Pastilha neutra do que ENTROU na faixa dentro da janela (2026-09-22) —
+   é volume de entrada, não resultado, então não disputa cor com
+   avançou/ficou/perdeu. */
+.fchip.entrou {
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  padding: 3px 11px;
+}
+
+.fchip.avancou {
+  background: var(--accent);
+}
+
+.fchip.ficou {
+  background: #c9a227;
+  color: #2a2100;
+}
+
+.fchip.perdeu {
+  background: var(--danger);
+}
+
+.fchip.valor {
+  background: var(--green);
+}
+
+.funil-nivel {
+  width: 100%;
+  position: relative;
+  padding-bottom: 14px;
+}
+
+.funil-caixa {
+  margin: 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 100px;
+  background: var(--surface);
+  padding: 12px 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  min-height: 58px;
+}
+
+.funil-nome {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.funil-nome small {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.funil-numeros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.funil-taxa {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 100px;
+  padding: 3px 11px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-sm);
+}
+
+.funil-taxa.fraca {
+  color: var(--danger);
+  border-color: rgba(200, 64, 47, 0.4);
+  background: var(--danger-soft);
+}
+
+.funil-taxa span {
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+/* Seletor de janela de tempo, no cabeçalho do painel (2026-09-21). */
+.janela-seletor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.funil-fecho {
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.funil-circulo {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(31, 138, 76, 0.28);
+}
+
+.funil-circulo b {
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.funil-circulo span {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.92;
+}
+
+.funil-fecho-valor {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.funil-totais {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.frot {
+  display: inline-block;
+  border-radius: 100px;
+  padding: 3px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.frot.conv {
+  background: var(--accent);
+}
+
+.frot.perd {
+  background: var(--danger);
+}
+
+.frot.val {
+  background: var(--text-primary);
+}
+
+.fnum {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fnum.perda {
+  color: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .funil-caixa {
+    width: 100% !important;
+    border-radius: var(--radius);
+  }
+
+  .funil-taxa {
+    position: static;
+    margin: 8px 0 0;
+  }
+
+  .funil-nivel {
+    padding-bottom: 6px;
+  }
+
+  .funil-totais {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
 /* ---------- Funil (barras horizontais) ---------- */
 .funnel-bar {
   display: flex;
@@ -2064,7 +2330,50 @@ span.tag-chip {
   margin: -6px 0 16px;
 }
 
-a.tag-chip {
+/* Comentário de pendência embaixo do funil (2026-09-21) — o que fazer
+   olhando cada faixa, com atalho pra tela já filtrada. */
+.funil-aviso {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #c9a227;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.funil-aviso b {
+  color: var(--text-primary);
+}
+
+/* Aviso "o resultado da busca está em outra aba" (2026-09-18) — a aba
+   aberta ficava vazia sem dizer onde o registro estava. */
+.aba-dica {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -6px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* button.tag-chip entrou em 2026-09-18: os chips de prazo da Prospecção
+   filtram no navegador (sem navegar), então são <button>, não <a>. */
+a.tag-chip,
+button.tag-chip {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
@@ -2074,14 +2383,17 @@ a.tag-chip {
   border: 1px solid var(--border);
   color: var(--text-secondary);
   text-decoration: none;
+  cursor: pointer;
 }
 
-a.tag-chip:hover {
+a.tag-chip:hover,
+button.tag-chip:hover {
   border-color: var(--border-strong);
   color: var(--text);
 }
 
-a.tag-chip.active {
+a.tag-chip.active,
+button.tag-chip.active {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
@@ -4917,5 +5229,120 @@ a.tag-chip.active {
 @media (max-width: 640px) {
   .admin-head {
     padding: 12px 16px 0;
+  }
+}
+
+/* ---------- Tela de Relatórios: menu + filtros + resultado (2026-09-23)
+   Estrutura no molde do eGestor: lista de relatórios fixa à esquerda,
+   filtros do relatório escolhido em cima e o resultado embaixo. */
+.rel-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.rel-menu {
+  position: sticky;
+  top: 20px;
+}
+
+.rel-menu .panel-body {
+  padding: 10px 0 14px;
+}
+
+.rel-menu-item {
+  display: block;
+  padding: 8px 18px;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+
+.rel-menu-item:hover {
+  background: var(--bg);
+}
+
+.rel-menu-item.ativo {
+  border-left-color: var(--accent);
+  background: var(--bg);
+  font-weight: 600;
+}
+
+.rel-vazio {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 40px 4px;
+}
+
+.rel-cabecalho {
+  margin-bottom: 16px;
+}
+
+.rel-cabecalho h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.rel-cabecalho p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Filtros em grade: cabem 3 por linha em tela larga e viram 1 no celular,
+   sem media query própria. */
+.rel-filtros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0 16px;
+}
+
+.rel-filtros .field {
+  margin-bottom: 14px;
+}
+
+.rel-filtros-acoes {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+/* Uma anotação dentro da célula Descrição (linha mesclada empilha
+   várias). */
+.rel-anotacao {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.rel-anotacao + .rel-anotacao {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.rel-anotacao-data {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.rel-anotacao-contato {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 900px) {
+  .rel-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .rel-menu {
+    position: static;
   }
 }

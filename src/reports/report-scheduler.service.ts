@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { MailService } from '../mail/mail.service';
+import {
+  assuntoLeadMeta,
+  exemploLeadMeta,
+  montarLeadMetaHtml,
+} from '../notifications/notification-template';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../tenancy/tenant-context.service';
 import { diaBR, horarioBR, FUSO_PADRAO } from './report-datas';
@@ -13,6 +18,7 @@ import {
 } from './report-template';
 import {
   ReportConfigService,
+  TIPOS_AGENDADOS,
   TIPO_FOLLOWUP,
   TIPO_PIPELINE_DIARIO,
 } from './report-config.service';
@@ -130,6 +136,10 @@ export class ReportSchedulerService {
     );
 
     for (const config of configs) {
+      // O aviso de lead novo do Meta também mora em report_config, mas sai
+      // por evento (ver NotificationService) — não tem rodada para o tick
+      // disparar.
+      if (!TIPOS_AGENDADOS.includes(config.tipo)) continue;
       if (!config.ativo) continue;
       if (config.diasUteis && !ehDiaUtil(agora, tz)) continue;
 
@@ -460,6 +470,34 @@ export class ReportSchedulerService {
       html: montarReportDiarioHtml(dados),
       // Sem chave de idempotência de propósito: dois testes seguidos
       // precisam chegar os dois.
+    });
+
+    return {
+      status: envio.ok ? 'enviado' : 'falha',
+      destinatarios: 1,
+      erro: envio.error,
+      messageId: envio.id,
+    };
+  }
+
+  // Aviso de lead novo para um endereço só, com um lead fictício: é como
+  // conferir o layout sem esperar cair um lead de verdade do anúncio.
+  async enviarLeadMetaTeste(destinatario: string): Promise<ResultadoEnvio> {
+    if (!this.mail.configurado) {
+      return { status: 'desligado', destinatarios: 0 };
+    }
+
+    const aviso = {
+      ...exemploLeadMeta(),
+      url: this.config.get<string>('reportAppUrl')
+        ? `${this.config.get<string>('reportAppUrl')}/dashboard/leads`
+        : null,
+    };
+
+    const envio = await this.mail.send({
+      to: [destinatario],
+      subject: `[teste] ${assuntoLeadMeta(aviso)}`,
+      html: montarLeadMetaHtml(aviso),
     });
 
     return {

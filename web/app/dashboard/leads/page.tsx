@@ -1,19 +1,117 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { listContactsByCompanyIds } from "@/lib/api/contacts";
-import type { Contact } from "@/lib/api/types";
+import type { Contact, RawLead } from "@/lib/api/types";
 import { effectiveTier, listRawLeads, TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
+import { listOpportunities } from "@/lib/api/opportunities";
+import { listMemberships } from "@/lib/api/memberships";
 import ImportContactsToggle from "./import-contacts-toggle";
-import LeadsTable from "./leads-table";
+import ProspeccaoTabs from "./prospeccao-tabs";
 import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
 
-type TierFilter = "todos" | ScoreTier | "fila" | "descartados";
+// Abas da Prospecção (reestruturação pedida pelo usuário, 2026-09-18) —
+// passam a espelhar a jornada do lead (decisões 6.1/6.2 de
+// docs/regras-de-negocio.md) em vez de faixas de classificação soltas:
+//
+//   Prospects           → na fila, ainda sem prazo informado ao SDR
+//   Leads qualificados  → já têm prazo; as faixas Curto/Médio/Longo viram
+//                         sub-filtro DESTA aba, não abas de primeiro nível
+//   Leads convertidos   → têm proposta no Pipeline
+//   Descartados         → saíram do fluxo
+//
+// "Leads convertidos" sai do PIPELINE (oportunidades), não da lista de
+// leads: é a regra que o usuário fechou — quem manda é o registro de
+// oportunidade, e a carga antiga de empresas feita direto em Empresas fica
+// de fora por consequência.
+type Aba = "prospects" | "qualificados" | "convertidos" | "descartados";
+type TierFilter = Aba | ScoreTier;
+
+const ABA_DE: Record<string, Aba> = {
+  prospects: "prospects",
+  qualificados: "qualificados",
+  quente: "qualificados",
+  morno: "qualificados",
+  frio: "qualificados",
+  convertidos: "convertidos",
+  descartados: "descartados",
+};
 
 // Sentinela pro filtro "Sem tag" (pedido do usuário, 2026-08-10) — valor
 // de query string que não colide com tag nenhuma de verdade (tag livre
 // digitada pelo usuário nunca começa com "__"), pra distinguir de
 // currentTag === "" (que significa "sem filtro", mostra tudo).
 const NO_TAG_VALUE = "__sem_tag__";
+
+// Uma linha por LEAD CONVERTIDO do CRM (2026-09-21, pedido do usuário:
+// "os leads convertidos estão herdando a importação ainda, retratar
+// somente registros do CRM").
+//
+// A lista era montada a partir das oportunidades, então as 56 empresas que
+// só têm cotação da carga de jul-set/2025 entravam aqui como se fossem
+// lead convertido — nunca foram lead, são cliente com histórico. Agora a
+// base é o lead convertido (raw_lead aprovado), e a contagem de propostas
+// olha só o ciclo corrente. A carteira histórica continua inteira no
+// Pipeline, nos relatórios e em Carteira de clientes.
+interface ConvertidoRow {
+  companyId: string;
+  nome: string;
+  abertas: number;
+  ganhas: number;
+  perdidas: number;
+  valorAberto: number;
+  ultimoMovimento: string | null;
+}
+
+async function carregarConvertidos(token: string, aprovados: RawLead[]): Promise<ConvertidoRow[]> {
+  const { items } = await listOpportunities(token);
+  const porEmpresa = new Map<string, ConvertidoRow>();
+
+  // A base é o lead convertido — inclusive o que ainda NÃO tem proposta
+  // (2026-09-18): antes ele não aparecia em aba nenhuma, porque saía de
+  // Prospects ao ser convertido e a lista só olhava o Pipeline. É
+  // justamente a fila que espera ação: converteu e não cadastrou.
+  for (const lead of aprovados) {
+    if (!lead.promotedCompanyId) continue;
+    porEmpresa.set(lead.promotedCompanyId, {
+      companyId: lead.promotedCompanyId,
+      nome: lead.razaoSocial,
+      abertas: 0,
+      ganhas: 0,
+      perdidas: 0,
+      valorAberto: 0,
+      ultimoMovimento: null,
+    });
+  }
+
+  for (const opp of items) {
+    // Fora a carga histórica (opp.origem) e fora empresa que não veio de
+    // lead convertido — este é o funil de lead, não a carteira.
+    if (opp.origem) continue;
+    const row = porEmpresa.get(opp.companyId);
+    if (!row) continue;
+    if (opp.status === "open") {
+      row.abertas += 1;
+      row.valorAberto += Number(opp.amount);
+    } else if (opp.status === "won") {
+      row.ganhas += 1;
+    } else {
+      row.perdidas += 1;
+    }
+    const movimento = opp.closedAt ?? opp.createdAt;
+    if (!row.ultimoMovimento || movimento > row.ultimoMovimento) row.ultimoMovimento = movimento;
+    porEmpresa.set(opp.companyId, row);
+  }
+  // Ordem por urgência: negociação viva primeiro, depois quem foi
+  // convertido e está SEM proposta (é o que espera ação), e por último o
+  // que já teve resultado, do movimento mais recente pro mais antigo.
+  const semProposta = (r: ConvertidoRow) => r.abertas + r.ganhas + r.perdidas === 0;
+  const grupo = (r: ConvertidoRow) => (r.abertas > 0 ? 0 : semProposta(r) ? 1 : 2);
+  return Array.from(porEmpresa.values()).sort((a, b) => {
+    if (grupo(a) !== grupo(b)) return grupo(a) - grupo(b);
+    if (grupo(a) === 1) return a.nome.localeCompare(b.nome, "pt-BR");
+    return (b.ultimoMovimento ?? "").localeCompare(a.ultimoMovimento ?? "");
+  });
+}
 
 export default async function LeadsPage({
   searchParams,
@@ -23,11 +121,24 @@ export default async function LeadsPage({
   const { error, tier, q, tag, segmento } = await searchParams;
   const token = await getServerAccessToken();
 
-  const [{ items: novos }, { total: aprovados }, { items: descartadosItems }] = await Promise.all([
-    listRawLeads(token, { status: "novo" }),
-    listRawLeads(token, { status: "aprovado", pageSize: 1 }),
-    listRawLeads(token, { status: "descartado" }),
-  ]);
+  const [{ items: novos }, { items: aprovadosItems }, { items: descartadosItems }, membros] =
+    await Promise.all([
+      listRawLeads(token, { status: "novo" }),
+      // As linhas, não só o total (2026-09-18): lead convertido sem
+      // proposta também precisa aparecer na aba Leads convertidos.
+      listRawLeads(token, { status: "aprovado" }),
+      listRawLeads(token, { status: "descartado" }),
+      listMemberships(token),
+    ]);
+  const aprovados = aprovadosItems.length;
+
+  // Coluna "Representante" (pedido do usuário, 2026-09-18: "para saber de
+  // quem é o lead") — o lead guarda o id do dono; o nome vive no Supabase
+  // Auth e chega junto com a lista de membros.
+  const nomePorUserId: Record<string, string> = {};
+  for (const m of membros) {
+    if (m.name?.trim()) nomePorUserId[m.userId] = m.name.trim();
+  }
 
   const quenteCount = novos.filter((r) => effectiveTier(r) === "quente").length;
   const mornoCount = novos.filter((r) => effectiveTier(r) === "morno").length;
@@ -35,9 +146,10 @@ export default async function LeadsPage({
   const semClassificacao = novos.filter((r) => effectiveTier(r) === null).length;
 
   const currentTier: TierFilter =
-    tier === "quente" || tier === "morno" || tier === "frio" || tier === "fila" || tier === "descartados"
-      ? tier
-      : "todos";
+    tier === "quente" || tier === "morno" || tier === "frio" || ABA_DE[tier ?? ""]
+      ? (tier as TierFilter)
+      : "prospects";
+  const abaAtual: Aba = ABA_DE[currentTier] ?? "prospects";
   const search = (q ?? "").trim().toLowerCase();
   const currentTag = (tag ?? "").trim();
   const currentSegmento = (segmento ?? "").trim();
@@ -48,7 +160,7 @@ export default async function LeadsPage({
   // de valores disponíveis pro filtro vem da mesma base que a aba atual
   // usa (novos ou descartados), pra nunca oferecer um valor sem lead
   // nenhum pra mostrar naquela aba.
-  const tagBase = currentTier === "descartados" ? descartadosItems : novos;
+  const tagBase = abaAtual === "descartados" ? descartadosItems : novos;
   const availableTags = Array.from(new Set(tagBase.flatMap((r) => r.tags))).sort((a, b) =>
     a.localeCompare(b, "pt-BR"),
   );
@@ -69,23 +181,38 @@ export default async function LeadsPage({
     !currentTag || (currentTag === NO_TAG_VALUE ? r.tags.length === 0 : r.tags.includes(currentTag));
   const segmentoFilter = (r: (typeof novos)[number]) => !currentSegmento || r.segmento === currentSegmento;
 
-  const rows =
-    currentTier === "descartados"
-      ? descartadosItems.filter(searchFilter).filter(tagFilter).filter(segmentoFilter)
-      : novos
-          .filter((r) => currentTier === "todos" || currentTier === "fila" || effectiveTier(r) === currentTier)
-          .filter(searchFilter)
-          .filter(tagFilter)
-          .filter(segmentoFilter)
-          .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial, "pt-BR"));
+  // O servidor entrega as duas bases já filtradas por busca/tag/segmento;
+  // quem separa Prospects × Qualificados × Descartados é o componente de
+  // abas, no navegador (ver prospeccao-tabs.tsx).
+  const novosFiltrados = novos
+    .filter(searchFilter)
+    .filter(tagFilter)
+    .filter(segmentoFilter)
+    .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial, "pt-BR"));
+  const descartadosFiltrados = descartadosItems
+    .filter(searchFilter)
+    .filter(tagFilter)
+    .filter(segmentoFilter);
+
+  // Leads convertidos: uma linha por empresa que tem proposta no Pipeline.
+  // Carregado em TODA visita, não só quando a aba está aberta (pedido do
+  // usuário, 2026-09-18: "não está aparecendo os números de leads
+  // convertidos") — o contador da aba precisa do número sempre. O custo é
+  // marginal perto do que a tela já busca: a lista de oportunidades tem
+  // ordem de centenas de linhas, contra ~900 leads e seus contatos.
+  const convertidos = await carregarConvertidos(token, aprovadosItems);
 
   // Coluna "Contatos" (2026-08-07, pedido direto do usuário) — uma
-  // chamada só (listContactsByCompanyIds) pras empresas efetivamente
-  // exibidas na aba atual, agrupada num Map por companyId. Só as linhas
-  // visíveis (não a base inteira novos+descartados) pra não buscar
-  // contato de uma aba que nem está sendo renderizada.
+  // chamada só (listContactsByCompanyIds), agrupada num Map por
+  // companyId. Cobre as duas bases (fila e descartados) porque a troca de
+  // aba agora acontece no navegador, sem voltar ao servidor: se buscasse
+  // só a aba atual, mudar de aba mostraria linha sem contato.
   const rowCompanyIds = Array.from(
-    new Set(rows.map((r) => r.promotedCompanyId).filter((id): id is string => Boolean(id))),
+    new Set(
+      [...novosFiltrados, ...descartadosFiltrados]
+        .map((r) => r.promotedCompanyId)
+        .filter((id): id is string => Boolean(id)),
+    ),
   );
   const previewContacts = await listContactsByCompanyIds(token, rowCompanyIds);
   const contactsByCompany = new Map<string, Contact[]>();
@@ -99,8 +226,9 @@ export default async function LeadsPage({
   // tarefas-table.tsx), então vira objeto plano antes de repassar.
   const contactsByCompanyId: Record<string, Contact[]> = Object.fromEntries(contactsByCompany);
 
-  const extraParams = `${q ? `&q=${encodeURIComponent(q)}` : ""}${currentTag ? `&tag=${encodeURIComponent(currentTag)}` : ""}${currentSegmento ? `&segmento=${encodeURIComponent(currentSegmento)}` : ""}`;
-  const tabHref = (t: TierFilter) => `/dashboard/leads?tier=${t}${extraParams}`;
+  // Os links de tag/segmento preservam a aba atual na querystring — quem
+  // troca de aba é o componente cliente, mas o link precisa voltar pra
+  // mesma aba em que a pessoa estava.
   const tagHref = (t: string) =>
     `/dashboard/leads?tier=${currentTier}${q ? `&q=${encodeURIComponent(q)}` : ""}${t ? `&tag=${encodeURIComponent(t)}` : ""}${currentSegmento ? `&segmento=${encodeURIComponent(currentSegmento)}` : ""}`;
   const segmentoHref = (s: string) =>
@@ -165,29 +293,6 @@ export default async function LeadsPage({
           </div>
         </div>
 
-        <div className="toolbar">
-          <div className="seg">
-            <Link href={tabHref("todos")} className={currentTier === "todos" ? "active" : undefined}>
-              Todos ({novos.length})
-            </Link>
-            <Link href={tabHref("quente")} className={currentTier === "quente" ? "active" : undefined}>
-              {TIER_LABEL.quente} ({quenteCount})
-            </Link>
-            <Link href={tabHref("morno")} className={currentTier === "morno" ? "active" : undefined}>
-              {TIER_LABEL.morno} ({mornoCount})
-            </Link>
-            <Link href={tabHref("frio")} className={currentTier === "frio" ? "active" : undefined}>
-              {TIER_LABEL.frio} ({frioCount})
-            </Link>
-            <Link href={tabHref("fila")} className={currentTier === "fila" ? "active" : undefined}>
-              Fila ({novos.length})
-            </Link>
-            <Link href={tabHref("descartados")} className={currentTier === "descartados" ? "active" : undefined}>
-              Descartados ({descartadosItems.length})
-            </Link>
-          </div>
-        </div>
-
         {(availableTags.length > 0 || hasUntagged) && (
           <div className="tag-filter-row">
             <Link href={tagHref("")} className={currentTag === "" ? "tag-chip active" : "tag-chip"}>
@@ -222,7 +327,14 @@ export default async function LeadsPage({
           </div>
         )}
 
-        <LeadsTable rows={rows} readOnly={currentTier === "descartados"} contactsByCompanyId={contactsByCompanyId} />
+        <ProspeccaoTabs
+          abaInicial={abaAtual}
+          novos={novosFiltrados}
+          descartados={descartadosFiltrados}
+          convertidos={convertidos}
+          contactsByCompanyId={contactsByCompanyId}
+          nomePorUserId={nomePorUserId}
+        />
       </div>
     </TopbarFilterProvider>
   );

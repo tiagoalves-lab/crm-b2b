@@ -18,11 +18,14 @@ const TELA = "/dashboard/e-mail-automatico";
 const ROTULO: Record<TipoReport, string> = {
   "pipeline-diario": "Resumo diário",
   "pipeline-followup": "Follow-up de cotações",
+  "lead-meta": "Aviso de lead novo",
 };
 
 function lerTipo(formData: FormData): TipoReport {
   const tipo = String(formData.get("tipo") ?? "");
-  return tipo === "pipeline-followup" ? "pipeline-followup" : "pipeline-diario";
+  if (tipo === "pipeline-followup") return "pipeline-followup";
+  if (tipo === "lead-meta") return "lead-meta";
+  return "pipeline-diario";
 }
 
 // Os horários chegam como vários campos "horario" (um por linha do

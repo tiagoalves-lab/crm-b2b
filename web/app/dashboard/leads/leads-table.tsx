@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { Contact, RawLead } from "@/lib/api/types";
-import { TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
+import {
+  faixaDoFunil,
+  FAIXA_FUNIL_LABEL,
+  FAIXA_FUNIL_PILL,
+  TIER_LABEL,
+  type ScoreTier,
+} from "@/lib/api/raw-leads";
 import { approveOneLeadAction, bulkApproveLeadsAction, bulkDiscardLeadsAction, discardOneLeadAction, setLeadTierAction } from "./actions";
 import BulkEditModal from "./bulk-edit-modal";
 import LeadSegmentoEditor from "./lead-segmento-editor";
@@ -12,6 +18,7 @@ import LeadTagsEditor from "./lead-tags-editor";
 import SubmitButton from "@/app/_components/submit-button";
 import { formatDateBR } from "@/lib/format-date";
 import { normalizeForFilter, useTopbarQuery } from "@/app/_components/topbar-filter";
+import { leadBateComBusca } from "./filtro";
 
 // Lista + seleção em lote da triagem (SPEC-CRM-GAMA.md §4.4) — a única
 // parte client-side da tela: filtro de faixa/busca continua em querystring
@@ -25,10 +32,14 @@ export default function LeadsTable({
   rows,
   readOnly = false,
   contactsByCompanyId = {},
+  nomePorUserId = {},
 }: {
   rows: RawLead[];
   readOnly?: boolean;
   contactsByCompanyId?: Record<string, Contact[]>;
+  // Nome do representante por id de usuário (2026-09-18) — o lead guarda
+  // só o id do dono; o nome vem do Supabase Auth, via GET /memberships.
+  nomePorUserId?: Record<string, string>;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -46,26 +57,22 @@ export default function LeadsTable({
   const visibleRows = useMemo(() => {
     const needle = normalizeForFilter(query.trim());
     if (!needle) return rows;
-    return rows.filter((lead) => {
-      const contatos = lead.promotedCompanyId ? (contactsByCompanyId[lead.promotedCompanyId] ?? []) : [];
-      const texto = [
-        lead.razaoSocial,
-        lead.cnpj,
-        lead.municipio,
-        lead.uf,
-        lead.cnaePrincipal,
-        lead.cnaeDescricao,
-        lead.porte,
-        lead.segmento,
-        lead.situacao,
-        ...lead.tags,
-        ...contatos.flatMap((c) => [c.nome, c.email, c.telefone, c.cargo]),
-      ]
-        .filter((v): v is string => typeof v === "string" && v.length > 0)
-        .join(" ");
-      return normalizeForFilter(texto).includes(needle);
-    });
+    return rows.filter((lead) => leadBateComBusca(lead, needle, contactsByCompanyId));
   }, [rows, query, contactsByCompanyId]);
+  // Paginação no navegador (2026-09-18, depois de o usuário dizer que
+  // "voltar para os prospects trava"): a aba Prospects tem ~880 leads, e
+  // cada linha desenha editor de tags, editor de segmento, seletor de
+  // classificação e a lista de contatos — desenhar tudo de uma vez é o que
+  // travava. Mostra um pedaço e cresce no clique. Ações em lote continuam
+  // valendo só pro que está na tela (mesma regra do filtro de texto: nunca
+  // aprovar/descartar linha que a pessoa não está vendo).
+  const PASSO = 100;
+  const [limite, setLimite] = useState(PASSO);
+  useEffect(() => {
+    setLimite(PASSO);
+  }, [rows, query]);
+  const rowsNaPagina = useMemo(() => visibleRows.slice(0, limite), [visibleRows, limite]);
+
   useEffect(() => {
     setSelected(new Set());
   }, [query]);
@@ -80,7 +87,7 @@ export default function LeadsTable({
   }
 
   function selectAll(checked: boolean) {
-    setSelected(checked ? new Set(visibleRows.map((r) => r.id)) : new Set());
+    setSelected(checked ? new Set(rowsNaPagina.map((r) => r.id)) : new Set());
   }
 
   // Classificação — "" deixa o lead sem classificação (ver
@@ -135,7 +142,7 @@ export default function LeadsTable({
             <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 19V5M5 12l7-7 7 7" />
             </svg>
-            Aprovar para Lead
+            Converter leads
           </button>
         </div>
       )}
@@ -146,33 +153,56 @@ export default function LeadsTable({
             <tr>
               {!readOnly && (
                 <th className="checkcol">
-                  <input type="checkbox" checked={visibleRows.length > 0 && selected.size === visibleRows.length} onChange={(e) => selectAll(e.target.checked)} />
+                  <input type="checkbox" checked={rowsNaPagina.length > 0 && selected.size === rowsNaPagina.length} onChange={(e) => selectAll(e.target.checked)} />
                 </th>
               )}
+              {/* Coluna Funil (pedido do usuário, 2026-09-21: "quando eu
+                  filtro não sei onde o lead está") — mesma régua da Busca
+                  geral e das abas, em lib/api/raw-leads.ts. Fica ao lado
+                  do nome porque é a primeira pergunta depois de "quem é". */}
+              <th>Funil</th>
               <th>Empresa</th>
               <th>Contatos</th>
-              <th>Recuperação judicial</th>
               <th>CNAE</th>
               <th>Porte</th>
               <th>Segmento</th>
               <th>Tags</th>
+              <th>Representante</th>
               <th>Classificação</th>
               <th>Último contato</th>
               <th style={{ textAlign: "right" }}>Ação</th>
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((lead) => (
+            {rowsNaPagina.map((lead) => (
               <tr key={lead.id} className={selected.has(lead.id) ? "triage-row picked" : "triage-row"}>
                 {!readOnly && (
                   <td className="checkcol">
                     <input type="checkbox" checked={selected.has(lead.id)} onChange={() => toggle(lead.id)} />
                   </td>
                 )}
+                <td>
+                  <span className={FAIXA_FUNIL_PILL[faixaDoFunil(lead)]}>
+                    {FAIXA_FUNIL_LABEL[faixaDoFunil(lead)]}
+                  </span>
+                </td>
                 <td className="row-clickable">
                   <Link href={`/dashboard/leads/${lead.id}`} className="t-co">
                     {lead.razaoSocial}
                   </Link>
+                  {/* Recuperação judicial virou bandeira ao lado do nome
+                      (pedido do usuário, 2026-09-18): era uma coluna
+                      inteira que, na prática, mostrava "—" em quase toda
+                      linha. */}
+                  {lead.emRecuperacaoJudicial && (
+                    <span
+                      title="Em recuperação judicial — indicativo da Receita Federal, removido da razão social"
+                      style={{ color: "var(--danger)", marginLeft: 6, cursor: "help" }}
+                      aria-label="Em recuperação judicial"
+                    >
+                      ⚑
+                    </span>
+                  )}
                   <div className="t-sub">
                     {lead.cnpj ?? "sem CNPJ"} · {lead.municipio ?? "—"}
                     {lead.uf ? `/${lead.uf}` : ""}
@@ -194,15 +224,6 @@ export default function LeadsTable({
                   )}
                 </td>
                 <td>
-                  {lead.emRecuperacaoJudicial ? (
-                    <span className="pill pill-red" title="Indicativo da Receita Federal, removido da razão social">
-                      ⚠ Em recuperação
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{lead.cnaePrincipal ?? "—"}</div>
                   <div className="t-sub" style={{ maxWidth: 150, whiteSpace: "normal" }}>
                     {lead.cnaeDescricao ?? ""}
@@ -216,6 +237,9 @@ export default function LeadsTable({
                 </td>
                 <td style={{ minWidth: 160 }}>
                   <LeadTagsEditor leadId={lead.id} tags={lead.tags} readOnly={readOnly} />
+                </td>
+                <td className="t-sub" style={{ whiteSpace: "nowrap" }}>
+                  {lead.ownerUserId ? (nomePorUserId[lead.ownerUserId] ?? "—") : "sem dono"}
                 </td>
                 <td>
                   <select
@@ -244,7 +268,7 @@ export default function LeadsTable({
                         <form action={approveOneLeadAction}>
                           <input type="hidden" name="id" value={lead.id} />
                           <input type="hidden" name="back" value="/dashboard/leads" />
-                          <SubmitButton className="icon-btn" title="Aprovar">
+                          <SubmitButton className="icon-btn" title="Converter lead">
                             <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2">
                               <path d="M20 6L9 17l-5-5" />
                             </svg>
@@ -274,11 +298,36 @@ export default function LeadsTable({
             )}
           </tbody>
         </table>
+
+        {visibleRows.length > rowsNaPagina.length && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+              padding: "12px 16px",
+              borderTop: "1px solid var(--border)",
+              fontSize: 13,
+              color: "var(--text-secondary)",
+            }}
+          >
+            <span>
+              Mostrando {rowsNaPagina.length} de {visibleRows.length}
+            </span>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setLimite((n) => n + PASSO)}>
+              Mostrar mais {Math.min(PASSO, visibleRows.length - rowsNaPagina.length)}
+            </button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setLimite(visibleRows.length)}>
+              Mostrar todos
+            </button>
+          </div>
+        )}
       </div>
 
       {showBulkEdit && (
         <BulkEditModal
-          leads={visibleRows.filter((r) => selected.has(r.id))}
+          leads={rowsNaPagina.filter((r) => selected.has(r.id))}
           onClose={() => setShowBulkEdit(false)}
           onDone={() => {
             setShowBulkEdit(false);

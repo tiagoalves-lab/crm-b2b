@@ -10,10 +10,12 @@ import {
 } from "./actions";
 
 // Tela "E-mail automático" (Administração, 2026-09-15) — configura os dois
-// reports recorrentes: o resumo diário do Pipeline e o follow-up das
-// cotações. Os avisos de tarefa designada e de destaque em anotação NÃO
-// entram aqui de propósito: são reação a uma ação de alguém, não têm
-// horário pra configurar (ver docs/reports-email.md).
+// reports recorrentes (resumo diário do Pipeline e follow-up das cotações)
+// e, desde 2026-09-18, o aviso de lead novo do Meta. Este último não tem
+// horário: entra aqui porque tem as mesmas duas perguntas ("está ligado?" e
+// "quem recebe?"). Os avisos de tarefa designada e de destaque em anotação
+// continuam de fora de propósito: quem recebe é sempre a pessoa envolvida,
+// não há nada a escolher (ver docs/reports-email.md).
 //
 // Formulário sem JavaScript no cliente, no mesmo padrão do resto do
 // projeto: cada card é um <form> com Server Action, e a lista de horários
@@ -46,6 +48,7 @@ export default async function EmailAutomaticoPage({
   const dados = await getReportConfig(token);
   const diario = dados.configs.find((c) => c.tipo === "pipeline-diario");
   const followup = dados.configs.find((c) => c.tipo === "pipeline-followup");
+  const leadMeta = dados.configs.find((c) => c.tipo === "lead-meta");
   const semEmail = dados.destinatarios.filter((d) => !d.email);
 
   return (
@@ -86,6 +89,15 @@ export default async function EmailAutomaticoPage({
         etapasDisponiveis={dados.etapasDisponiveis}
       />
 
+      {/* Lead novo do Meta ------------------------------------------- */}
+      <ReportCard
+        titulo="Lead novo pelos anúncios do Meta"
+        descricao="E-mail na hora em que um lead entra pelo Facebook ou Instagram, com o contato, o que a pessoa respondeu no formulário e o anúncio de origem."
+        config={leadMeta}
+        candidatos={dados.destinatarios}
+        semAgenda
+      />
+
       {semEmail.length > 0 && (
         <div className="field-hint" style={{ margin: "-8px 4px 20px" }}>
           {semEmail.length === 1
@@ -120,7 +132,9 @@ export default async function EmailAutomaticoPage({
                   <td>
                     {envio.tipo === "pipeline-followup"
                       ? "Follow-up"
-                      : "Resumo diário"}
+                      : envio.tipo === "lead-meta"
+                        ? "Lead do Meta"
+                        : "Resumo diário"}
                   </td>
                   <td>{envio.referencia}</td>
                   <td>
@@ -154,6 +168,7 @@ function ReportCard({
   config,
   candidatos,
   umHorarioSo = false,
+  semAgenda = false,
   etapasDisponiveis,
 }: {
   titulo: string;
@@ -161,6 +176,9 @@ function ReportCard({
   config: ReportConfig | undefined;
   candidatos: { userId: string; nome: string; email: string | null }[];
   umHorarioSo?: boolean;
+  // Aviso disparado por evento: não tem horário, dia útil nem "enviar
+  // agora" — só liga/desliga e quem recebe.
+  semAgenda?: boolean;
   etapasDisponiveis?: string[];
 }) {
   if (!config) return null;
@@ -171,9 +189,11 @@ function ReportCard({
 
   // Uma linha por horário salvo + uma vazia pra acrescentar (o resumo
   // diário tem um horário só, então não ganha linha extra).
-  const linhas = umHorarioSo
-    ? [config.horarios[0] ?? ""]
-    : [...config.horarios, ""];
+  const linhas = semAgenda
+    ? []
+    : umHorarioSo
+      ? [config.horarios[0] ?? ""]
+      : [...config.horarios, ""];
 
   return (
     <div className="form-panel">
@@ -196,9 +216,16 @@ function ReportCard({
           ))}
         </div>
 
-        {!umHorarioSo && (
+        {!umHorarioSo && !semAgenda && (
           <div className="field-hint" style={{ marginBottom: 14 }}>
             Para remover um horário, apague o conteúdo do campo e salve.
+          </div>
+        )}
+
+        {semAgenda && (
+          <div className="field-hint" style={{ marginBottom: 14 }}>
+            Não tem horário: o e-mail sai no momento em que o lead entra,
+            inclusive fim de semana.
           </div>
         )}
 
@@ -254,14 +281,16 @@ function ReportCard({
             <input type="checkbox" name="ativo" defaultChecked={config.ativo} />
             Ativo
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              name="diasUteis"
-              defaultChecked={config.diasUteis}
-            />
-            Só em dias úteis
-          </label>
+          {!semAgenda && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                name="diasUteis"
+                defaultChecked={config.diasUteis}
+              />
+              Só em dias úteis
+            </label>
+          )}
           {config.atualizadoEm && (
             <span className="sub">
               Última alteração em {formatDateTimeBR(config.atualizadoEm)}
@@ -301,12 +330,14 @@ function ReportCard({
           </button>
         </form>
 
-        <form action={enviarAgoraAction}>
-          <input type="hidden" name="tipo" value={config.tipo} />
-          <button type="submit" className="btn btn-ghost btn-sm">
-            Enviar agora para todos
-          </button>
-        </form>
+        {!semAgenda && (
+          <form action={enviarAgoraAction}>
+            <input type="hidden" name="tipo" value={config.tipo} />
+            <button type="submit" className="btn btn-ghost btn-sm">
+              Enviar agora para todos
+            </button>
+          </form>
+        )}
       </div>
 
       {/* Quem recebe ESTE relatório — cada um tem a sua lista. */}

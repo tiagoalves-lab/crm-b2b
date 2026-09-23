@@ -1,4 +1,4 @@
-import { companyDisplayName } from "@/lib/api/companies";
+import { companyDisplayName, ehClienteDaCarteira } from "@/lib/api/companies";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import type { Activity, Membership } from "@/lib/api/types";
 import { formatDateBR, formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
@@ -8,10 +8,12 @@ import { refreshCnpjDataAction, updateCustomFieldsAction } from "../actions";
 import AddNoteForm from "./add-note-form";
 import VendasTable from "./vendas-table";
 import ContactItem from "./contact-item";
+import LigarButton from "@/app/dashboard/_telefonia/ligar-button";
 import AddContactForm from "./add-contact-form";
 import SubmitButton from "@/app/_components/submit-button";
 import ActionForm from "@/app/_components/action-form";
 import EditarCadastro from "./editar-cadastro";
+import EquipeEditor from "../../leads/equipe-editor";
 
 const SUBTIPO_LABEL: Record<string, string> = {
   nota: "Anotação",
@@ -153,8 +155,12 @@ export default function FichaBody({
   aba?: string;
   editar?: boolean;
 }) {
-  const { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts, memberships } = data;
-  const currentAba = currentAbaOf(aba);
+  const { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts, memberships, team } =
+    data;
+  // Mesmas duas réguas da barra de abas — sem isso, ?aba=vendas na URL de
+  // um lead renderizaria uma aba que a barra não oferece.
+  const podeVerVendas = hasPermission(me.membership.role, me.membership.permissions, "empresas_vendas", "ver");
+  const currentAba = currentAbaOf(aba, { podeVerVendas, isCliente: ehClienteDaCarteira(company) });
   const abaHref = (a: string) => `/dashboard/empresas/${company.id}?aba=${a}`;
   // Editar/Remover contato: vem da matriz granular de permissões (módulo
   // "contatos", ver lib/api/permission-catalog.ts), não mais fixo em
@@ -163,6 +169,9 @@ export default function FichaBody({
   // isto aqui só decide se cada botão aparece.
   const canEditContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "editar");
   const canRemoveContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "excluir");
+  // Ligar pelo CRM (docs/telefonia-crm.md): o backend também checa, isto
+  // aqui só decide o botão aparecer ao lado do telefone.
+  const podeLigar = hasPermission(me.membership.role, me.membership.permissions, "telefonia", "criar");
 
   const wonOpps = opportunities.filter((o) => o.status === "won" && !o.deletedAt);
   const openOpps = opportunities.filter((o) => o.status === "open" && !o.deletedAt);
@@ -199,6 +208,20 @@ export default function FichaBody({
             <div className="ov-stat-v">{tarefasAbertas}</div>
           </div>
         </div>
+
+        {podeLigar && company.fones.length > 0 && (
+          <>
+            <div className="drawer-section-title">Telefones da empresa</div>
+            {company.fones.map((fone) => (
+              <div key={fone} className="drawer-list-item">
+                <div>
+                  <div className="dli-title">{fone}</div>
+                </div>
+                <LigarButton telefone={fone} companyId={company.id} />
+              </div>
+            ))}
+          </>
+        )}
 
         <div className="drawer-section-title">Última atividade</div>
         {ultimaAtividade ? (
@@ -455,12 +478,21 @@ export default function FichaBody({
               companyId={company.id}
               canEdit={canEditContacts}
               canRemove={canRemoveContacts}
+              podeLigar={podeLigar}
             />
           ))
         ) : (
           <p className="sub">Nenhum contato cadastrado ainda.</p>
         )}
       </>
+    );
+  }
+
+  if (currentAba === "equipe") {
+    return team ? (
+      <EquipeEditor companyId={company.id} team={team} memberships={memberships} />
+    ) : (
+      <p className="sub">Sem acesso à equipe de vendas desta empresa.</p>
     );
   }
 

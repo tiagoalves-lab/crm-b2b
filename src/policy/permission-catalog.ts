@@ -56,6 +56,10 @@ export const PERMISSION_MODULES = [
   // Nasce DESLIGADO para todo papel sem bypass; o usuário libera membro a
   // membro (começou só pelo gerente).
   'treinamento',
+  // Telefonia (2026-09-23, docs/telefonia-crm.md): 'criar' é ligar pelo CRM,
+  // 'ver' é enxergar o histórico de chamadas e ouvir o que foi gravado.
+  // Não tem editar/excluir — chamada é fato acontecido, não cadastro.
+  'telefonia',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 
@@ -91,6 +95,7 @@ export const MODULE_ACTIONS: Record<
   leads: PERMISSION_ACTIONS,
   membros: ['ver', 'criar'],
   treinamento: ['ver'],
+  telefonia: ['ver', 'criar'],
 };
 
 // Agrupamento visual só (subpágina de Permissões) — sem efeito na
@@ -109,6 +114,7 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   leads: null,
   membros: null,
   treinamento: null,
+  telefonia: null,
 };
 
 export type PermissionMatrix = {
@@ -138,6 +144,12 @@ const membrosManagerDefault: Partial<Record<PermissionAction, boolean>> = {
   ver: true,
   criar: true,
 };
+// Ligar é o trabalho do SDR: nasce ligado pra todo papel que opera o CRM
+// (só readonly fica sem). Continua sendo checkbox na tela de Permissões.
+const telefoniaCompleta: Partial<Record<PermissionAction, boolean>> = {
+  ver: true,
+  criar: true,
+};
 const membrosSalesRepDefault: Partial<Record<PermissionAction, boolean>> = {
   ver: true,
   criar: false,
@@ -164,6 +176,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: allTrue,
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
+    telefonia: telefoniaCompleta,
   },
   admin: {
     empresas_visao_geral: viewOnly,
@@ -179,6 +192,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: allTrue,
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
+    telefonia: telefoniaCompleta,
   },
   // Manager: mesmo critério de sempre — dono do registro ou subordinado
   // (escopo, inalterado) pode excluir; contatos/membros continuam fora do
@@ -200,6 +214,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: allTrue,
     membros: membrosManagerDefault,
     treinamento: { ver: false },
+    telefonia: telefoniaCompleta,
   },
   // sales_rep: nunca exclui (regra antiga, 2026-08-06, "mais restrita que
   // o resto do modelo de ownership" — ver comentário histórico que estava
@@ -224,6 +239,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: noDelete,
     membros: membrosSalesRepDefault,
     treinamento: { ver: false },
+    telefonia: telefoniaCompleta,
   },
   // readonly: só lê, em qualquer módulo (regra antiga: "action !== 'read'
   // → false" pra este papel).
@@ -241,6 +257,7 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     leads: viewOnly,
     membros: viewOnly,
     treinamento: { ver: false },
+    telefonia: viewOnly,
   },
 };
 

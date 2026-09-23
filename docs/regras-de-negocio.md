@@ -477,6 +477,74 @@ outras.
   começaram marcados.
 - Fonte → Pedido do usuário, 2026-09-17.
 
+**5.18**
+- Decisão → A ficha da empresa na Prospecção tem a aba **Equipe de
+  vendas**: a lista de quem trabalha aquela empresa, no mesmo formato da
+  aba Contatos (barra de inclusão em cima, lista com Remover embaixo).
+  Quem está na equipe enxerga a empresa e o lead dela na Prospecção;
+  histórico, tarefas, contatos e oportunidades continuam privados de quem
+  os criou (mesma regra 5.3). Mudar a equipe é de gerente para cima;
+  representante vê a lista e não edita.
+- Detalhe → Quem entra na equipe quando o prospect nasce:
+  - **Cadastro manual** — o representante que cadastrou (responsável) e o
+    **supervisor** dele. Representante sem supervisor cadastrado entra
+    sozinho.
+  - **Importação por planilha** — o representante escrito na coluna
+    **Representante** (ou quem importou, se a coluna estiver vazia) e o
+    supervisor dele. Se o CNPJ já existir no CRM, o dono original não
+    muda: o representante da planilha entra na equipe.
+  - **Importação do Meta** — vai para o gerente configurado como dono
+    padrão dos leads do Meta (hoje o Arlei).
+  - **Administrador e proprietário não entram na lista**: já enxergam
+    todas as empresas pelo cargo.
+  - O **responsável** não sai pela aba — trocar o dono da empresa é outra
+    coisa.
+- Detalhe → A equipe **nunca fica vazia**: toda empresa tem pelo menos um
+  membro responsável por ela. Os 199 prospects que estavam sem ninguém
+  (herdados da migração de empresas do eGestor para a Prospecção) ficaram
+  com o **Arlei**, e todo representante sem supervisor passou a ter o
+  Arlei como supervisor — ver `scripts/definir-arlei-supervisor-e-dono.ts`.
+- Fonte → Pedido do usuário, 2026-09-21.
+
+**5.19**
+- Decisão → O modelo de planilha da Prospecção tem a coluna
+  **Representante** e não tem mais **Sócios (QSA)** nem **Importador**.
+  A coluna diz de quem é o lead: aceita o nome, o login ou o e-mail do
+  membro, e em branco o lead fica com quem importou. Nome que não existe
+  na equipe — ou que corresponde a dois membros — recusa só aquela
+  empresa, com o motivo na linha; as outras entram normalmente.
+- Detalhe → **Distribuir lead para outra pessoa é de gerente para cima**
+  (gerente, administrador e proprietário). Representante comum importa
+  sempre para a própria carteira, mesmo que escreva outro nome na coluna.
+- Fonte → Pedido do usuário, 2026-09-23.
+
+**5.20**
+- Decisão → A tela de **Relatórios** segue o modelo do eGestor: menu de
+  relatórios à esquerda, painel de filtros do relatório escolhido em cima
+  e o resultado logo abaixo. Sem relatório escolhido, a área fica
+  **vazia** — indicador de gestão é assunto do menu Painel, não daqui.
+  Cada relatório gerado tem endereço próprio — dá para guardar nos
+  favoritos do navegador e reabrir com os mesmos filtros.
+- Fonte → Pedido do usuário, 2026-09-23.
+
+**5.21**
+- Decisão → Primeiro relatório: **Anotações da Timeline** — empresa,
+  usuário, data, tipo e descrição, filtrado por período, tipo de
+  anotação, usuário e empresa. Quando a mesma empresa tem vários
+  registros do mesmo tipo dentro do período, eles entram **mesclados numa
+  linha só** (dá para desligar no filtro). Cada pessoa só enxerga no
+  relatório o que já enxergaria na Timeline da ficha — relatório não
+  mostra o que a ficha esconde.
+- Fonte → Pedido do usuário, 2026-09-23.
+
+**5.22**
+- Decisão → Segundo relatório: **Tarefas concluídas** — data da
+  conclusão, empresa, responsável, tipo, tarefa e prazo, da última
+  concluída para a mais antiga, filtrado por período, tipo, responsável e
+  empresa. O período se refere à **data da conclusão**, não ao prazo, e
+  tarefa reaberta deixa de contar como concluída.
+- Fonte → Pedido do usuário, 2026-09-23.
+
 ---
 
 ## Processo comercial
@@ -504,6 +572,217 @@ outras.
     distante.
   Lead sem classificação significa que o SDR ainda não trabalhou.
 - Fonte → Usuário, 2026-09-17.
+
+**6.3**
+- Decisão → O **histórico de cotações de jul a set/2025** (planilha
+  "Cotações", 123 linhas) vive no Pipeline como oportunidades:
+  - **Valor** = coluna "Total Custos" da planilha.
+  - **Item** = código do produto + modelo, em **texto livre**; o vínculo
+    com o cadastro de produtos é da fase 2 (ver abaixo).
+  - **Cliente** casado por **CNPJ**, não por razão social — no CRM os nomes
+    estão abreviados e não batem.
+  - **Representante** vinculado ao membro do CRM; os sete que faltavam
+    foram cadastrados **sem e-mail**, ativos e marcados como Vendedor.
+  - **Situação**: todas entraram **perdidas** com o motivo "Sem resultado
+    registrado (histórico)", porque a máquina leva 3 a 4 meses entre
+    aceite e nota e nada disso foi faturado em mais de um ano. Exceção
+    confirmada: a cotação 14 (ORTOBRAS) entrou **ganha**, provada por duas
+    notas de junho/2026.
+  - Carga histórica **não gera registro em Últimas atividades**.
+- Fonte → Usuário, 2026-09-18.
+
+**6.4**
+- Decisão → O faturamento da máquina sai em **NFS-e de serviço de
+  instalação**, que não diz qual máquina foi — por isso o eGestor não
+  responde "quais foram as últimas máquinas vendidas". Quem passa a
+  responder é o **CRM**, pela oportunidade ganha e seu item. Cruzar
+  cotação com nota por valor e data **não funciona** como regra automática:
+  o valor da nota de serviço não corresponde ao da proposta.
+- Fonte → Usuário, 2026-09-18.
+
+**6.5**
+- Decisão → A **fase 2** do histórico é outra: primeiro a planilha de
+  cotações é importada **dentro do app de orçamentos**, depois o app é
+  integrado ao CRM, e só então os itens das oportunidades são religados aos
+  produtos cadastrados. É aí que nasce a gestão real do pipeline. Tem plano
+  de migração próprio e não começa antes da fase 1 fechar.
+- Fonte → Usuário, 2026-09-18.
+
+**6.6**
+- Decisão → **Prospecção é a casa do lead; Empresas é a casa do cliente.**
+  - A tela **Prospecção** tem quatro abas: **Prospects** (na fila, ainda sem
+    prazo informado), **Leads qualificados** (já com prazo — as faixas
+    Curto/Médio/Longo viram **sub-filtro** desta aba), **Leads convertidos**
+    e **Descartados**.
+  - **Leads convertidos** é a lista dos **leads do CRM que saíram da
+    triagem**, com quantas propostas cada um tem em negociação, ganhas e
+    perdidas, o valor em negociação e o último movimento. Conta só proposta
+    do ciclo corrente: empresa que só tem cotação da carga histórica não
+    entra aqui.
+  - A tela chama-se **Carteira de clientes** e lista **só cliente**:
+    o filtro Todas/Leads/Clientes e as colunas Tipo e Último contato saíram.
+    As empresas que não são cliente saíram dali: as que têm proposta
+    aparecem em **Leads convertidos** e as demais foram **levadas para a
+    Prospecção como Prospects**, cada uma com o lead apontando para a
+    empresa que já existia — nada duplicado, nada apagado.
+  - A lista da Prospecção tem coluna **Representante** (o dono do lead);
+    lead sem dono aparece como "sem dono".
+  - O botão que tira o lead da triagem chama **Converter lead** (era
+    "Aprovar para Lead") e, ao converter, oferece cadastrar a proposta na
+    hora — é a proposta que coloca a empresa em Leads convertidos.
+  - **Recuperação judicial** deixou de ser coluna na Prospecção e virou uma
+    **bandeira** ao lado do nome da empresa.
+- Fonte → Pedido do usuário, 2026-09-18.
+
+**6.11**
+- Decisão → **Cliente é quem já comprou** — pedido emitido no eGestor ou
+  oportunidade ganha no Pipeline. Estar cadastrado como cliente no eGestor
+  **não basta**: o ERP marca assim quem nunca comprou (145 cadastros em
+  2026-09-18, todos levados para a Prospecção). A régua é a mesma na
+  **Carteira de clientes**, na ficha da empresa e na busca geral.
+  - Empresa criada por import de cotação, por conversão de lead ou na mão
+    **não é cliente** enquanto não fechar nada: fica na Prospecção.
+  - Empresa que já comprou **não é mais lead**: sai da fila de triagem e
+    da seção Prospecção da busca, e aparece na Carteira de clientes.
+  - O item de menu **Empresas** passou a se chamar **Carteira de clientes**.
+  - A promoção de contatos do eGestor não tira mais da Prospecção quem
+    ainda não comprou.
+- Fonte → Usuário, 2026-09-18, ao achar a CRDC FERRAMENTARIA listada como
+  empresa e como prospect na mesma busca: "se tem pedido e nota fiscal é
+  cliente".
+
+**6.7**
+- Decisão → O **Painel** mostra, em **metade da página cada**, o **Funil de
+  vendas** (leitura de jornada) e o **Pipeline por etapa** (leitura
+  operacional: uma barra por etapa com o valor em aberto). Em tela estreita
+  os dois empilham.
+- Fonte → Pedido do usuário, 2026-09-18.
+
+**6.8**
+- Decisão → O funil tem as quatro faixas da jornada — Prospectar, Leads
+  Qualificados, Leads Convertidos e Venda e Fechamento —, cada uma com **o
+  que seguiu adiante, o que está parado e o que saiu do funil** (número +
+  palavra dentro da pastilha; pastilha zerada não é desenhada), a **taxa de
+  passagem** entre faixas, os **pedidos fechados** no fim e, embaixo, taxa
+  de conversão, perdas e valor perdido.
+- Fonte → Pedido do usuário, 2026-09-18, sobre a prévia aprovada.
+
+**6.9**
+- Decisão → O funil conta **só o ciclo comercial corrente**. Oportunidade
+  nascida de carga entra marcada em `opportunity.origem` (hoje
+  `historico-cotacoes`, as 123 cotações da decisão 6.3) e fica **fora do
+  funil**, seguindo inteira no Pipeline e nos relatórios. Motivo: a carga
+  não passou pela jornada do lead, e somá-la produzia número sem nexo — 26
+  leads convertidos "gerando" 124 negócios fechados.
+- Fonte → Usuário, 2026-09-18: "os leads convertidos estão sem nexo".
+
+**6.10**
+- Decisão → O funil **não credita passagem que não houve**. Só conta como
+  "passou pela qualificação" o lead que tem **prazo registrado**; quem
+  converteu sem prazo entrou pelo caminho da **oportunidade pronta**
+  (decisão 6.1), e o funil diz isso em texto, com quantas propostas vieram
+  direto do cliente sem passar pela Prospecção. Consequência prática: hoje
+  a faixa Leads Qualificados aparece **vazia**, porque a qualificação do
+  SDR ainda não começou a ser usada — e isso é a informação correta.
+- Fonte → Usuário, 2026-09-18: "daonde aqueles 26 leads qualificados se nos
+  prospects não tem nenhum?".
+
+**6.11**
+- Decisão → A faixa do funil é **régua única** em todo o CRM: Prospect,
+  Lead qualificado, Lead convertido e Descartado. Na **Busca geral** a
+  coluna "Situação" (que mostrava o nome interno do status — "Aprovado",
+  "Em triagem") virou **Funil** e mostra a faixa.
+- Fonte → Pedido do usuário, 2026-09-18.
+
+**6.12**
+- Decisão → **Lead convertido sem proposta cadastrada aparece em Leads
+  convertidos**, com a conta zerada e o aviso "proposta ainda não
+  cadastrada", e vem no topo da lista depois das negociações vivas — é
+  fila que espera ação. Antes ele não estava em aba nenhuma: saía de
+  Prospects ao ser convertido e não entrava em Leads convertidos, que só
+  olhava o Pipeline.
+- Fonte → Achado a partir do usuário, 2026-09-18, ao notar que a empresa
+  aparecia na Busca geral e não aparecia dentro da Prospecção.
+
+**6.13**
+- Decisão → A busca do cabeçalho vale nas **quatro abas** da Prospecção
+  (incluindo Leads convertidos, que antes não filtrava nada), a contagem
+  de cada aba passa a ser **a dos resultados da busca**, e a aba aberta
+  sem resultado **aponta a aba que tem** o registro.
+- Fonte → Usuário, 2026-09-18: "no filtro geral a empresa consta no
+  prospect, mas dentro do prospect o filtro não relaciona a empresa".
+
+**6.14**
+- Decisão → **Leads convertidos é lista de LEAD, não de empresa com
+  proposta.** A base é o lead do CRM que saiu da triagem; empresa que só
+  tem cotação da carga histórica sai dessa lista (eram 56 entrando como se
+  fossem lead convertido, sem nunca ter sido lead — são cliente com
+  histórico). A contagem de propostas por lead também olha **só o ciclo
+  corrente**: cotação de 2025 não conta como negociação viva, então o lead
+  aparece como "proposta ainda não cadastrada", que é a verdade. A carteira
+  histórica segue inteira no Pipeline, nos relatórios e em Carteira de
+  clientes.
+- Fonte → Usuário, 2026-09-21: "os leads convertidos estão herdando a
+  importação ainda, retratar somente registros do CRM".
+
+**6.15**
+- Decisão → No funil, **quem sai da fila para frente conta como "seguiu
+  adiante" na faixa Prospectar**, mesmo tendo pulado a qualificação — senão
+  a corrente quebra na tela (a faixa dizia "0 seguiu adiante" com 31 leads
+  na faixa de baixo). O salto é explicado em texto embaixo do funil, junto
+  com quantos convertidos ainda não têm proposta e quantos estão em
+  negociação.
+- Fonte → Correção a partir do usuário, 2026-09-21.
+
+**6.16**
+- Decisão → A faixa **Leads Convertidos conta só quem tem proposta** —
+  em negociação ou já com resultado. O nome da faixa é "Lead do CRM com
+  proposta em andamento no Pipeline", então somar o convertido que nunca
+  teve proposta cadastrada contradizia o próprio rótulo.
+  Quem converteu e parou aí ganha uma **linha de aviso embaixo do funil**,
+  com atalho para a Prospecção: é fila de ação, não estágio da jornada.
+- Fonte → Usuário, 2026-09-21, ao pedir o novo texto da faixa.
+
+**6.17**
+- Decisão → O funil do Painel **mede movimento num período**, não estoque
+  acumulado. Tem seletor de janela — 3 meses, 12 meses, este ano, tudo —
+  e a janela padrão é **12 meses**, porque o ciclo da venda de máquina é
+  de 9 a 12 meses e uma janela mensal mostra o funil zerado.
+  A antiga "taxa de conversão" (ganhas ÷ todos os leads de todos os
+  tempos) foi **apagada**: ela caía sozinha a cada lead importado. No
+  lugar entrou **Aproveitamento** = propostas ganhas ÷ propostas que
+  fecharam no período, que não se degrada com o crescimento da base.
+- Fonte → Usuário, 2026-09-21: "o funil não deveria refletir dados sob a
+  ótica de um período de tempo? senão ano que vem os dados estarão
+  acumulados".
+
+**6.18**
+- Decisão → Cada faixa do funil mostra **três coisas separadas**, que
+  antes estavam misturadas num número só:
+  1. **quantos estão na faixa hoje** — número grande, é foto, sem período;
+  2. **o movimento na janela** — entraram, avançaram, saíram;
+  3. **a pendência da faixa**, com link para a tela já filtrada.
+  A pendência é o que faz o funil apontar ação: fila sem prazo
+  registrado, qualificado esperando proposta, convertido sem proposta
+  cadastrada, proposta sem valor ou sem previsão de fechamento.
+- Fonte → Usuário, 2026-09-21: "só quero que o funil seja funcional e
+  direcione para alguma linha de ação; olhando para ele como está não sei
+  o que fazer".
+
+**6.19**
+- Decisão → As passagens de faixa passam a ter **data gravada** no lead:
+  `qualifiedAt` (recebeu prazo), `convertedAt` (saiu da triagem) e
+  `discardedAt` (saiu do funil). Trocar Curto por Médio não requalifica —
+  vale a primeira data; limpar a classificação limpa a data, porque sem
+  prazo não houve qualificação.
+  O passado fica **sem data de propósito** — inventar data falsearia a
+  série. Só foi recuperado o que era rastreável: as conversões desde
+  2026-08-20, quando a conversão passou a gerar registro na Timeline.
+  Aparece como uma linha só embaixo do funil, fora do movimento.
+- Fonte → Decorrência de 6.17: sem data de passagem não existe funil por
+  período.
+
+
 
 ## Perguntas para depois
 

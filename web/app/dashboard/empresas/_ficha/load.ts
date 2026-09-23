@@ -6,6 +6,7 @@ import { listOpportunities } from "@/lib/api/opportunities";
 import { listSalesHistory, listSalesHistoryItems } from "@/lib/api/sales-history";
 import { listContacts } from "@/lib/api/contacts";
 import { listMemberships } from "@/lib/api/memberships";
+import { getCompanyTeam } from "@/lib/api/company-team";
 import { ApiError } from "@/lib/api/client";
 
 // 403 = "sem permissão pra esta aba" (ver comentário no Promise.all de
@@ -35,6 +36,7 @@ export async function loadFicha(token: string, companyId: string) {
     salesItems,
     contacts,
     memberships,
+    team,
   ] = await Promise.all([
     getMe(token),
     getCompany(token, companyId),
@@ -58,13 +60,28 @@ export async function loadFicha(token: string, companyId: string) {
     // Admin API. Antes só o próprio usuário aparecia por nome; os outros
     // viravam um pedaço do id (ex.: "cdf42f7f…").
     listMemberships(token),
+    // Aba "Equipe de vendas" (2026-09-23) — a mesma que a ficha do lead
+    // já tinha desde 2026-09-21. Degrada pra null pelo mesmo motivo das
+    // outras: só a empresa em si é dado obrigatório da ficha.
+    vazioSe403(getCompanyTeam(token, companyId), null),
   ]);
 
   // A Timeline, o contador da aba e o "Interações" da visão geral saem
   // todos daqui — filtrar num ponto só mantém os três coerentes.
   const activities = apenasInteracoes(todasAsActivities);
 
-  return { me, company, activities, tasks, opportunities, salesHistory, salesItems, contacts, memberships };
+  return {
+    me,
+    company,
+    activities,
+    tasks,
+    opportunities,
+    salesHistory,
+    salesItems,
+    contacts,
+    memberships,
+    team,
+  };
 }
 
 export type FichaData = Awaited<ReturnType<typeof loadFicha>>;
@@ -88,6 +105,9 @@ export function contagensDaFicha(data: FichaData) {
     tarefas: data.tasks.length,
     negocios: data.opportunities.length,
     contatos: data.contacts.length,
+    // Responsável + quem foi incluído na equipe — a mesma conta que a
+    // aba mostra em tela.
+    equipe: (data.team?.ownerUserId ? 1 : 0) + (data.team?.userIds.length ?? 0),
     vendas: data.salesHistory.length,
     produtos: distintos("produto"),
     servicos: distintos("servico"),

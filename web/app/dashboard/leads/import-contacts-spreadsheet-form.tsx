@@ -56,6 +56,12 @@ export default function ImportContactsSpreadsheetForm() {
         empresa em quantas linhas ela tiver contatos. Colunas fora deste
         modelo travam a importação com erro.
       </div>
+      <div className="t-sub" style={{ marginBottom: 4 }}>
+        <b>Representante</b>: nome, login ou e-mail de quem fica com o lead
+        (o supervisor dele entra junto na equipe de vendas da empresa).
+        Deixe em branco para ficar com você — distribuir para outra pessoa
+        é permitido a gerente, administrador e proprietário.
+      </div>
       <button
         type="button"
         className="btn btn-ghost"

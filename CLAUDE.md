@@ -61,7 +61,8 @@ Referência sob demanda: `arquitetura-dados.md` (modelo de dados),
 `api-egestor-*.md`, `webhook-egestor.md`, `webhook-meta-leads.md`,
 `integracao-cotacoes.md` (docs técnicos das integrações),
 `reports-email.md` (e-mails que o CRM envia: resumo diário + avisos de
-tarefa designada e de destaque em anotação).
+tarefa designada e de destaque em anotação), `telefonia-crm.md` (plano da
+ligação telefônica do SDR de dentro do CRM).
 
 **Regra**: arquivo `.md` novo entra nesta lista no mesmo commit que o
 cria. Se não está aqui, não existe pro agente.

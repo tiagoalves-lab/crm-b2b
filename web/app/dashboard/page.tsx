@@ -67,6 +67,25 @@ const ETAPAS_PROPOSTA = new Set([
   "Aprovação de Propostas",
 ]);
 
+// A anotação que o lead do Meta gera traz a origem completa (plataforma,
+// formulário, campanha, anúncio) mais uma linha por pergunta respondida —
+// texto longo demais pra uma lista de leitura rápida. Aqui fica só a origem
+// enxuta; o conteúdo inteiro continua na Timeline da ficha.
+const META_PREFIXO = "Lead do formulário do Meta";
+
+function resumirRegistro(texto: string): string {
+  const primeiraLinha = texto.split("\n")[0].trim();
+  if (!primeiraLinha.startsWith(META_PREFIXO)) {
+    return primeiraLinha.length > 120 ? `${primeiraLinha.slice(0, 119)}…` : primeiraLinha;
+  }
+  const dentro = primeiraLinha.match(/\(([^)]*)\)/)?.[1] ?? "";
+  const partes = dentro
+    .split(" · ")
+    .map((parte) => parte.replace(/\s*"[^"]*"$/, "").trim())
+    .filter((parte) => parte.startsWith("via ") || parte === "formulário");
+  return partes.length > 0 ? `${META_PREFIXO} (${partes.join(" · ")})` : META_PREFIXO;
+}
+
 interface DescribedActivity {
   id: string;
   kind: string;
@@ -115,7 +134,7 @@ function describeActivity(
     return {
       id: activity.id,
       kind: SUBTIPO_LABEL[subtipo] ?? "Registro",
-      text: (payload.texto as string | undefined) ?? "Contato registrado",
+      text: resumirRegistro((payload.texto as string | undefined) ?? "Contato registrado"),
       company: companyLabel,
       occurredAt: activity.occurredAt,
       href: entityHref,
@@ -223,7 +242,26 @@ function fmtWhen(iso: string): string {
 // listagens que Pipeline/Tarefas/Leads já usam (+ /activities sem
 // filtro, ver ActivityQueryService#findAll, pro card "Últimas
 // atividades"), sem endpoint novo dedicado a este painel.
-export default async function DashboardPage() {
+// Janelas de tempo do funil (2026-09-21). 12 meses é o padrão porque o
+// ciclo da venda de máquina é de 9 a 12 meses — janela menor mostra o
+// funil zerado. "tudo" existe pra conferência, não pra leitura do dia.
+const JANELAS = [
+  { chave: "3m", label: "3 meses" },
+  { chave: "12m", label: "12 meses" },
+  { chave: "ano", label: "Este ano" },
+  { chave: "tudo", label: "Tudo" },
+] as const;
+type Janela = (typeof JANELAS)[number]["chave"];
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ janela?: string }>;
+}) {
+  const { janela: janelaParam } = await searchParams;
+  const janela: Janela = JANELAS.some((j) => j.chave === janelaParam)
+    ? (janelaParam as Janela)
+    : "12m";
   const token = await getServerAccessToken();
   const [
     { items: pipelines },
@@ -231,12 +269,21 @@ export default async function DashboardPage() {
     { items: tasks },
     { items: leadsNovos },
     memberships,
+    { items: leadsAprovados },
+    { items: leadsDescartadosItems },
   ] = await Promise.all([
     listPipelines(token),
     listOpportunities(token),
     listTasks(token),
     listRawLeads(token, { status: "novo" }),
     listMemberships(token),
+    // As linhas dos convertidos, não só o total (2026-09-18): o funil
+    // precisa saber quais deles passaram pela qualificação do SDR e a
+    // qual empresa cada um virou, pra casar com as propostas do Pipeline.
+    listRawLeads(token, { status: "aprovado" }),
+    // Também as linhas (2026-09-21): o funil por período precisa da data
+    // do descarte, não só de quantos foram descartados no total.
+    listRawLeads(token, { status: "descartado" }),
   ]);
 
   // Isolado do Promise.all acima de propósito: é a chamada mais nova
@@ -250,14 +297,20 @@ export default async function DashboardPage() {
   );
 
   const pipeline = pipelines.find((p) => p.isDefault) ?? pipelines[0];
-  const stageById = new Map((pipeline?.stages ?? []).map((s) => [s.id, s]));
 
   const abertas = opportunities.filter((o) => o.status === "open" && !o.deletedAt);
   const totalAberto = abertas.reduce((s, o) => s + Number(o.amount), 0);
-  const ponderado = abertas.reduce((s, o) => {
-    const prob = stageById.get(o.stageId)?.probability ?? 0;
-    return s + Number(o.amount) * (prob / 100);
-  }, 0);
+  // Ticket médio das propostas em aberto (2026-09-21, substituiu a
+  // "previsão ponderada" — valor × probabilidade da etapa: com todas as
+  // propostas na última etapa, ela era só 80% do pipeline, não informava
+  // nada). Só entram na média as que TÊM valor informado: proposta com
+  // R$ 0 é campo em branco, não negócio de zero real, e derrubaria a
+  // média pela metade.
+  const abertasComValor = abertas.filter((o) => Number(o.amount) > 0);
+  const ticketMedio =
+    abertasComValor.length > 0
+      ? abertasComValor.reduce((s, o) => s + Number(o.amount), 0) / abertasComValor.length
+      : 0;
 
   const mesInicio = startOfMonth();
   const ganhasNoMes = opportunities.filter(
@@ -289,12 +342,224 @@ export default async function DashboardPage() {
     return { cls: "due-ok", label: WEEKDAY_SHORT[due.getDay()] };
   };
 
+  // ── Funil de vendas (2026-09-18) ────────────────────────────────────────
+  // Substituiu o resumo por etapa do Pipeline (uma barra por stage, que só
+  // olhava as oportunidades abertas). Agora são as quatro faixas da jornada
+  // do lead (decisões 6.1/6.2/6.6): o funil começa na Prospecção e termina
+  // no resultado da negociação, no formato que o usuário aprovou.
+  //
+  // "Avançou" é sempre quem passou pra faixa seguinte, "ficou" quem está
+  // parado ali e "perdeu" quem saiu do funil naquele ponto.
+  //
+  // CORREÇÃO 2026-09-18 (o usuário leu "26" na faixa Leads Qualificados
+  // sem ter um único lead qualificado na base, e 124 negócios fechados
+  // saindo de 26 leads convertidos). Duas causas, as duas tratadas aqui:
+  //
+  //  1. A carga das cotações de jul-set/2025 nunca passou pela jornada do
+  //     lead — entrou direto como histórico. Fica FORA do funil
+  //     (opportunity.origem = 'historico-cotacoes'); segue inteira no
+  //     Pipeline e nos relatórios.
+  //  2. O funil creditava todo lead convertido como "passou pela
+  //     qualificação". Não passou: quem nunca teve prazo registrado
+  //     entrou pelo caminho da oportunidade pronta (decisão 6.1), e é
+  //     isso que a tela diz agora.
+  const qualificadosNaFila = leadsNovos.filter((l) => l.manualTier !== null).length;
+  const semPrazo = leadsNovos.length - qualificadosNaFila;
+  const leadsConvertidos = leadsAprovados.length;
+  // Converteu tendo passado pela qualificação × converteu direto: o prazo
+  // fica gravado no lead depois da conversão (approve() só tira a tag),
+  // então dá pra separar os dois caminhos sem histórico de transição.
+  const convertidosQualificados = leadsAprovados.filter((l) => l.manualTier !== null).length;
+
+  // Só o ciclo corrente. Uma carga histórica futura (ou o app de
+  // orçamentos, na fase 2) é marcada em origem e cai fora daqui sozinha.
+  const oppCiclo = opportunities.filter((o) => !o.deletedAt && !o.origem);
+  const abertasCiclo = oppCiclo.filter((o) => o.status === "open");
+  const valorAbertoCiclo = abertasCiclo.reduce((s, o) => s + Number(o.amount), 0);
+
+  // Empresa que veio de lead convertido × empresa que chegou com a
+  // oportunidade pronta (recompra/indicação). O lead guarda a empresa que
+  // ele virou em promotedCompanyId.
+  const empresasDeLead = new Set(
+    leadsAprovados.map((l) => l.promotedCompanyId).filter((id): id is string => Boolean(id)),
+  );
+  const propostasDiretas = oppCiclo.filter((o) => !empresasDeLead.has(o.companyId)).length;
+  const historicas = opportunities.filter((o) => !o.deletedAt && Boolean(o.origem));
+
+  // Situação de cada lead convertido, olhando SÓ proposta do ciclo
+  // corrente (2026-09-21, pedido do usuário: "os leads convertidos estão
+  // herdando a importação ainda, retratar somente registros do CRM").
+  // Cotação histórica não conta como negociação viva — quem só tem
+  // cotação de 2025 entra em "sem proposta cadastrada", que é a verdade.
+  const cicloPorEmpresa = new Map<string, { aberta: boolean; fechada: boolean }>();
+  for (const o of oppCiclo) {
+    const atual = cicloPorEmpresa.get(o.companyId) ?? { aberta: false, fechada: false };
+    if (o.status === "open") atual.aberta = true;
+    else atual.fechada = true;
+    cicloPorEmpresa.set(o.companyId, atual);
+  }
+  let convertidosComResultado = 0;
+  let convertidosEmNegociacao = 0;
+  for (const lead of leadsAprovados) {
+    const ciclo = lead.promotedCompanyId ? cicloPorEmpresa.get(lead.promotedCompanyId) : undefined;
+    if (ciclo?.fechada) convertidosComResultado += 1;
+    else if (ciclo?.aberta) convertidosEmNegociacao += 1;
+  }
+  const convertidosSemProposta = leadsConvertidos - convertidosComResultado - convertidosEmNegociacao;
+
+  // ── Janela de tempo do funil (2026-09-21) ───────────────────────────────
+  // O usuário pegou o furo: "o funil não deveria refletir dados sob a
+  // ótica de um período? senão ano que vem os dados estarão acumulados".
+  // Estava certo — o funil contava ESTOQUE de todos os tempos e a taxa de
+  // conversão dividia ganhos pelo total de leads, caindo sozinha a cada
+  // lead importado.
+  //
+  // Agora cada faixa mostra três coisas diferentes, que não se misturam:
+  //   1. quantos estão na faixa AGORA (foto, sem período — é o estoque);
+  //   2. o MOVIMENTO dentro da janela (entrou / avançou / saiu);
+  //   3. a PENDÊNCIA da faixa, com link pra tela já filtrada.
+  //
+  // Janela padrão de 12 meses: o ciclo da máquina é de 9 a 12 meses, então
+  // um funil mensal aparece zerado e não orienta nada.
+  const inicioJanela = (() => {
+    const d = new Date();
+    if (janela === "tudo") return null;
+    if (janela === "3m") d.setMonth(d.getMonth() - 3);
+    else if (janela === "ano") return new Date(d.getFullYear(), 0, 1);
+    else d.setMonth(d.getMonth() - 12);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
+  const naJanela = (iso: string | null | undefined) => {
+    if (!iso) return false;
+    if (!inicioJanela) return true;
+    return new Date(iso) >= inicioJanela;
+  };
+
+  const todosLeads = [...leadsNovos, ...leadsAprovados, ...leadsDescartadosItems];
+  const entraramNaJanela = todosLeads.filter((l) => naJanela(l.createdAt)).length;
+  const qualificadosNaJanela = todosLeads.filter((l) => naJanela(l.qualifiedAt)).length;
+  const convertidosNaJanela = leadsAprovados.filter((l) => naJanela(l.convertedAt)).length;
+  const descartadosNaJanela = leadsDescartadosItems.filter((l) => naJanela(l.discardedAt)).length;
+  // Conversões feitas antes de 2026-09-21, quando as datas passaram a ser
+  // gravadas. Ficam fora do movimento de propósito — inventar data
+  // falsearia a série. Aparecem numa linha só, embaixo do funil.
+  const convertidosSemData = leadsAprovados.filter((l) => !l.convertedAt).length;
+
+  const fechadasNaJanela = oppCiclo.filter(
+    (o) => o.status !== "open" && naJanela(o.closedAt ?? o.createdAt),
+  );
+  const ganhasNaJanela = fechadasNaJanela.filter((o) => o.status === "won");
+  const perdidasNaJanela = fechadasNaJanela.filter((o) => o.status === "lost");
+  const valorGanhoJanela = ganhasNaJanela.reduce((s, o) => s + Number(o.amount), 0);
+  const valorPerdidoJanela = perdidasNaJanela.reduce((s, o) => s + Number(o.amount), 0);
+  // Win rate: ganhas sobre o que FECHOU na janela. É a métrica que não se
+  // degrada com o crescimento da base (a antiga dividia pelo total de
+  // leads de todos os tempos e tendia a zero).
+  const winRate =
+    fechadasNaJanela.length > 0 ? (ganhasNaJanela.length / fechadasNaJanela.length) * 100 : null;
+
+  // Pendências: o que fazer olhando cada faixa. É o que faltava pro funil
+  // "direcionar para alguma linha de ação" (pedido do usuário, 2026-09-21:
+  // "olhando para ele como está não sei o que fazer").
+  const semInteracao = leadsNovos.filter((l) => !l.qualifiedAt).length;
+  const propostasSemValor = abertasCiclo.filter((o) => Number(o.amount) === 0).length;
+  const propostasSemPrazo = abertasCiclo.filter((o) => !o.expectedCloseDate).length;
+
+  const faixas = [
+    {
+      nome: "Prospectar",
+      detalhe: "Empresas na fila da Prospecção",
+      agora: semPrazo,
+      entrou: entraramNaJanela,
+      avancou: qualificadosNaJanela,
+      saiu: descartadosNaJanela,
+      valor: null as number | null,
+      acao:
+        semInteracao > 0
+          ? {
+              texto: `${semInteracao.toLocaleString("pt-BR")} sem prazo de investimento registrado`,
+              href: "/dashboard/leads?tier=prospects",
+              rotulo: "Abrir fila",
+            }
+          : null,
+    },
+    {
+      nome: "Leads Qualificados",
+      detalhe: "Prazo de investimento informado ao SDR",
+      agora: qualificadosNaFila,
+      entrou: qualificadosNaJanela,
+      avancou: convertidosNaJanela,
+      saiu: 0,
+      valor: null as number | null,
+      acao:
+        qualificadosNaFila > 0
+          ? {
+              texto: `${qualificadosNaFila} qualificados esperando proposta`,
+              href: "/dashboard/leads?tier=qualificados",
+              rotulo: "Abrir qualificados",
+            }
+          : {
+              texto: "Nenhum lead qualificado — a abordagem do SDR ainda não gerou prazo",
+              href: "/dashboard/leads?tier=prospects",
+              rotulo: "Abrir fila",
+            },
+    },
+    {
+      nome: "Leads Convertidos",
+      detalhe: "Lead do CRM com proposta em andamento no Pipeline",
+      agora: convertidosEmNegociacao,
+      entrou: convertidosNaJanela,
+      avancou: convertidosComResultado,
+      saiu: 0,
+      valor: null as number | null,
+      acao:
+        convertidosSemProposta > 0
+          ? {
+              texto: `${convertidosSemProposta} convertidos sem proposta cadastrada`,
+              href: "/dashboard/leads?tier=convertidos",
+              rotulo: "Abrir convertidos",
+            }
+          : null,
+    },
+    {
+      nome: "Venda e Fechamento",
+      detalhe: "Propostas em negociação e o resultado do período",
+      agora: abertasCiclo.length,
+      entrou: abertasCiclo.length,
+      avancou: ganhasNaJanela.length,
+      saiu: perdidasNaJanela.length,
+      valor: valorAbertoCiclo,
+      acao:
+        propostasSemValor + propostasSemPrazo > 0
+          ? {
+              texto: [
+                propostasSemValor > 0 ? `${propostasSemValor} sem valor` : null,
+                propostasSemPrazo > 0 ? `${propostasSemPrazo} sem previsão de fechamento` : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              href: "/dashboard/pipeline",
+              rotulo: "Abrir pipeline",
+            }
+          : null,
+    },
+  ];
+  // Metade da largura (2026-09-18): as faixas estreitam menos que na
+  // prévia em tela cheia, senão a última fica sem espaço pras pastilhas.
+  const LARGURAS_FUNIL = ["100%", "94%", "88%", "82%"];
+
+  // Gráfico do pipeline, ao lado do funil: uma barra por etapa com o valor
+  // em aberto. É a leitura operacional ("onde estão as propostas agora"),
+  // complementar ao funil, que é a leitura de jornada.
   const stages = pipeline ? [...pipeline.stages].sort((a, b) => a.order - b.order) : [];
-  const funil = stages.map((stage) => {
+  const porEtapa = stages.map((stage) => {
     const deals = abertas.filter((o) => o.stageId === stage.id);
     return { stage, count: deals.length, valor: deals.reduce((s, o) => s + Number(o.amount), 0) };
   });
-  const maxFunilValor = Math.max(...funil.map((f) => f.valor), 1);
+  const maxEtapaValor = Math.max(...porEtapa.map((f) => f.valor), 1);
+  const pct = (n: number) => `${n.toFixed(1).replace(".", ",")}%`;
+  const janelaLabel = JANELAS.find((j) => j.chave === janela)?.label ?? "12 meses";
 
   // WeeklyTasksTable/RecentActivityTable são client components (linha
   // inteira clicável) — só dados planos atravessam a fronteira, nada de
@@ -343,9 +608,15 @@ export default async function DashboardPage() {
             <div className="kpi-delta up">▲ {abertas.length} oportunidades ativas</div>
           </div>
           <div className="stat-tile blue">
-            <div className="stat-label">Previsão ponderada</div>
-            <div className="stat-value">{brl(ponderado)}</div>
-            <div className="kpi-delta">valor × probabilidade</div>
+            <div className="stat-label">Ticket médio</div>
+            <div className="stat-value">{brl(ticketMedio)}</div>
+            <div className={abertasComValor.length < abertas.length ? "kpi-delta down" : "kpi-delta"}>
+              {abertasComValor.length === 0
+                ? "⚠ nenhuma proposta com valor"
+                : abertasComValor.length < abertas.length
+                  ? `⚠ média de ${abertasComValor.length} de ${abertas.length} — resto sem valor`
+                  : `média de ${abertasComValor.length} proposta(s) em aberto`}
+            </div>
           </div>
           <div className="stat-tile green">
             <div className="stat-label">Ganho no mês</div>
@@ -361,7 +632,144 @@ export default async function DashboardPage() {
           </Link>
         </div>
 
-        {pipeline && (
+        <div className="painel-duo">
+          <div className="panel">
+          <div className="panel-head">
+            <div className="panel-title">
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 4h18l-7 8v6l-4 2v-8z" />
+              </svg>
+              Funil de vendas
+            </div>
+            <div className="janela-seletor">
+              {JANELAS.map((j) => (
+                <Link
+                  key={j.chave}
+                  href={`/dashboard?janela=${j.chave}`}
+                  className={j.chave === janela ? "tag-chip active" : "tag-chip"}
+                >
+                  {j.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+          <div className="panel-body">
+            <div className="funil-legenda">
+              <span className="fchip entrou">Entraram no período</span>
+              <span className="fchip ficou">Na faixa hoje</span>
+              <span className="fchip avancou">Avançaram</span>
+              <span className="fchip perdeu">Saíram</span>
+              <span className="fchip valor">Valor em jogo</span>
+            </div>
+
+            <div className="funil">
+              {faixas.map((faixa, i) => {
+                // Taxa de passagem do PERÍODO: de quem entrou na faixa
+                // dentro da janela, quanto avançou. Não usa mais o estoque
+                // acumulado — era o que fazia a taxa cair sozinha a cada
+                // lead importado.
+                const taxa = faixa.entrou > 0 ? (faixa.avancou / faixa.entrou) * 100 : null;
+                return (
+                  <div className="funil-nivel" key={faixa.nome}>
+                    <div className="funil-caixa" style={{ width: LARGURAS_FUNIL[i] }}>
+                      <div className="funil-nome">
+                        {faixa.nome}
+                        <small>{faixa.detalhe}</small>
+                      </div>
+                      <div className="funil-numeros">
+                        <span className="fchip entrou">
+                          +{faixa.entrou.toLocaleString("pt-BR")} <small>entraram</small>
+                        </span>
+                        <span className="fchip ficou">
+                          {faixa.agora.toLocaleString("pt-BR")} <small>hoje</small>
+                        </span>
+                        <span className="fchip avancou">
+                          {faixa.avancou.toLocaleString("pt-BR")} <small>avançaram</small>
+                        </span>
+                        {faixa.saiu > 0 && (
+                          <span className="fchip perdeu">
+                            {faixa.saiu.toLocaleString("pt-BR")} <small>saíram</small>
+                          </span>
+                        )}
+                        {faixa.valor !== null && faixa.valor > 0 && (
+                          <span className="fchip valor">{brl(faixa.valor)}</span>
+                        )}
+                      </div>
+                    </div>
+                    {i < faixas.length - 1 && (
+                      <div className={taxa !== null && taxa < 25 ? "funil-taxa fraca" : "funil-taxa"}>
+                        {taxa !== null ? pct(taxa) : "—"} <span>avançou</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              <div className="funil-fecho">
+                <div className="funil-circulo">
+                  <b>{ganhasNaJanela.length}</b>
+                  <span>pedidos</span>
+                </div>
+                <div className="funil-fecho-valor">{brl(valorGanhoJanela)} fechados no período</div>
+              </div>
+            </div>
+
+            <div className="funil-totais">
+              <div>
+                <span className="frot conv">Aproveitamento</span>
+                <div className="fnum">{winRate !== null ? pct(winRate) : "—"}</div>
+              </div>
+              <div>
+                <span className="frot perd">Perdidas no período</span>
+                <div className="fnum perda">{perdidasNaJanela.length}</div>
+              </div>
+              <div>
+                <span className="frot val">Valor perdido</span>
+                <div className="fnum perda">{brl(valorPerdidoJanela)}</div>
+              </div>
+            </div>
+
+            {/* As pendências voltaram pra baixo do funil, em comentário
+                (2026-09-22: "eu gostei como estava antes, que tinha um
+                comentário abaixo"). Tentei colocá-las dentro de cada
+                faixa, com botão, e ficou alto e pesado. */}
+            {faixas
+              .filter((f) => f.acao !== null)
+              .map((f) => (
+                <div className="funil-aviso" key={f.nome}>
+                  <span>
+                    <b>{f.nome}:</b> {f.acao!.texto}.
+                  </span>
+                  <Link href={f.acao!.href} className="btn btn-sm btn-ghost">
+                    {f.acao!.rotulo} →
+                  </Link>
+                </div>
+              ))}
+
+            <p className="sub" style={{ marginTop: 12 }}>
+              O número em amarelo é quem está na faixa <b>hoje</b>; o resto é o movimento dos
+              últimos <b>{janelaLabel.toLowerCase()}</b>. Aproveitamento = propostas ganhas sobre as
+              que fecharam no período. Só o ciclo comercial em andamento: as {historicas.length}{" "}
+              cotações de jul a set/2025 importadas ficam no Pipeline e nos relatórios, fora desta
+              conta.
+              {convertidosSemData > 0 && (
+                <>
+                  {" "}
+                  {convertidosSemData} conversões são anteriores ao registro de datas (set/2026) e
+                  não entram no movimento do período.
+                </>
+              )}
+              {propostasDiretas > 0 && (
+                <>
+                  {" "}
+                  {propostasDiretas} proposta(s) vieram de oportunidade pronta do cliente, sem passar
+                  pela Prospecção.
+                </>
+              )}
+            </p>
+          </div>
+          </div>
+
           <div className="panel">
             <div className="panel-head">
               <div className="panel-title">
@@ -369,29 +777,39 @@ export default async function DashboardPage() {
                   <path d="M3 3v18h18" />
                   <path d="M18 9l-5 5-3-3-4 4" />
                 </svg>
-                Funil de propostas — resumo
+                Pipeline por etapa
               </div>
               <Link href="/dashboard/pipeline" className="btn btn-sm btn-ghost">
                 Abrir pipeline →
               </Link>
             </div>
             <div className="panel-body">
-              <div className="funnel-bar">
-                {funil.map((f) => (
-                  <div className="fbar" key={f.stage.id}>
-                    <div className="fbar-label">{f.stage.name}</div>
-                    <div className="fbar-track">
-                      <div className="fbar-fill" style={{ width: `${Math.max((f.valor / maxFunilValor) * 100, 3)}%` }}>
-                        {f.count} deal(s)
+              {porEtapa.length === 0 ? (
+                <p className="sub">Nenhuma etapa configurada.</p>
+              ) : (
+                <div className="funnel-bar">
+                  {porEtapa.map((f) => (
+                    <div className="fbar" key={f.stage.id}>
+                      <div className="fbar-label">{f.stage.name}</div>
+                      <div className="fbar-track">
+                        <div
+                          className="fbar-fill"
+                          style={{ width: `${Math.max((f.valor / maxEtapaValor) * 100, 3)}%` }}
+                        >
+                          {f.count} proposta(s)
+                        </div>
                       </div>
+                      <div className="fbar-val">{brl(f.valor)}</div>
                     </div>
-                    <div className="fbar-val">{brl(f.valor)}</div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+              <p className="sub" style={{ marginTop: 14 }}>
+                Propostas em aberto — {abertas.length} no total, {brl(totalAberto)}.
+              </p>
             </div>
           </div>
-        )}
+        </div>
 
         <div className="report-grid">
           <div className="panel">

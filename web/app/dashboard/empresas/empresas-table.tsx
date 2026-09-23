@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { companyRazaoSocialName, type CompanyResumo } from "@/lib/api/companies";
-import { formatDateBR, formatDateOnlyBR } from "@/lib/format-date";
+import { formatDateOnlyBR } from "@/lib/format-date";
 import { deleteCompanyAction, restoreCompanyAction } from "./actions";
 import SubmitButton from "@/app/_components/submit-button";
 import { useTopbarQuery } from "@/app/_components/topbar-filter";
@@ -15,13 +15,11 @@ export interface EmpresaRow {
   // Versão enxuta da empresa, montada pelo backend (2026-09-04) — só os
   // campos que esta tabela desenha. Ver CompanyResumo.
   company: CompanyResumo;
-  tipo: Tipo;
   // Classe da curva ABC gravada na empresa. null = sem compra, ou curva
   // nunca calculada (o botão "Calcular curva ABC" é quem preenche).
   classe: Classe | null;
   ltv: number;
   ultimaCompra: string | null;
-  ultimoContato: string | null;
 }
 
 // A é quem sustenta o faturamento e C é a ponta longa — as cores seguem
@@ -46,11 +44,11 @@ function primaryName(company: CompanyResumo): string {
 // Clicar no título da coluna ordena por ela; clicar de novo inverte. Fica
 // no navegador (não na querystring) porque a lista inteira já vem pro
 // client — mesmo critério da busca por nome logo acima.
-type SortKey = "empresa" | "tipo" | "egestor" | "cidade" | "classe" | "ltv" | "ultimaCompra" | "ultimoContato";
+type SortKey = "empresa" | "egestor" | "cidade" | "classe" | "ltv" | "ultimaCompra";
 
 // Colunas de dinheiro e data começam DECRESCENTES no primeiro clique: quem
 // clica em "LTV" quer ver quem mais comprou, não quem menos comprou.
-const PRIMEIRO_CLIQUE_DESC = new Set<SortKey>(["ltv", "ultimaCompra", "ultimoContato"]);
+const PRIMEIRO_CLIQUE_DESC = new Set<SortKey>(["ltv", "ultimaCompra"]);
 
 // `null` aqui quer dizer "célula vazia" (o traço na tela) — essas linhas
 // vão sempre pro fim, nas duas direções. Empresa sem cidade no meio da
@@ -59,8 +57,6 @@ function valorDaColuna(row: EmpresaRow, key: SortKey): string | number | null {
   switch (key) {
     case "empresa":
       return primaryName(row.company).toLowerCase();
-    case "tipo":
-      return row.tipo;
     case "egestor":
       return row.company.temEgestor ? 0 : 1;
     case "cidade":
@@ -73,8 +69,6 @@ function valorDaColuna(row: EmpresaRow, key: SortKey): string | number | null {
       return row.ltv > 0 ? row.ltv : null;
     case "ultimaCompra":
       return row.ultimaCompra;
-    case "ultimoContato":
-      return row.ultimoContato;
   }
 }
 
@@ -131,20 +125,17 @@ function ordenar(rows: EmpresaRow[], key: SortKey, dir: "asc" | "desc"): Empresa
 // Toolbar (seg + busca) e tabela vivem no mesmo client component porque a
 // busca por nome (client-side, como no protótipo — gama-crm-mvp.html,
 // filterClientes()) precisa filtrar a mesma lista que a tabela renderiza.
-// O filtro Todas/Leads/Clientes e "Ver excluídas" continuam em querystring
-// (mesmo padrão do resto do app — ver leads-table.tsx), só a busca de texto
-// é estado efêmero no navegador.
+// O filtro Todas/Leads/Clientes saiu em 2026-09-18 ("perdeu a utilidade",
+// palavras do usuário): com o lead morando na Prospecção, esta tela é uma
+// lista só — de cliente. "Ver excluídas" continua em querystring; a busca
+// de texto é estado efêmero no navegador.
 export default function EmpresasTable({
   rows,
-  currentFiltro,
   showDeleted,
-  counts,
   canDelete,
 }: {
   rows: EmpresaRow[];
-  currentFiltro: "todas" | "lead" | "cliente";
   showDeleted: boolean;
-  counts: { todas: number; lead: number; cliente: number };
   canDelete: boolean;
 }) {
   // Texto do filtro do cabeçalho (TopbarFilter em modo contexto) — a caixa
@@ -187,31 +178,18 @@ export default function EmpresasTable({
     />
   );
 
-  // Aba Leads (pedido do usuário, 2026-09-16): lead não tem faturamento,
-  // então a Classe da curva ABC sai e entra o "Último contato", que é o
-  // que importa pra quem ainda está sendo trabalhado.
-  const visaoLeads = currentFiltro === "lead";
-
-  const filtroHref = (f: "todas" | "lead" | "cliente") =>
-    `/dashboard/empresas?filtro=${f}${showDeleted ? "&includeDeleted=1" : ""}`;
+  // A visão de lead saiu daqui em 2026-09-18: Empresas lista cliente, e
+  // lead é assunto da Prospecção. Por isso a Classe da curva ABC é sempre
+  // exibida e a coluna "Último contato" (que só servia pra lead) não
+  // existe mais nesta tela.
   const deletedHref = showDeleted
-    ? `/dashboard/empresas?filtro=${currentFiltro}`
-    : `/dashboard/empresas?filtro=${currentFiltro}&includeDeleted=1`;
+    ? "/dashboard/empresas"
+    : "/dashboard/empresas?includeDeleted=1";
 
   return (
     <>
       <div className="toolbar">
-        <div className="seg">
-          <Link href={filtroHref("todas")} className={currentFiltro === "todas" ? "active" : undefined}>
-            Todas ({counts.todas})
-          </Link>
-          <Link href={filtroHref("lead")} className={currentFiltro === "lead" ? "active" : undefined}>
-            Leads ({counts.lead})
-          </Link>
-          <Link href={filtroHref("cliente")} className={currentFiltro === "cliente" ? "active" : undefined}>
-            Clientes ({counts.cliente})
-          </Link>
-        </div>
+        <div style={{ flex: 1 }} />
         <Link href={deletedHref} className="btn btn-ghost btn-sm">
           {showDeleted ? "Ocultar excluídas" : "Ver excluídas"}
         </Link>
@@ -221,31 +199,24 @@ export default function EmpresasTable({
         <thead>
           <tr>
             {th("empresa", "Empresa")}
-            {th("tipo", "Tipo")}
             {th("egestor", "eGestor", {
               title: "Tem vínculo com o eGestor (Matriz e/ou Filial)",
             })}
             {th("cidade", "Cidade")}
-            {!visaoLeads && th("classe", "Classe")}
+            {th("classe", "Classe")}
             {th("ltv", "LTV", { alinharDireita: true })}
             {th("ultimaCompra", "Última compra")}
-            {visaoLeads && th("ultimoContato", "Último contato")}
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {visible.map(({ company, tipo, classe, ltv, ultimaCompra, ultimoContato }) => (
+          {visible.map(({ company, classe, ltv, ultimaCompra }) => (
             <tr key={company.id} className="row-clickable">
               <td>
                 <Link href={`/dashboard/empresas/${company.id}`} className="t-co">
                   {primaryName(company)}
                 </Link>
                 <div className="t-sub">{company.cpfCnpj ?? "sem CPF/CNPJ"}</div>
-              </td>
-              <td>
-                <span className={tipo === "cliente" ? "pill pill-green" : "pill pill-blue"}>
-                  {tipo === "cliente" ? "Cliente" : "Lead"}
-                </span>
               </td>
               <td style={{ textAlign: "center" }}>
                 {company.temEgestor ? (
@@ -261,20 +232,18 @@ export default function EmpresasTable({
               <td>
                 {company.cidade ? `${company.cidade}${company.uf ? `/${company.uf}` : ""}` : "—"}
               </td>
-              {!visaoLeads && (
-                <td>
-                  {classe ? (
-                    <span
-                      className={CLASSE_PILL[classe]}
-                      title="Curva ABC — peso desta empresa no faturamento acumulado"
-                    >
-                      {classe}
-                    </span>
-                  ) : (
-                    <span style={{ color: "var(--text-tertiary)" }}>—</span>
-                  )}
-                </td>
-              )}
+              <td>
+                {classe ? (
+                  <span
+                    className={CLASSE_PILL[classe]}
+                    title="Curva ABC — peso desta empresa no faturamento acumulado"
+                  >
+                    {classe}
+                  </span>
+                ) : (
+                  <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                )}
+              </td>
               <td
                 style={{
                   textAlign: "right",
@@ -287,9 +256,6 @@ export default function EmpresasTable({
               <td className="t-sub">
                 {ultimaCompra ? formatDateOnlyBR(ultimaCompra) : "—"}
               </td>
-              {visaoLeads && (
-                <td className="t-sub">{ultimoContato ? formatDateBR(ultimoContato) : "—"}</td>
-              )}
               <td>
                 <div className="cell-actions">
                   <Link href={`/dashboard/empresas/${company.id}`} className="icon-btn" title="Abrir ficha">

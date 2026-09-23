@@ -577,8 +577,8 @@ export default function NovaEmpresaFicha({
         <div className="drawer-section-title">Contatos</div>
         <ContatosInline companyId={empresaSalva.id} />
         <p className="t-sub" style={{ marginTop: 14 }}>
-          Tarefas, anotações e o restante do histórico ficam na ficha da empresa, em Cadastros ›
-          Empresas.
+          Tarefas, anotações e o restante do histórico ficam na ficha da empresa, em Comercial ›
+          Carteira de clientes.
         </p>
       </>
     );

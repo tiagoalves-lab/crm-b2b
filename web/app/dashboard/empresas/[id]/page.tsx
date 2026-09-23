@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
-import { companyRazaoSocialName } from "@/lib/api/companies";
+import { companyRazaoSocialName, ehClienteDaCarteira } from "@/lib/api/companies";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import { contagensDaFicha, loadFicha } from "../_ficha/load";
 import FichaTabs, { currentAbaOf } from "../_ficha/ficha-tabs";
@@ -27,12 +27,11 @@ export default async function EmpresaFichaPage({
     "empresas_vendas",
     "ver",
   );
-  // Mesmo critério da lista (web/app/dashboard/empresas/page.tsx#tipoOf):
-  // tag "cliente" (dado real da importação), não presença de Opportunity
-  // "won" — pipeline novo começou do zero, sem negócio pros clientes já
-  // existentes antes dele.
-  const isCliente = company.tags.includes("cliente");
-  const currentAba = currentAbaOf(aba);
+  // Mesma régua da lista e da busca geral, calculada no backend
+  // (src/companies/cliente-regra.ts): cliente é quem já comprou — pedido
+  // emitido no eGestor ou oportunidade ganha no CRM.
+  const isCliente = ehClienteDaCarteira(company);
+  const currentAba = currentAbaOf(aba, { podeVerVendas, isCliente });
 
   return (
     <>
@@ -63,6 +62,7 @@ export default async function EmpresaFichaPage({
           aba={aba}
           counts={contagensDaFicha(data)}
           podeVerVendas={podeVerVendas}
+          isCliente={isCliente}
         />
       </div>
 

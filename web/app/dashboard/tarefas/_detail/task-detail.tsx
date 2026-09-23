@@ -20,6 +20,8 @@ import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { AttachmentsSection } from "@/app/dashboard/_overlay/attachments";
 import type { TaskDetail } from "./load";
 import TipoContatoFields from "../tipo-contato-fields";
+import LigarButton from "@/app/dashboard/_telefonia/ligar-button";
+import { hasPermission } from "@/lib/api/permission-catalog";
 import { TagPicker } from "../../pipeline/_detail/item-tags";
 import {
   addTaskCommentAction,
@@ -284,6 +286,9 @@ export function DetailBody() {
   const [tags, setTags] = useState<string[]>(task.tags ?? []);
   const tagOptions = Array.from(new Set([...(opportunityItems ?? []), ...(task.tags ?? [])]));
   const canDeleteOwn = me.membership.role !== "sales_rep";
+  // Botão de ligar na tarefa do tipo Ligação (docs/telefonia-crm.md).
+  const podeLigar = hasPermission(me.membership.role, me.membership.permissions, "telefonia", "criar");
+  const contatoDaTarefa = contacts.find((c) => c.id === task.contactId);
 
   function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -376,6 +381,24 @@ export function DetailBody() {
           Inserido por {memberDisplayName(task.createdBy, memberships)}
         </span>
       </div>
+
+      {/* Tarefa de ligação: o telefone do contato vem junto, com o botão
+          de discar ali mesmo (docs/telefonia-crm.md, Etapa 1) — sem
+          precisar abrir a ficha da empresa pra achar o número. */}
+      {task.tipo === "ligacao" && podeLigar && contatoDaTarefa?.telefone && (
+        <div className="drawer-list-item" style={{ marginBottom: 12 }}>
+          <div>
+            <div className="dli-title">{contatoDaTarefa.nome}</div>
+            <div className="dli-sub">{contatoDaTarefa.telefone}</div>
+          </div>
+          <LigarButton
+            telefone={contatoDaTarefa.telefone}
+            companyId={companyId ?? undefined}
+            contactId={contatoDaTarefa.id}
+            taskId={task.id}
+          />
+        </div>
+      )}
 
       <form id={EDIT_FORM_ID} onSubmit={handleSave} className="form-grid">
         <label style={{ gridColumn: "1 / -1" }}>

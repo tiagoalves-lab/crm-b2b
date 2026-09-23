@@ -4,11 +4,25 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 
 export const TIPO_PIPELINE_DIARIO = 'pipeline-diario';
 export const TIPO_FOLLOWUP = 'pipeline-followup';
+// Aviso de lead novo do Meta (2026-09-18). Mora aqui junto dos reports
+// agendados por um motivo só: é a mesma pergunta de configuração ("está
+// ligado?" e "quem recebe?") e a mesma tela. O que ele NÃO tem é horário —
+// sai no instante em que o lead entra, não em rodada.
+export const TIPO_LEAD_META = 'lead-meta';
 
 export const TIPOS_CONFIGURAVEIS = [
   TIPO_PIPELINE_DIARIO,
   TIPO_FOLLOWUP,
+  TIPO_LEAD_META,
 ] as const;
+
+// Os tipos que o tick do agendador olha. O aviso de lead é disparado por
+// evento, então fica de fora — sem esta lista, um horário salvo por engano
+// no registro dele faria o tick tentar mandar um follow-up.
+export const TIPOS_AGENDADOS: readonly string[] = [
+  TIPO_PIPELINE_DIARIO,
+  TIPO_FOLLOWUP,
+];
 export type TipoReport = (typeof TIPOS_CONFIGURAVEIS)[number];
 
 export interface ConfigReport {
@@ -56,6 +70,18 @@ export class ReportConfigService {
   constructor(private readonly config: ConfigService) {}
 
   private padrao(tipo: TipoReport): ConfigReport {
+    if (tipo === TIPO_LEAD_META) {
+      return {
+        tipo,
+        ativo: true,
+        horarios: [],
+        diasUteis: false,
+        etapas: [],
+        destinatarios: [],
+        atualizadoEm: null,
+        atualizadoPor: null,
+      };
+    }
     if (tipo === TIPO_FOLLOWUP) {
       return {
         tipo,
@@ -126,6 +152,24 @@ export class ReportConfigService {
   ): Promise<ConfigReport> {
     const atual = await this.obter(tx, workspaceId, tipo);
 
+    // Aviso por evento não tem horário nem dia útil: sai quando o lead
+    // chega, inclusive no fim de semana (o anúncio roda sábado e domingo).
+    // Guardar horário aqui só criaria configuração que não faz nada.
+    if (tipo === TIPO_LEAD_META) {
+      return this.gravar(tx, workspaceId, tipo, userId, {
+        ativo: patch.ativo ?? atual.ativo,
+        horarios: [],
+        diasUteis: false,
+        etapas: [],
+        destinatarios: await this.validarDestinatarios(
+          tx,
+          workspaceId,
+          patch.destinatarios,
+          atual.destinatarios,
+        ),
+      });
+    }
+
     const horarios =
       patch.horarios !== undefined
         ? [...new Set(patch.horarios.map(normalizarHorario))].sort()
@@ -165,43 +209,68 @@ export class ReportConfigService {
     // servidor, e não na tela: sem isso, um id qualquer no formulário
     // colocaria um representante (ou alguém de outro workspace) recebendo
     // o panorama inteiro da empresa.
-    let destinatarios = atual.destinatarios;
-    if (patch.destinatarios !== undefined) {
-      const pedidos = [...new Set(patch.destinatarios.filter(Boolean))];
-      if (pedidos.length > 0) {
-        const elegiveis = await tx.membership.findMany({
-          where: {
-            workspaceId,
-            status: 'active',
-            role: { not: 'sales_rep' },
-            userId: { in: pedidos },
-          },
-          select: { userId: true },
-        });
-        const validos = new Set(elegiveis.map((m) => m.userId));
-        const invalido = pedidos.find((id) => !validos.has(id));
-        if (invalido) {
-          throw new BadRequestException(
-            'Só é possível escolher membros ativos que não sejam representantes.',
-          );
-        }
-      }
-      destinatarios = pedidos;
-    }
+    const destinatarios = await this.validarDestinatarios(
+      tx,
+      workspaceId,
+      patch.destinatarios,
+      atual.destinatarios,
+    );
 
-    const dados = {
+    return this.gravar(tx, workspaceId, tipo, userId, {
       ativo,
       horarios,
       diasUteis: patch.diasUteis ?? atual.diasUteis,
       etapas,
       destinatarios,
-      atualizadoPor: userId,
-    };
+    });
+  }
 
+  private async validarDestinatarios(
+    tx: TenantTx,
+    workspaceId: string,
+    pedido: string[] | undefined,
+    atual: string[],
+  ): Promise<string[]> {
+    if (pedido === undefined) return atual;
+    const pedidos = [...new Set(pedido.filter(Boolean))];
+    if (pedidos.length > 0) {
+      const elegiveis = await tx.membership.findMany({
+        where: {
+          workspaceId,
+          status: 'active',
+          role: { not: 'sales_rep' },
+          userId: { in: pedidos },
+        },
+        select: { userId: true },
+      });
+      const validos = new Set(elegiveis.map((m) => m.userId));
+      const invalido = pedidos.find((id) => !validos.has(id));
+      if (invalido) {
+        throw new BadRequestException(
+          'Só é possível escolher membros ativos que não sejam representantes.',
+        );
+      }
+    }
+    return pedidos;
+  }
+
+  private async gravar(
+    tx: TenantTx,
+    workspaceId: string,
+    tipo: TipoReport,
+    userId: string,
+    dados: {
+      ativo: boolean;
+      horarios: string[];
+      diasUteis: boolean;
+      etapas: string[];
+      destinatarios: string[];
+    },
+  ): Promise<ConfigReport> {
     const linha = await tx.reportConfig.upsert({
       where: { workspaceId_tipo: { workspaceId, tipo } },
-      create: { workspaceId, tipo, ...dados },
-      update: dados,
+      create: { workspaceId, tipo, ...dados, atualizadoPor: userId },
+      update: { ...dados, atualizadoPor: userId },
     });
 
     return {

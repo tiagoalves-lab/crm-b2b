@@ -8,6 +8,7 @@ import { currentAbaOf } from "./ficha-tabs";
 import AddNoteForm from "../../empresas/_ficha/add-note-form";
 import ContactItem from "../../empresas/_ficha/contact-item";
 import AddContactForm from "../../empresas/_ficha/add-contact-form";
+import EquipeEditor from "../equipe-editor";
 import LeadCnpjEditor from "../lead-cnpj-editor";
 import LeadSegmentoEditor from "../lead-segmento-editor";
 import LeadTagsEditor from "../lead-tags-editor";
@@ -76,14 +77,15 @@ function ActivityItem({
   );
 }
 
-// Conteúdo das 4 abas da ficha do lead (protótipo: renderLeadFicha em
-// gama-crm-mvp.html, "Contatos" é adição fora do protótipo) —
+// Conteúdo das 5 abas da ficha do lead (protótipo: renderLeadFicha em
+// gama-crm-mvp.html; "Contatos" e "Equipe de vendas" são adições fora do
+// protótipo) —
 // compartilhado entre a versão drawer e a versão full-page. Aprovar/
 // Descartar saíram daqui (viviam só na aba "dados") e foram pro cabeçalho
 // da ficha (leads/[id]/page.tsx e @drawer/(.)leads/[id]/page.tsx), visível
 // não importa qual aba esteja aberta.
 export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string }) {
-  const { me, lead, companyId, activities, tasks, contacts, accessRestricted, memberships } = data;
+  const { me, lead, companyId, activities, tasks, contacts, team, accessRestricted, memberships } = data;
   const currentAba = currentAbaOf(aba);
   const tier = effectiveTier(lead);
   // Mesmo critério de empresas/_ficha/ficha-body.tsx: vem da matriz
@@ -91,6 +93,7 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
   // owner/admin.
   const canEditContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "editar");
   const canRemoveContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "excluir");
+  const podeLigar = hasPermission(me.membership.role, me.membership.permissions, "telefonia", "criar");
   // CNPJ editável só enquanto o lead está em triagem (aprovado/descartado
   // não muda mais) e pra quem pode editar leads — o backend confere de
   // novo (PATCH /raw-leads/:id/cadastro, mustBeNovo + PolicyService).
@@ -167,6 +170,18 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
     );
   }
 
+  if (currentAba === "equipe") {
+    return (
+      <>
+        {accessRestricted || !companyId || !team ? (
+          <p className="empty">Sem acesso à equipe de vendas desta empresa.</p>
+        ) : (
+          <EquipeEditor companyId={companyId} team={team} memberships={memberships} />
+        )}
+      </>
+    );
+  }
+
   if (currentAba === "contatos") {
     return (
       <>
@@ -183,6 +198,7 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
               companyId={companyId}
               canEdit={canEditContacts}
               canRemove={canRemoveContacts}
+              podeLigar={podeLigar}
             />
           ))
         ) : (

@@ -5,6 +5,7 @@ import type { Prisma } from '@prisma/client';
 import { ActivityService } from '../../activities/activity.service';
 import { ContactService } from '../../companies/contact.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../../notifications/notification.service';
 import { RawLeadService } from '../../raw-leads/raw-lead.service';
 import { TenantContextService } from '../../tenancy/tenant-context.service';
 import type { MembershipContext } from '../../tenancy/tenant-membership.guard';
@@ -79,6 +80,7 @@ export class MetaLeadsWebhookService {
     private readonly rawLeads: RawLeadService,
     private readonly contacts: ContactService,
     private readonly activities: ActivityService,
+    private readonly notifications: NotificationService,
   ) {}
 
   // Handshake de verificação da assinatura (GET) — a Meta só aceita a URL
@@ -237,6 +239,7 @@ export class MetaLeadsWebhookService {
     const leadPayload = detalhe as unknown as Prisma.InputJsonValue;
 
     const owner = await this.resolverOwner(workspaceId);
+
     if (!owner) {
       this.logger.warn(
         `Lead ${leadgenId} recebido mas META_LEADS_DEFAULT_OWNER_USER_ID não aponta pra um membro ativo — RawLead não criado.`,
@@ -268,7 +271,7 @@ export class MetaLeadsWebhookService {
     // `ownerUserId` do RawLead e da Company, e a RLS lê o mesmo
     // `app.current_user_id`/`app.current_role` — é isso que faz o lead
     // nascer já na carteira certa em vez de órfão.
-    return this.tenantContext.run(
+    const criado = await this.tenantContext.run(
       {
         userId: owner.userId,
         workspaceId,
@@ -324,7 +327,7 @@ export class MetaLeadsWebhookService {
           },
         });
 
-        return resultado;
+        return { resultado, rawLeadId: lead.id };
       },
       // Cria RawLead + Company + Contact + Activity + update do evento numa
       // transação só — mesmo motivo do timeout estendido do import de
@@ -332,6 +335,25 @@ export class MetaLeadsWebhookService {
       // em sequência).
       { timeoutMs: 15_000 },
     );
+
+    // Aviso por e-mail de lead novo (pedido do usuário, 2026-09-18). Só
+    // aqui, depois da transação fechada: o NotificationService adia o
+    // envio pra fora da requisição e nunca deixa uma falha de e-mail
+    // derrubar a entrada do lead. Lead repetido não chega até aqui — o
+    // dedupe da fase 1 encerra antes.
+    this.notifications.avisarLeadDoMeta({
+      workspaceId,
+      rawLeadId: criado.rawLeadId,
+      leadgenId,
+      contato: contato ?? null,
+      contexto,
+      respostas: respostasNaoMapeadas.map((r) => ({
+        pergunta: r.pergunta,
+        resposta: r.resposta,
+      })),
+    });
+
+    return criado.resultado;
   }
 
   // Gerente dono de todo lead do Meta. Devolve o Membership real (não um

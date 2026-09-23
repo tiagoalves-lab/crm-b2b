@@ -15,6 +15,7 @@ interface Deps {
   rawLeads: { create: jest.Mock };
   contacts: { create: jest.Mock };
   activities: { emit: jest.Mock };
+  notifications: { avisarLeadDoMeta: jest.Mock };
   tx: {
     metaLeadsWebhookEvent: {
       findFirst: jest.Mock;
@@ -96,6 +97,10 @@ function montar(overrides: Partial<Record<string, unknown>> = {}): {
     },
     contacts: { create: jest.fn().mockResolvedValue({}) },
     activities: { emit: jest.fn().mockResolvedValue({}) },
+    // Aviso de lead novo por e-mail: aqui só interessa que a entrada do
+    // lead continue funcionando igual: o conteúdo do e-mail tem teste
+    // próprio em notification.service.spec.ts.
+    notifications: { avisarLeadDoMeta: jest.fn() },
     tx,
   };
 
@@ -107,6 +112,7 @@ function montar(overrides: Partial<Record<string, unknown>> = {}): {
     deps.rawLeads as never,
     deps.contacts as never,
     deps.activities as never,
+    deps.notifications as never,
   );
   return { service, deps };
 }

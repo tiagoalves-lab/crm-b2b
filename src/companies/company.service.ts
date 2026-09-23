@@ -20,6 +20,8 @@ import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateCompanyDto } from './dto/create-company.dto';
 import type { UpdateCompanyDto } from './dto/update-company.dto';
 import { registrarExclusao } from '../deletion-log/registrar-exclusao';
+import { empresasQueJaCompraram, jaComprou } from './cliente-regra';
+import { herdarSupervisor } from './equipe-de-vendas';
 
 export interface PaginatedResult<T> {
   items: T[];
@@ -59,6 +61,16 @@ export interface CompanyResumo {
   ultimaCompra: string | null;
   // Interação mais recente da Timeline — ver ultimoContatoPorEmpresa.
   ultimoContato: string | null;
+  // Cliente × ainda em prospecção (régua fechada com o usuário,
+  // 2026-09-18): é cliente quem JÁ COMPROU — pedido emitido no eGestor
+  // (tag "cliente", que o ERP só dá a quem já é cliente de fato, ou venda
+  // no histórico) ou oportunidade GANHA aqui no CRM. Empresa criada por
+  // import de cotação ou por lead aprovado NÃO é cliente enquanto não
+  // fechar nada. Calculado no backend porque a mesma régua vale pra tela
+  // de Empresas e pra seção "Empresas" da busca geral — antes cada uma
+  // tinha a sua e a mesma conta aparecia como empresa e como prospect ao
+  // mesmo tempo (CRDC FERRAMENTARIA, achada pelo usuário).
+  ehCliente: boolean;
 }
 
 interface FaturamentoDaEmpresa {
@@ -218,7 +230,12 @@ export class CompanyService {
       );
       const existingId = rows[0]?.id;
       if (existingId) {
-        return this.attachToExisting(tx, membership, existingId);
+        return this.attachToExisting(
+          tx,
+          membership,
+          existingId,
+          dto.ownerUserId,
+        );
       }
     }
 
@@ -267,6 +284,11 @@ export class CompanyService {
       },
     });
 
+    // Equipe de vendas da empresa nova: o representante já é o dono
+    // (ownerUserId acima); o supervisor dele entra junto — ver
+    // equipe-de-vendas.ts.
+    await herdarSupervisor(tx, membership.workspaceId, ownerUserId, company.id);
+
     if (!options.semTimeline) {
       await this.activities.emit(tx, {
         workspaceId: membership.workspaceId,
@@ -291,16 +313,26 @@ export class CompanyService {
     tx: TenantTx,
     membership: MembershipContext,
     companyId: string,
+    // Representante indicado na importação por planilha (2026-09-23):
+    // quando o CNPJ já existe, quem precisa enxergar a empresa é ELE, não
+    // o gerente que apertou o botão. Sem indicação, é quem está
+    // autenticado — comportamento de sempre.
+    ownerUserId?: string,
   ): Promise<Company> {
+    const beneficiario = ownerUserId ?? membership.userId;
     await tx.companyAccess.upsert({
-      where: { companyId_userId: { companyId, userId: membership.userId } },
+      where: { companyId_userId: { companyId, userId: beneficiario } },
       create: {
         workspaceId: membership.workspaceId,
         companyId,
-        userId: membership.userId,
+        userId: beneficiario,
       },
       update: {},
     });
+
+    // Mesma regra 1 da equipe de vendas do cadastro novo (ver
+    // equipe-de-vendas.ts): quem entra na empresa leva o supervisor junto.
+    await herdarSupervisor(tx, membership.workspaceId, beneficiario, companyId);
 
     const company = await tx.company.findFirst({
       where: { id: companyId, workspaceId: membership.workspaceId },
@@ -383,7 +415,7 @@ export class CompanyService {
       this.policy.canModule(membership, 'empresas_vendas', 'ver') ||
       this.policy.canModule(membership, 'empresas_posvenda', 'ver');
 
-    const [companies, faturamento] = await Promise.all([
+    const [companies, faturamento, jaCompraram] = await Promise.all([
       tx.company.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -392,6 +424,11 @@ export class CompanyService {
       podeVerFaturamento
         ? this.agregarFaturamento(tx, membership)
         : Promise.resolve(new Map<string, FaturamentoDaEmpresa>()),
+      // Quem já comprou. Vai SEM scopeFilter de propósito: isto
+      // classifica a empresa (cliente × prospect), não mostra valor
+      // nenhum — a empresa não pode mudar de categoria só porque o pedido
+      // é de outro representante.
+      empresasQueJaCompraram(tx, membership.workspaceId),
     ]);
 
     const ultimoContato = await ultimoContatoPorEmpresa(
@@ -408,6 +445,7 @@ export class CompanyService {
         ltv: stats?.ltv ?? 0,
         ultimaCompra: stats?.ultimaCompra ?? null,
         ultimoContato: ultimoContato.get(c.id) ?? null,
+        ehCliente: jaCompraram.has(c.id),
       };
     });
 
@@ -476,8 +514,12 @@ export class CompanyService {
     tx: TenantTx,
     membership: MembershipContext,
     id: string,
-  ): Promise<CompanyWithEgestor> {
-    return this.mustBeVisible(tx, membership, id);
+  ): Promise<CompanyWithEgestor & { ehCliente: boolean }> {
+    const company = await this.mustBeVisible(tx, membership, id);
+    // Selo Cliente × Lead da ficha sai daqui, e não de um cálculo próprio
+    // do frontend: mesma régua da lista e da busca (cliente-regra.ts).
+    const comprou = await jaComprou(tx, membership.workspaceId, company.id);
+    return { ...company, ehCliente: comprou };
   }
 
   async update(
@@ -538,6 +580,39 @@ export class CompanyService {
       },
     });
 
+    // A Prospecção lê o próprio RawLead, sem JOIN com a empresa (colunas
+    // próprias, ver schema.prisma) — então mexer no cadastro pela ficha da
+    // empresa (edição manual ou "Buscar dados" da Receita) deixava o lead
+    // com os dados antigos: a lista e a busca continuavam encontrando a
+    // razão social velha e não achavam a nova (bug relatado pelo usuário
+    // em 2026-09-21). Espelha aqui o que a Prospecção mostra e filtra, na
+    // mesma caixa alta que RawLeadService grava.
+    // updateMany (não update): 0 linhas quando a empresa não veio de lead
+    // nenhum, em vez de estourar — é o caminho normal.
+    const up = (valor: string | null | undefined) =>
+      valor === undefined ? undefined : (valor?.toUpperCase() ?? null);
+    const leadData: Prisma.RawLeadUpdateManyMutationInput = {
+      ...(razao
+        ? {
+            razaoSocial: razao.razaoSocial.toUpperCase(),
+            emRecuperacaoJudicial: razao.emRecuperacaoJudicial,
+          }
+        : {}),
+      ...(dto.cpfCnpj !== undefined
+        ? { cnpj: dto.cpfCnpj ? dto.cpfCnpj.replace(/\D/g, '') : null }
+        : {}),
+      ...(dto.cidade !== undefined ? { municipio: up(dto.cidade) } : {}),
+      ...(dto.uf !== undefined ? { uf: up(dto.uf)?.slice(0, 2) ?? null } : {}),
+    };
+    if (Object.keys(leadData).length > 0) {
+      await tx.rawLead.updateMany({
+        where: {
+          workspaceId: membership.workspaceId,
+          promotedCompanyId: updated.id,
+        },
+        data: leadData,
+      });
+    }
     if (!options.semTimeline) {
       await this.activities.emit(tx, {
         workspaceId: membership.workspaceId,

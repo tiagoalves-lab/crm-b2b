@@ -49,3 +49,8 @@ leads/*.zip
 # versionados normalmente — só planilha/export com dado real entra aqui.
 docs/*.csv
 docs/*.xlsx
+
+# Credencial da telefonia na máquina do SDR (scripts/telefonia) — token
+# por computador e log local de chamadas. Nunca versionar.
+scripts/telefonia/config.json
+scripts/telefonia/registro.log

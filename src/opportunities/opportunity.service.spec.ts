@@ -45,6 +45,7 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     description: null,
     status: 'open',
     lostReason: null,
+    origem: null,
     version: 1,
     deletedAt: null,
     createdAt: new Date(),

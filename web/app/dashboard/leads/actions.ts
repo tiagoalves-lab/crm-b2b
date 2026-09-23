@@ -21,6 +21,7 @@ import {
   type ScoreTier,
   type UpdateLeadCadastroInput,
 } from "@/lib/api/raw-leads";
+import { setCompanyTeam, type CompanyTeam } from "@/lib/api/company-team";
 import type { Company, RawLead } from "@/lib/api/types";
 import type { FormState } from "@/app/_components/action-form";
 
@@ -199,6 +200,26 @@ export async function setLeadCadastroAction(
     return { ok: true, data: result };
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao salvar o cadastro do lead.") };
+  }
+}
+
+// Aba "Equipe de vendas" da ficha (2026-09-21) — mesmo padrão de
+// setLeadCadastroAction: RPC via Server Action, sem navegar, devolve a
+// equipe salva; quem faz o refresh é o componente (useRefresh, por estar
+// dentro do drawer). Revalida também /dashboard/empresas: incluir ou
+// tirar alguém muda quem enxerga a empresa naquela lista.
+export async function setCompanyTeamAction(
+  companyId: string,
+  userIds: string[],
+): Promise<ActionResult<CompanyTeam>> {
+  const token = await getServerAccessToken();
+  try {
+    const result = await setCompanyTeam(token, companyId, userIds);
+    revalidatePath("/dashboard/leads");
+    revalidatePath("/dashboard/empresas");
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao salvar a equipe de vendas.") };
   }
 }
 

@@ -60,6 +60,10 @@ const RECURSOS_COM_DONO = [
   // ter a capacidade não pode virar acesso à empresa de outro
   // representante, e a negativa é 404, nunca 403.
   '/integrations/egestor/companies/',
+  // Telefonia (2026-09-23): chamada e credencial de máquina pertencem a
+  // quem ligou / a quem usa o computador. Um representante não alcança a
+  // chamada nem a credencial de outro, e a negativa é 404.
+  '/telefonia/',
 ];
 
 // Recursos de configuração do workspace (não têm "dono"): aqui um
@@ -108,6 +112,13 @@ const ROTAS_PUBLICAS = [
   // constante (CotacoesService#assertTokenValido). Teste logo abaixo do
   // bloco do Meta.
   '/integrations/cotacoes/',
+  // Registro automático das ligações (2026-09-23) — quem chama é o script
+  // instalado junto do MicroSIP na máquina do SDR, sem sessão de
+  // navegador. Controle substituto: credencial por máquina no
+  // Authorization (Bearer), conferida contra o hash guardado em
+  // telefonia_dispositivos (TelefoniaDeviceService#autenticar) — é ela
+  // também que diz de quem é a chamada. Teste logo abaixo do bloco do Meta.
+  '/telefonia/eventos',
 ];
 
 describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP', () => {
@@ -650,6 +661,24 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       expect((res.body as { message?: string }).message).toBe(
         'Token inválido.',
       );
+    }, 20000);
+
+    it('recusa evento de ligação com credencial de máquina forjada', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/telefonia/eventos')
+        .set('Authorization', 'Bearer gama-fone_forjado-de-proposito')
+        .send({ evento: 'encerrada', telefone: '5551999998888' });
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Credencial do computador inválida.',
+      );
+    }, 20000);
+
+    it('recusa evento de ligação sem credencial nenhuma', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/telefonia/eventos')
+        .send({ evento: 'encerrada', telefone: '5551999998888' });
+      expect(res.status).toBe(401);
     }, 20000);
 
     it('recusa espelhamento de comentários com token forjado', async () => {

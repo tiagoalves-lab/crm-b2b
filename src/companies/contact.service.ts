@@ -11,7 +11,10 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateContactDto } from './dto/create-contact.dto';
 import type { UpdateContactDto } from './dto/update-contact.dto';
-import { nomeDaEmpresa, registrarExclusao } from '../deletion-log/registrar-exclusao';
+import {
+  nomeDaEmpresa,
+  registrarExclusao,
+} from '../deletion-log/registrar-exclusao';
 
 // Ver/criar/editar/excluir agora vêm da matriz de permissões (módulo
 // "contatos", ver permission-catalog.ts) — os presets default reproduzem o
@@ -87,6 +90,13 @@ export class ContactService {
     membership: MembershipContext,
     companyId: string,
     dto: CreateContactDto,
+    // Dono do contato quando não é quem está autenticado — só a
+    // importação por planilha usa isto (coluna "Representante",
+    // 2026-09-23): sem ele, o gerente importa a empresa PARA o
+    // representante e os contatos ficam invisíveis justamente pra ele
+    // (a RLS de contacts filtra por dono). Nunca vem do cliente por
+    // HTTP, ver CriarLeadOptions em raw-lead.service.ts.
+    ownerUserId?: string,
   ): Promise<Contact> {
     this.mustCanModule(membership, 'criar');
     await this.mustCompanyExist(tx, membership.workspaceId, companyId);
@@ -100,7 +110,7 @@ export class ContactService {
           email: dto.email,
           telefone: dto.telefone,
           decisor: dto.decisor ?? false,
-          ownerUserId: membership.userId,
+          ownerUserId: ownerUserId ?? membership.userId,
         },
       });
     } catch (error) {
@@ -165,7 +175,11 @@ export class ContactService {
     await registrarExclusao(tx, membership, {
       entidade: 'contato',
       registroId: existing.id,
-      titulo: existing.nome?.trim() || existing.email || existing.telefone || 'Contato',
+      titulo:
+        existing.nome?.trim() ||
+        existing.email ||
+        existing.telefone ||
+        'Contato',
       contexto: await nomeDaEmpresa(tx, companyId),
       snapshot: existing,
     });

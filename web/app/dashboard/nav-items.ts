@@ -31,7 +31,11 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/leads", label: "Prospecção", group: "Comercial", icon: "leads", count: "leads" },
   { href: "/dashboard/pipeline", label: "Pipeline", group: "Comercial", icon: "pipeline", count: "pipeline" },
   { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" },
-  { href: "/dashboard/empresas", label: "Empresas", group: "Cadastros", icon: "empresas", count: "empresas" },
+  // Carteira de clientes entrou em Comercial (pedido do usuário,
+  // 2026-09-18): o grupo "Cadastros" existia só pra ela e não agrupava
+  // nada — o título do grupo vem do próprio item, então tirar o único
+  // item de "Cadastros" faz o título desaparecer sozinho.
+  { href: "/dashboard/empresas", label: "Carteira de clientes", group: "Comercial", icon: "empresas", count: "empresas" },
   { href: "/dashboard/relatorios", label: "Relatórios", group: "Análise", icon: "relatorios" },
   // Administração virou UM item (pedido do usuário, 2026-09-17, no molde
   // das Configurações do eGestor): as telas administrativas são abas de
@@ -42,7 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Administração",
     group: "Administração",
     icon: "admin",
-    matches: ["/dashboard/membros", "/dashboard/e-mail-automatico", "/dashboard/registro-exclusoes", "/dashboard/integracao-egestor", "/dashboard/motivos-perda"],
+    matches: ["/dashboard/membros", "/dashboard/e-mail-automatico", "/dashboard/registro-exclusoes", "/dashboard/integracao-egestor", "/dashboard/motivos-perda", "/dashboard/telefonia"],
   },
   // Treinamento (2026-09-17): slides de uso do CRM, item próprio logo
   // abaixo de Administração. Liberado membro a membro na tela de Permissões.
@@ -66,6 +70,10 @@ export const ADMIN_TABS: AdminTab[] = [
   { href: "/dashboard/registro-exclusoes", label: "Registro de exclusões", icon: "exclusoes", roles: ["owner", "admin"] },
   { href: "/dashboard/integracao-egestor", label: "Integração eGestor", icon: "egestor", roles: ["owner", "admin"] },
   { href: "/dashboard/motivos-perda", label: "Motivos de perda", icon: "motivos", roles: ["owner", "admin"] },
+  // Telefonia (2026-09-23): credencial do computador que registra as
+  // ligações e instruções de instalação do telefone. Qualquer papel que
+  // liga precisa chegar aqui pra pegar a própria credencial.
+  { href: "/dashboard/telefonia", label: "Telefonia", icon: "telefonia" },
 ];
 
 // Nome da tela em que o usuário está, pra rotular o escopo da busca.

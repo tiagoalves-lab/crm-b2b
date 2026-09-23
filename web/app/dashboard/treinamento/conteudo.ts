@@ -229,7 +229,7 @@ export const TREINAMENTO_HTML = `<div class="app">
   <h2>Conhecendo a tela</h2>
   <div class="body">
     <ul class="pts">
-      <li><b>Menu lateral</b> — agrupado em Comercial (Painel, Prospecção, Pipeline, Tarefas) e Cadastros (Empresas). O número ao lado mostra o que está pendente.</li>
+      <li><b>Menu lateral</b> — agrupado em Comercial (Painel, Prospecção, Pipeline, Tarefas, Carteira de clientes), Análise (Relatórios) e Administração. O número ao lado mostra o que está pendente.</li>
       <li><b>Busca do topo</b> — escolha <span class="ui">em Tarefas</span> (o nome da tela atual) para filtrar enquanto digita, ou <span class="ui">em todo o CRM</span> e aperte Enter para procurar em tudo.</li>
       <li><b>Fichas de Prospecção e Empresas</b> abrem numa gaveta à direita, sem sair da lista.</li>
       <li><b>Cards do Pipeline e tarefas</b> abrem numa janela por cima da tela.</li>
@@ -333,7 +333,8 @@ export const TREINAMENTO_HTML = `<div class="app">
     <div class="stack">
       <div class="note"><b>Uma linha = um contato.</b> Empresa com três contatos ocupa três linhas, repetindo o mesmo CNPJ.</div>
       <div class="note bad"><b>Não crie colunas novas</b> nem renomeie as do modelo — qualquer coluna diferente trava a importação inteira.</div>
-      <div><div class="label">Colunas do modelo</div><p style="color:var(--text-2);font-size:.88em;line-height:1.6">CNPJ · Razão Social · Fantasia · Cidade · UF · CNAE · Porte · Situação Cadastral · Abertura · Sócios (QSA) · Importador · Tags · Contato Nome · Contato Cargo · Contato Email · Contato Telefone · Contato Decisor</p></div>
+      <div class="note"><b>Representante.</b> Escreva o nome, o login ou o e-mail de quem fica com o lead — o supervisor dele entra junto na equipe de vendas da empresa. Em branco, o lead fica com você. Distribuir para outra pessoa é permitido a gerente, administrador e proprietário.</div>
+      <div><div class="label">Colunas do modelo</div><p style="color:var(--text-2);font-size:.88em;line-height:1.6">CNPJ · Razão Social · Fantasia · Cidade · UF · CNAE · Porte · Situação Cadastral · Abertura · Representante · Tags · Contato Nome · Contato Cargo · Contato Email · Contato Telefone · Contato Decisor</p></div>
     </div>
   </div>
 </section>
@@ -585,7 +586,7 @@ export const TREINAMENTO_HTML = `<div class="app">
 
 <!-- ============ EMPRESAS ============ -->
 <section class="slide divider" data-ch="emp" data-grp="Empresas" data-t="Abertura do módulo">
-  <div class="path">Menu Cadastros › Empresas</div>
+  <div class="path">Menu Comercial › Carteira de clientes</div>
   <h2>Empresas</h2>
   <p class="lead">A carteira: leads aprovados e clientes, com tudo o que aconteceu com cada um — contatos, conversas, oportunidades e compras.</p>
 </section>

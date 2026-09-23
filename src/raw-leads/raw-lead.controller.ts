@@ -160,7 +160,7 @@ export class RawLeadController {
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
-  importSpreadsheetWithContacts(
+  async importSpreadsheetWithContacts(
     @CurrentMembership() membership: MembershipContext,
     @UploadedFile() file?: Express.Multer.File,
   ) {
@@ -172,17 +172,35 @@ export class RawLeadController {
         'Formato não suportado — envie um arquivo .csv ou .xlsx.',
       );
     }
+
+    const contexto = {
+      userId: membership.userId,
+      workspaceId: membership.workspaceId,
+      role: membership.role,
+    };
+
+    // Coluna "Representante" (2026-09-23): o de-para nome/login/e-mail →
+    // membro é montado ANTES da transação do import — transação curta pro
+    // banco, chamada HTTP ao Supabase Auth fora de qualquer transação (ver
+    // RawLeadService#indexarRepresentantes).
+    const membrosAtivos = await this.tenantContext.run(contexto, (tx) =>
+      this.rawLeads.listarMembrosAtivos(tx, membership),
+    );
+    const representantes =
+      await this.rawLeads.indexarRepresentantes(membrosAtivos);
+
     return this.tenantContext.run(
-      {
-        userId: membership.userId,
-        workspaceId: membership.workspaceId,
-        role: membership.role,
-      },
+      contexto,
       (tx) =>
-        this.rawLeads.importSpreadsheetWithContacts(tx, membership, {
-          buffer: file.buffer,
-          originalname: file.originalname,
-        }),
+        this.rawLeads.importSpreadsheetWithContacts(
+          tx,
+          membership,
+          {
+            buffer: file.buffer,
+            originalname: file.originalname,
+          },
+          representantes,
+        ),
       // Mesmo motivo do endpoint /import acima — aqui é ainda mais lento
       // por linha (company + N contatos, cada um sua própria ida ao
       // banco).

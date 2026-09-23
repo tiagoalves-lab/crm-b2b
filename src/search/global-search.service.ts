@@ -10,6 +10,7 @@ import type {
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
+import { CLIENTE_WHERE } from '../companies/cliente-regra';
 
 // Busca geral (pedido do usuário, 2026-09-03, no modelo da "Busca geral"
 // do eGestor): um termo só, respondido em seções — Empresas, Contatos,
@@ -155,7 +156,11 @@ export class GlobalSearchService {
           workspaceId,
           deletedAt: null,
           NOT: { tags: { has: 'lead-triagem' } },
-          AND: [visibilidade, { OR: nomeEmpresa }],
+          // Mesma régua da tela de Empresas (ver cliente-regra.ts): esta
+          // seção lista CLIENTE, não "qualquer cadastro que não seja lead
+          // em triagem". Sem isto, uma empresa ainda em prospecção saía
+          // nas duas seções do mesmo resultado de busca.
+          AND: [visibilidade, CLIENTE_WHERE, { OR: nomeEmpresa }],
         },
         select: {
           id: true,
@@ -219,11 +224,16 @@ export class GlobalSearchService {
 
     if (this.policy.canModule(membership, 'leads', 'ver')) {
       // Todos os status (novo/aprovado/descartado) — a tela de Prospecção
-      // separa em abas, a busca mostra o status na linha.
+      // separa em abas, a busca mostra o status na linha. Fora da lista:
+      // lead de empresa que JÁ COMPROU (pedido no eGestor ou oportunidade
+      // ganha) — quem virou cliente não é mais prospect, e aparecer nas
+      // duas seções do mesmo resultado era exatamente a confusão que o
+      // usuário apontou em 2026-09-18.
       const leads = await tx.rawLead.findMany({
         where: {
           workspaceId,
           ...scope,
+          NOT: { promotedCompany: { is: CLIENTE_WHERE } },
           OR: [
             { razaoSocial: like },
             { cnaePrincipal: like },

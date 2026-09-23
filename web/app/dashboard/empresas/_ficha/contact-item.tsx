@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import type { Contact } from "@/lib/api/types";
 import { deleteContactRpcAction, updateContactAction } from "../actions";
+import LigarButton from "@/app/dashboard/_telefonia/ligar-button";
 
 // Item da aba "Contatos" (Empresas e Leads, reusa o mesmo componente).
 // Client component por causa do modo de edição inline (view ⇄ form).
@@ -19,11 +20,14 @@ export default function ContactItem({
   companyId,
   canEdit,
   canRemove,
+  podeLigar = false,
 }: {
   contact: Contact;
   companyId: string;
   canEdit: boolean;
   canRemove: boolean;
+  // Botão "Ligar" ao lado do telefone do contato (docs/telefonia-crm.md).
+  podeLigar?: boolean;
 }) {
   const refresh = useRefresh();
   const [editing, setEditing] = useState(false);
@@ -148,6 +152,15 @@ export default function ContactItem({
         <div className="dli-sub">
           {[contact.email, contact.telefone].filter(Boolean).join(" · ") || "sem e-mail/telefone"}
         </div>
+        {podeLigar && contact.telefone && (
+          <div style={{ marginTop: 6 }}>
+            <LigarButton
+              telefone={contact.telefone}
+              companyId={companyId}
+              contactId={contact.id}
+            />
+          </div>
+        )}
         <label style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
           <input
             type="checkbox"

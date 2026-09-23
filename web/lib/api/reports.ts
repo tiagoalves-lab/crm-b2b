@@ -4,13 +4,18 @@ import { apiFetch } from "./client";
 // recorrentes. Só owner/admin: o backend responde 403 pros demais papéis,
 // e o nav esconde o item.
 
-export type TipoReport = "pipeline-diario" | "pipeline-followup";
+export type TipoReport =
+  | "pipeline-diario"
+  | "pipeline-followup"
+  // Aviso de lead novo do Meta: mesma tela e mesma lista de quem recebe,
+  // mas sem horário — sai quando o lead entra.
+  | "lead-meta";
 
 export interface ReportConfig {
   tipo: TipoReport;
   ativo: boolean;
   // "HH:MM" no fuso de Brasília. O resumo diário tem um; o follow-up,
-  // vários.
+  // vários; o aviso de lead novo, nenhum.
   horarios: string[];
   diasUteis: boolean;
   // Só o follow-up usa (etapas do Pipeline que entram na lista).

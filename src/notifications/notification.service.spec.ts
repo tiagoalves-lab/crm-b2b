@@ -53,22 +53,50 @@ const COMENTARIO = {
   },
 };
 
+const LEAD = {
+  id: 'raw-lead-1',
+  razaoSocial: 'METALÚRGICA EXEMPLO LTDA',
+  cnpj: null,
+  municipio: 'Caxias do Sul',
+  uf: 'RS',
+  ownerUserId: AUTOR,
+  createdAt: new Date('2026-09-18T13:32:00.000Z'),
+};
+
 interface Deps {
   tenantContext: { run: jest.Mock };
   mail: { configurado: boolean; send: jest.Mock };
   supabaseUsers: { getIdentities: jest.Mock };
+  reports: { membrosElegiveis: jest.Mock; emailsDe: jest.Mock };
+  reportConfig: { obter: jest.Mock };
   tx: {
     task: { findUnique: jest.Mock };
     opportunityComment: { findUnique: jest.Mock };
+    rawLead: { findUnique: jest.Mock };
+    reportLog: { findUnique: jest.Mock; upsert: jest.Mock };
   };
 }
 
 function montar(overrides: {
   tarefa?: unknown;
   comentario?: unknown;
+  lead?: unknown;
   identidades?: Map<string, unknown>;
+  elegiveis?: string[];
+  emailsDestino?: string[];
+  avisoLeadAtivo?: boolean;
+  jaAvisado?: unknown;
 } = {}): { service: NotificationService; deps: Deps } {
   const tx: Deps['tx'] = {
+    rawLead: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue('lead' in overrides ? overrides.lead : LEAD),
+    },
+    reportLog: {
+      findUnique: jest.fn().mockResolvedValue(overrides.jaAvisado ?? null),
+      upsert: jest.fn().mockResolvedValue({}),
+    },
     task: {
       findUnique: jest
         .fn()
@@ -98,6 +126,29 @@ function montar(overrides: {
         .fn()
         .mockResolvedValue(overrides.identidades ?? IDENTIDADES),
     },
+    // Quem recebe o aviso de lead novo é a mesma lista dos reports — aqui
+    // ela vem pronta, para o teste falar só do aviso.
+    reports: {
+      membrosElegiveis: jest
+        .fn()
+        .mockResolvedValue(overrides.elegiveis ?? ['user-gestor']),
+      emailsDe: jest.fn().mockResolvedValue({
+        emails: overrides.emailsDestino ?? ['gestor@gamabrasil.com.br'],
+        semEmail: [],
+      }),
+    },
+    reportConfig: {
+      obter: jest.fn().mockResolvedValue({
+        tipo: 'lead-meta',
+        ativo: overrides.avisoLeadAtivo ?? true,
+        horarios: [],
+        diasUteis: false,
+        etapas: [],
+        destinatarios: [],
+        atualizadoEm: null,
+        atualizadoPor: null,
+      }),
+    },
     tx,
   };
 
@@ -110,6 +161,8 @@ function montar(overrides: {
     deps.mail as unknown as MailService,
     deps.supabaseUsers as unknown as SupabaseUserService,
     config,
+    deps.reports as never,
+    deps.reportConfig as never,
   );
   return { service, deps };
 }
@@ -124,6 +177,91 @@ async function deixarEnviar(): Promise<void> {
 }
 
 describe('NotificationService', () => {
+  describe('lead novo do Meta', () => {
+    const LEAD_PARAMS = {
+      workspaceId: WORKSPACE_ID,
+      rawLeadId: 'raw-lead-1',
+      leadgenId: '9001',
+      contato: {
+        nome: 'JOANA PRADO',
+        email: 'joana@exemplo.com.br',
+        telefone: '(54) 99999-0000',
+      },
+      contexto: {
+        plataforma: 'Instagram',
+        campanha: 'Campanha de teste',
+        formulario: 'Orçamento',
+      },
+      respostas: [
+        { pergunta: 'Qual equipamento?', resposta: 'Talha elétrica' },
+      ],
+    };
+
+    it('manda um e-mail só, com contato e respostas do formulário', async () => {
+      const { service, deps } = montar();
+
+      service.avisarLeadDoMeta(LEAD_PARAMS);
+      await deixarEnviar();
+
+      expect(deps.mail.send).toHaveBeenCalledTimes(1);
+      const [params] = deps.mail.send.mock.calls[0] as [
+        { to: string[]; subject: string; html: string; idempotencyKey?: string },
+      ];
+      expect(params.to).toEqual(['gestor@gamabrasil.com.br']);
+      expect(params.subject).toContain('METALÚRGICA EXEMPLO LTDA');
+      expect(params.subject).toContain('Instagram');
+      expect(params.html).toContain('JOANA PRADO');
+      expect(params.html).toContain('Talha elétrica');
+      expect(params.html).toContain('Caxias do Sul/RS');
+      // Trava do lado do provedor: o mesmo lead nunca gera dois e-mails.
+      expect(params.idempotencyKey).toContain('9001');
+    });
+
+    it('registra o envio para a tela responder "saiu mesmo?"', async () => {
+      const { service, deps } = montar();
+
+      service.avisarLeadDoMeta(LEAD_PARAMS);
+      await deixarEnviar();
+
+      expect(deps.tx.reportLog.upsert).toHaveBeenCalledTimes(1);
+      const [args] = deps.tx.reportLog.upsert.mock.calls[0] as [
+        { create: { refDia: string; status: string; destinatarios: number } },
+      ];
+      expect(args.create.refDia).toBe('lead 9001');
+      expect(args.create.status).toBe('enviado');
+      expect(args.create.destinatarios).toBe(1);
+    });
+
+    it('não avisa com o aviso desligado na tela', async () => {
+      const { service, deps } = montar({ avisoLeadAtivo: false });
+
+      service.avisarLeadDoMeta(LEAD_PARAMS);
+      await deixarEnviar();
+
+      expect(deps.mail.send).not.toHaveBeenCalled();
+    });
+
+    it('não avisa duas vezes o mesmo lead', async () => {
+      const { service, deps } = montar({
+        jaAvisado: { status: 'enviado' },
+      });
+
+      service.avisarLeadDoMeta(LEAD_PARAMS);
+      await deixarEnviar();
+
+      expect(deps.mail.send).not.toHaveBeenCalled();
+    });
+
+    it('não avisa se o lead sumiu (transação revertida)', async () => {
+      const { service, deps } = montar({ lead: null });
+
+      service.avisarLeadDoMeta(LEAD_PARAMS);
+      await deixarEnviar();
+
+      expect(deps.mail.send).not.toHaveBeenCalled();
+    });
+  });
+
   describe('tarefa designada', () => {
     it('avisa quem recebeu a tarefa', async () => {
       const { service, deps } = montar();

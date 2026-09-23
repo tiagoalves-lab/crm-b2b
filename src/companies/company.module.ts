@@ -3,6 +3,7 @@ import { ActivityModule } from '../activities/activity.module';
 import { PolicyModule } from '../policy/policy.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { CompanyAbcService } from './company-abc.service';
+import { CompanyTeamService } from './company-team.service';
 import { CompanyController } from './company.controller';
 import { CompanyService } from './company.service';
 import { ContactBulkController, ContactController } from './contact.controller';
@@ -11,7 +12,12 @@ import { ContactService } from './contact.service';
 @Module({
   imports: [TenancyModule, PolicyModule, ActivityModule],
   controllers: [CompanyController, ContactController, ContactBulkController],
-  providers: [CompanyService, ContactService, CompanyAbcService],
+  providers: [
+    CompanyService,
+    ContactService,
+    CompanyAbcService,
+    CompanyTeamService,
+  ],
   exports: [CompanyService, ContactService],
 })
 export class CompanyModule {}

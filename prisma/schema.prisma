@@ -197,6 +197,8 @@ model Workspace {
   deletionLogs  DeletionLog[]
   reportConfigs ReportConfig[]
   opportunityLostReasons OpportunityLostReason[]
+  calls         Call[]
+  telefoniaDevices TelefoniaDevice[]
 
   @@map("workspaces")
 }
@@ -311,6 +313,7 @@ model Company {
   contacts      Contact[]
   accessGrants  CompanyAccess[]
   egestorContato EgestorContatoConsolidado?
+  calls         Call[]
 
   @@index([workspaceId])
   @@map("companies")
@@ -358,6 +361,7 @@ model Contact {
   company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   tasks      Task[]
   activities Activity[]
+  calls      Call[]
 
   @@index([workspaceId, companyId])
   @@index([workspaceId, ownerUserId])
@@ -400,6 +404,9 @@ model CompanyAccess {
 
   @@unique([companyId, userId])
   @@index([workspaceId])
+  // A RLS de raw_leads consulta company_access só por user_id
+  // (20260921120000) — o unique acima começa em company_id e não serve.
+  @@index([userId])
   @@map("company_access")
 }
 
@@ -768,6 +775,19 @@ model RawLead {
   // sempre quem está autenticado no momento da criação (RawLeadService),
   // nunca escolhido pelo cliente.
   ownerUserId       String?       @map("owner_user_id") @db.Uuid
+  // Data de cada passagem de faixa do funil (2026-09-21) — sem elas o
+  // funil do Painel só sabia contar ESTOQUE acumulado, e a taxa de
+  // conversão dividia ganhos pelo total de leads de todos os tempos,
+  // caindo sozinha a cada lead novo importado. Marcam o movimento:
+  //   qualifiedAt → recebeu prazo de investimento (Curto/Médio/Longo)
+  //   convertedAt → saiu da triagem (approve)
+  //   discardedAt → saiu do funil (discard)
+  // NULL = passagem anterior a este registro ("antes do registro" no
+  // funil), ou passagem que não aconteceu. Limpar a classificação também
+  // limpa qualifiedAt: só conta como qualificação o que tem prazo.
+  qualifiedAt       DateTime?     @map("qualified_at")
+  convertedAt       DateTime?     @map("converted_at")
+  discardedAt       DateTime?     @map("discarded_at")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
@@ -855,6 +875,12 @@ model Opportunity {
   // A unicidade (1 cartão = 1 oportunidade viva) é um índice ÚNICO
   // PARCIAL, que o Prisma não sabe declarar: vive no SQL da migration
   // 20260904180000_cotacoes_trello_vinculo.
+  // De onde a oportunidade veio (2026-09-18). NULL = nasceu no CRM, no
+  // ciclo comercial corrente. 'historico-cotacoes' = carga das cotações
+  // de jul-set/2025 (scripts/importar-cotacoes-historico.ts), que não
+  // passou pela jornada do lead — por isso fica FORA do funil do Painel
+  // (decisão 6.7) e aparece só no Pipeline e nos relatórios.
+  origem            String?
   trelloCardId      String?           @map("trello_card_id")
   trelloCardUrl     String?           @map("trello_card_url")
   trelloSyncEm      DateTime?         @map("trello_sync_em")
@@ -1226,4 +1252,103 @@ model OpportunityLostReason {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@map("opportunity_lost_reason")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Telefonia (2026-09-23, docs/telefonia-crm.md) — o SDR liga pela linha
+// BR DID que a Gama já tem, usando o MicroSIP no PC. A linha é SIP
+// tradicional (porta 5060), que o navegador não fala: por isso o CRM não
+// disca sozinho, ele COMANDA o MicroSIP (link sip:) e recebe de volta os
+// eventos de início/fim da chamada, enviados pelo script instalado na
+// máquina do SDR (scripts/telefonia/).
+//
+// Call é a chamada em si; a Timeline continua sendo alimentada por
+// Activity (type 'call'), criada quando a chamada encerra — quem lê a
+// ficha não precisa saber que existe uma tabela de telefonia.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum CallDirecao {
+  saida
+  entrada
+}
+
+// `cancelada` = o CRM registrou a intenção de ligar mas nenhum evento do
+// MicroSIP chegou (script não instalado, PC sem o programa aberto, SDR
+// desistiu antes de discar). Guardado separado de `nao_atendida` de
+// propósito: uma é problema de instalação, a outra é informação de vendas.
+enum CallResultado {
+  atendida
+  nao_atendida
+  cancelada
+}
+
+model Call {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String  @map("workspace_id") @db.Uuid
+  // Quem ligou. Plain UUID sem @relation, mesmo padrão de
+  // Company.ownerUserId — identidade vive em auth.users do Supabase.
+  userId      String  @map("user_id") @db.Uuid
+  companyId   String? @map("company_id") @db.Uuid
+  contactId   String? @map("contact_id") @db.Uuid
+  // Lead da triagem de onde a ligação partiu, quando foi da tela de
+  // Prospecção. Sem FK, mesmo motivo de Contact↔RawLead: raw_leads é
+  // triagem, pode ser descartado sem levar a chamada junto.
+  rawLeadId   String? @map("raw_lead_id") @db.Uuid
+  // Tarefa de ligação que originou a chamada, quando veio de uma.
+  taskId      String? @map("task_id") @db.Uuid
+  // Número discado, só dígitos com código do país (ver
+  // src/common/normalize-phone.ts) — é a chave que casa o evento vindo do
+  // MicroSIP (que só conhece o número) com a chamada registrada aqui.
+  telefone    String
+  // Como o número estava escrito no cadastro, pra exibir igual na ficha.
+  telefoneExibicao String? @map("telefone_exibicao")
+  direcao     CallDirecao    @default(saida)
+  resultado   CallResultado?
+  iniciadaEm  DateTime       @default(now()) @map("iniciada_em")
+  atendidaEm  DateTime?      @map("atendida_em")
+  encerradaEm DateTime?      @map("encerrada_em")
+  duracaoSegundos Int?       @map("duracao_segundos")
+  // Anotação que o SDR escreveu durante/depois da chamada. Vai junto pro
+  // texto da Activity — editá-la depois reescreve o registro da Timeline.
+  observacao  String?
+  // Activity criada no encerramento. Guardada pra uma anotação tardia
+  // conseguir reescrever o mesmo registro em vez de criar outro.
+  activityId  String?        @map("activity_id") @db.Uuid
+  criadaEm    DateTime       @default(now()) @map("criada_em")
+  atualizadaEm DateTime      @updatedAt @map("atualizada_em")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company   Company?  @relation(fields: [companyId], references: [id])
+  contact   Contact?  @relation(fields: [contactId], references: [id])
+
+  // Índice do casamento evento→chamada: a busca é sempre "chamada aberta
+  // deste usuário, para este número, nos últimos minutos".
+  @@index([workspaceId, userId, telefone, iniciadaEm])
+  @@index([workspaceId, companyId, iniciadaEm])
+  @@map("calls")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// TelefoniaDevice — credencial do computador do SDR. O script que roda
+// junto do MicroSIP não tem sessão de navegador, então não tem como
+// apresentar o JWT do Supabase: ele manda este token no Authorization, e é
+// ele que diz DE QUEM é a chamada. Um token por máquina, gerado na tela de
+// Telefonia, guardado só como hash (o valor em claro aparece uma única vez,
+// na hora de gerar) e revogável sem mexer na conta do usuário.
+// ─────────────────────────────────────────────────────────────────────────
+
+model TelefoniaDevice {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  nome        String
+  tokenHash   String    @unique @map("token_hash")
+  ultimoUsoEm DateTime? @map("ultimo_uso_em")
+  revogadoEm  DateTime? @map("revogado_em")
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId])
+  @@map("telefonia_dispositivos")
 }

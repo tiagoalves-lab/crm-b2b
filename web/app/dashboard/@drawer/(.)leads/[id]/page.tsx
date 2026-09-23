@@ -19,7 +19,7 @@ export default async function LeadFichaDrawer({
   const { aba, error } = await searchParams;
   const token = await getServerAccessToken();
   const data = await loadLeadFicha(token, id);
-  const { lead, activities, tasks, contacts } = data;
+  const { lead, activities, tasks, contacts, team } = data;
 
   return (
     <OverlayDrawer
@@ -51,7 +51,13 @@ export default async function LeadFichaDrawer({
         <FichaTabs
           leadId={id}
           aba={aba}
-          counts={{ timeline: activities.length, tarefas: tasks.length, contatos: contacts.length }}
+          counts={{
+            timeline: activities.length,
+            tarefas: tasks.length,
+            contatos: contacts.length,
+            // Responsável + quem foi incluído na equipe.
+            equipe: team ? team.userIds.length + (team.ownerUserId ? 1 : 0) : 0,
+          }}
         />
       }
     >

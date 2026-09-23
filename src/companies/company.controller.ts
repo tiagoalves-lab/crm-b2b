@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ListQueryDto } from '../common/dto/list-query.dto';
@@ -14,8 +15,10 @@ import { CurrentMembership } from '../tenancy/current-membership.decorator';
 import { TenantContextService } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import { CompanyAbcService } from './company-abc.service';
+import { CompanyTeamService } from './company-team.service';
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
+import { SetCompanyTeamDto } from './dto/set-company-team.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 
 @Controller('companies')
@@ -24,6 +27,7 @@ export class CompanyController {
     private readonly companies: CompanyService,
     private readonly tenantContext: TenantContextService,
     private readonly abc: CompanyAbcService,
+    private readonly team: CompanyTeamService,
   ) {}
 
   // Recalcula a curva ABC de clientes do workspace inteiro e grava a
@@ -151,6 +155,39 @@ export class CompanyController {
         role: membership.role,
       },
       (tx) => this.companies.remove(tx, membership, id),
+    );
+  }
+
+  // Aba "Equipe de vendas" da ficha (ver CompanyTeamService). Rota de 2
+  // segmentos — não colide com `@Get(':id')`.
+  @Get(':id/equipe')
+  findEquipe(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.team.find(tx, membership, id),
+    );
+  }
+
+  @Put(':id/equipe')
+  setEquipe(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetCompanyTeamDto,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.team.set(tx, membership, id, dto.userIds),
     );
   }
 

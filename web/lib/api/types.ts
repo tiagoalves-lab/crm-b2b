@@ -128,6 +128,10 @@ export interface Company {
   // docs/roadmap.md) — não-nulo = empresa integrada
   // (Matriz e/ou Filial). Vem só de GET /companies e GET /companies/:id.
   egestorContato: { id: string } | null;
+  // Selo Cliente × Lead da ficha — régua única no backend
+  // (src/companies/cliente-regra.ts: pedido no eGestor ou oportunidade
+  // ganha). Só vem em GET /companies/:id.
+  ehCliente?: boolean;
 }
 
 export interface Stage {
@@ -171,6 +175,10 @@ export interface Opportunity {
   description: string | null;
   status: OpportunityStatus;
   lostReason: string | null;
+  // De onde a oportunidade veio (2026-09-18). null = ciclo comercial
+  // corrente, nascida no CRM. "historico-cotacoes" = carga das cotações de
+  // jul-set/2025, que fica fora do funil do Painel.
+  origem: string | null;
   version: number;
   deletedAt: string | null;
   createdAt: string;
@@ -383,6 +391,17 @@ export interface RawLead {
   // Só vem na listagem (GET /raw-leads): interação mais recente da
   // Timeline da empresa do lead.
   ultimoContato?: string | null;
+  // Dono do lead — carteira do representante (2026-08-06). Exposto na
+  // tabela da Prospecção a partir de 2026-09-18 ("inclua uma coluna
+  // representante para saber de quem é o lead"). null = sem dono, caso
+  // das empresas que vieram da carga antiga.
+  ownerUserId: string | null;
+  // Datas de passagem de faixa do funil (2026-09-21) — é o que permite ao
+  // Painel medir MOVIMENTO num período em vez de estoque acumulado.
+  // null = passagem anterior a este registro, ou que não aconteceu.
+  qualifiedAt: string | null;
+  convertedAt: string | null;
+  discardedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

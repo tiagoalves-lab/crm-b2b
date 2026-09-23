@@ -166,6 +166,60 @@ export class PolicyService {
     };
   }
 
+  // Visibilidade de LEITURA de RawLead (tela de Prospecção) — scopeFilter()
+  // de sempre (carteira por representante, 2026-08-06) MAIS a equipe de
+  // vendas da empresa por trás do lead (2026-09-21). Sem o segundo ramo, a
+  // aba "Equipe de vendas" mentiria justamente onde ela mora: o usuário
+  // inclui outro representante na ficha do lead e o lead continua invisível
+  // na Prospecção dele. Só AMPLIA acesso — ninguém perde nada do que via.
+  async rawLeadReadFilter(
+    tx: TenantTx,
+    membership: MembershipContext,
+  ): Promise<Prisma.RawLeadWhereInput> {
+    const scope = await this.scopeFilter(tx, membership);
+    if (scope.ownerUserId === undefined) {
+      return {};
+    }
+    const ownerCondition = scope.ownerUserId;
+    const userIds =
+      typeof ownerCondition === 'string' ? [ownerCondition] : ownerCondition.in;
+    return {
+      OR: [
+        { ownerUserId: ownerCondition },
+        {
+          promotedCompany: { accessGrants: { some: { userId: { in: userIds } } } },
+        },
+      ],
+    };
+  }
+
+  // Versão pontual de rawLeadReadFilter() — mesma pergunta, pra quem já
+  // tem o lead na mão (ficha, aprovar, descartar). `action` existe só pra
+  // conferir a CAPACIDADE na matriz granular; o ESCOPO é o mesmo pros dois
+  // (quem está na equipe de vendas trabalha o lead, não só olha).
+  async canReachRawLead(
+    tx: TenantTx,
+    membership: MembershipContext,
+    action: PolicyAction,
+    lead: { id: string; ownerUserId: string | null },
+  ): Promise<boolean> {
+    if (membership.role === 'owner' || membership.role === 'admin') {
+      return true;
+    }
+    if (!this.canModule(membership, 'leads', toPermissionAction(action))) {
+      return false;
+    }
+    const filter = await this.rawLeadReadFilter(tx, membership);
+    if (Object.keys(filter).length === 0) {
+      return true;
+    }
+    const visible = await tx.rawLead.findFirst({
+      where: { id: lead.id, workspaceId: membership.workspaceId, ...filter },
+      select: { id: true },
+    });
+    return visible !== null;
+  }
+
   // Versão pontual de companyReadFilter() pra quem já tem o id da Company
   // na mão (ficha, timeline, nota): mesma regra, mesma resposta que a
   // lista. Quem chama traduz `false` em 404 (não 403) — não confirma pra

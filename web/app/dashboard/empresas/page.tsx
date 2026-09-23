@@ -12,18 +12,15 @@ import EmpresasTable, { type EmpresaRow } from "./empresas-table";
 import { calcularCurvaAbcAction } from "./actions";
 import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
 
-type Filtro = "todas" | "lead" | "cliente";
-
 export default async function EmpresasPage({
   searchParams,
 }: {
   searchParams: Promise<{
     error?: string;
     includeDeleted?: string;
-    filtro?: string;
   }>;
 }) {
-  const { error, includeDeleted, filtro } = await searchParams;
+  const { error, includeDeleted } = await searchParams;
   const token = await getServerAccessToken();
 
   const showDeleted = includeDeleted === "1";
@@ -47,13 +44,6 @@ export default async function EmpresasPage({
   // consulta do backend (CompanyService#resumoParaLista), mesmo critério
   // da view v_busca_empresa_lead. Ela aparece na tela Leads em vez desta.
 
-  // Selo lead/cliente: a tag "cliente" já vem da importação real (291 das
-  // 292 empresas do banco de produção têm essa tag) — usar "existe
-  // opportunity won" aqui (alternativa que o SPEC-CRM-GAMA.md §4.1 também
-  // previa) deixava tudo "lead" porque o pipeline deste CRM começou do
-  // zero, sem oportunidade nenhuma pros clientes já existentes antes dele.
-  const tipoOf = (c: CompanyResumo): "lead" | "cliente" =>
-    c.tags.includes("cliente") ? "cliente" : "lead";
 
   // LTV/última compra somam Opportunity "won" de verdade (pipeline novo,
   // começou do zero) com sales_history (histórico de vendas importado do
@@ -64,22 +54,20 @@ export default async function EmpresasPage({
   // "ativo", lead → "negociando"), sem informação própria. No lugar entrou
   // a classe da curva ABC, que vem gravada na empresa.
 
-  const currentFiltro: Filtro = filtro === "lead" || filtro === "cliente" ? filtro : "todas";
-  const leadsCount = companies.filter((c) => tipoOf(c) === "lead").length;
-  const clientesCount = companies.filter((c) => tipoOf(c) === "cliente").length;
-  const visible = companies.filter(
-    (c) => currentFiltro === "todas" || tipoOf(c) === currentFiltro,
-  );
+  // Empresas lista CLIENTE, e só (pedido do usuário, 2026-09-18: "exclua
+  // os leads de empresas também"). Quem ainda não comprou é assunto da
+  // Prospecção — inclusive as abas Prospects e Leads convertidos. Quem
+  // decide é o backend (src/companies/cliente-regra.ts: pedido no eGestor
+  // ou oportunidade ganha), pra busca geral e lista usarem a mesma régua.
+  const visible = companies.filter((c) => c.ehCliente);
   // Ordem alfabética pela 1ª coluna (razão social — mesmo critério de
   // exibição do empresas-table.tsx).
   const rows: EmpresaRow[] = visible
     .map((company) => ({
       company,
-      tipo: tipoOf(company),
       classe: company.curvaAbc,
       ltv: company.ltv,
       ultimaCompra: company.ultimaCompra,
-      ultimoContato: company.ultimoContato,
     }))
     .sort((a, b) =>
       (a.company.razaoSocial?.trim() || companyDisplayName(a.company)).localeCompare(
@@ -100,9 +88,9 @@ export default async function EmpresasPage({
     <TopbarFilterProvider>
       <div className="topbar">
         <div>
-          <div className="page-title">Empresas</div>
+          <div className="page-title">Carteira de clientes</div>
           <div className="page-sub">
-            {visible.length} de {companies.length} empresa(s)
+            {visible.length} cliente(s)
             {showDeleted ? " (incluindo excluídas)" : ""}
             {curvaCalculadaEm
               ? ` — curva ABC calculada em ${formatDateTimeBR(curvaCalculadaEm)}`
@@ -132,13 +120,7 @@ export default async function EmpresasPage({
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
 
-        <EmpresasTable
-          rows={rows}
-          currentFiltro={currentFiltro}
-          showDeleted={showDeleted}
-          counts={{ todas: companies.length, lead: leadsCount, cliente: clientesCount }}
-          canDelete={canDelete}
-        />
+        <EmpresasTable rows={rows} showDeleted={showDeleted} canDelete={canDelete} />
       </div>
     </TopbarFilterProvider>
   );

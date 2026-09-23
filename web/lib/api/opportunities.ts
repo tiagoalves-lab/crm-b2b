@@ -5,7 +5,12 @@ export function listOpportunities(
   token: string,
   options: { companyId?: string; status?: OpportunityStatus } = {},
 ): Promise<PaginatedResult<Opportunity>> {
-  const query = new URLSearchParams({ pageSize: "100" });
+  // 1000 (não 100): a tela Pipeline separa abertas/ganhas/perdidas no
+  // cliente, então um teto baixo corta as encerradas mais antigas — o
+  // histórico de cotações de 2025 (123 oportunidades) estourou o 100 e as
+  // encerradas do mês escolhido sumiam. Espelha o @Max(5000) do
+  // ListOpportunitiesQueryDto no backend.
+  const query = new URLSearchParams({ pageSize: "1000" });
   if (options.companyId) query.set("companyId", options.companyId);
   if (options.status) query.set("status", options.status);
   return apiFetch<PaginatedResult<Opportunity>>(`/opportunities?${query.toString()}`, {

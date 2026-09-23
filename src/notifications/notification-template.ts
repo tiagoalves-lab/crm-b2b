@@ -137,3 +137,118 @@ export function montarMencaoHtml(aviso: AvisoMencao): string {
     assuntoMencao(aviso),
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Lead novo do Meta (pedido do usuário, 2026-09-18). Terceiro aviso
+// pontual, com uma diferença dos outros dois: não é sobre uma pessoa
+// específica ("você foi destacado"), é sobre um fato que a equipe precisa
+// saber na hora — chegou lead do anúncio. Por isso vai num e-mail só para
+// a lista, e o texto fala do lead, nunca "você".
+//
+// O que vai dentro é o que decide se alguém liga agora: contato, o que a
+// pessoa respondeu no formulário e de qual anúncio ela veio.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AvisoLeadMeta {
+  empresa: string;
+  contatoNome: string | null;
+  telefone: string | null;
+  email: string | null;
+  cargo: string | null;
+  localidade: string | null;
+  cnpj: string | null;
+  plataforma: string | null;
+  formulario: string | null;
+  campanha: string | null;
+  anuncio: string | null;
+  respostas: { pergunta: string; resposta: string }[];
+  dono: string | null;
+  quando: string | null;
+  url: string | null;
+}
+
+export function assuntoLeadMeta(aviso: AvisoLeadMeta): string {
+  const origem = aviso.plataforma ? ` (${aviso.plataforma})` : '';
+  return `Lead novo${origem}: ${aviso.empresa}`;
+}
+
+export function montarLeadMetaHtml(aviso: AvisoLeadMeta): string {
+  const contato = [
+    aviso.contatoNome ? linhaDado('Contato', aviso.contatoNome) : '',
+    aviso.cargo ? linhaDado('Cargo', aviso.cargo) : '',
+    aviso.telefone ? linhaDado('Telefone', aviso.telefone) : '',
+    aviso.email ? linhaDado('E-mail', aviso.email) : '',
+    aviso.cnpj ? linhaDado('CNPJ', aviso.cnpj) : '',
+    aviso.localidade ? linhaDado('Localidade', aviso.localidade) : '',
+    aviso.dono ? linhaDado('Carteira', aviso.dono) : '',
+    aviso.quando ? linhaDado('Chegou em', aviso.quando) : '',
+  ].join('');
+
+  // O que a pessoa respondeu no formulário do anúncio — é o que permite
+  // ligar já sabendo do que se trata, e é o motivo de este e-mail existir
+  // em vez de um "chegou um lead, entre no CRM".
+  const respostas =
+    aviso.respostas.length > 0
+      ? `<div style="font-family: ${FONTE}; font-size: 11px; font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase; color: ${COR.fraco}; margin: 18px 0 8px 0;">O que respondeu no formulário</div>
+         <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="background: ${COR.afundado}; border-left: 3px solid ${COR.accent}; width: 100%;">
+           <tr><td style="padding: 10px 12px;">
+             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+               ${aviso.respostas
+                 .map((r) => linhaDado(r.pergunta, r.resposta))
+                 .join('')}
+             </table>
+           </td></tr>
+         </table>`
+      : '';
+
+  const origem = [
+    aviso.plataforma ? `via ${aviso.plataforma}` : '',
+    aviso.campanha ? `campanha "${aviso.campanha}"` : '',
+    aviso.anuncio ? `anúncio "${aviso.anuncio}"` : '',
+    aviso.formulario ? `formulário "${aviso.formulario}"` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const rodapeOrigem = origem
+    ? `<div style="font-family: ${FONTE}; font-size: 11.5px; line-height: 1.6; color: ${COR.fraco}; margin-top: 16px;">${esc(origem)}</div>`
+    : '';
+
+  return moldura(
+    `<div style="font-family: ${FONTE}; font-size: 18px; font-weight: bold; color: ${COR.texto}; line-height: 1.3;">Lead novo pelo anúncio</div>
+     <div style="font-family: ${FONTE}; font-size: 15px; color: ${COR.texto}; margin: 6px 0 14px 0;">${esc(aviso.empresa)}</div>
+     <table role="presentation" cellpadding="0" cellspacing="0" border="0">${contato}</table>
+     ${respostas}
+     ${botao(aviso.url, 'Abrir o lead no CRM')}
+     ${rodapeOrigem}
+     ${rodape()}`,
+    assuntoLeadMeta(aviso),
+  );
+}
+
+// Lead de mentira para o botão "Enviar teste" da tela E-mail automático:
+// serve para conferir remetente, layout e "responder para" sem depender de
+// um lead real ter acabado de chegar. Dado fictício de propósito — nada de
+// empresa ou pessoa real sai daqui (docs/seguranca.md).
+export function exemploLeadMeta(): AvisoLeadMeta {
+  return {
+    empresa: 'EMPRESA DE EXEMPLO LTDA',
+    contatoNome: 'FULANO DE TAL',
+    telefone: '(00) 00000-0000',
+    email: 'exemplo@exemplo.com.br',
+    cargo: 'Comprador',
+    localidade: 'Cidade Exemplo/SP',
+    cnpj: '00.000.000/0001-00',
+    plataforma: 'Instagram',
+    formulario: 'Formulário de exemplo',
+    campanha: 'Campanha de exemplo',
+    anuncio: 'Anúncio de exemplo',
+    respostas: [
+      { pergunta: 'Qual equipamento você procura?', resposta: 'Exemplo' },
+      { pergunta: 'Para quando?', resposta: 'Próximos 30 dias' },
+    ],
+    dono: 'Gerente comercial',
+    quando: '18/09/2026 10:32',
+    url: null,
+  };
+}

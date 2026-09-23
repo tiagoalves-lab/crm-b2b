@@ -14,5 +14,10 @@ import { ReportService } from './report.service';
   imports: [PrismaModule, TenancyModule, MembershipModule, MailModule],
   controllers: [ReportController],
   providers: [ReportService, ReportSchedulerService, ReportConfigService],
+  // Exportados para o aviso de lead novo do Meta (NotificationModule):
+  // "quem é elegível" e "quem escolheram na tela" são a MESMA regra dos
+  // reports — duplicar isso lá seria o caminho curto para as duas listas
+  // divergirem na primeira mudança.
+  exports: [ReportService, ReportConfigService],
 })
 export class ReportModule {}

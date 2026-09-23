@@ -34,8 +34,7 @@ describe('parseContactsSpreadsheet', () => {
         porte: 'GRANDE',
         situacao: 'ATIVA',
         abertura: '20140526',
-        socios: 'FULANO DE TAL',
-        importador: 'Não',
+        representante: 'Fulano de Tal',
         contatoNome: 'Jonas Ficticio',
         contatoCargo: 'Financeiro',
         contatoEmail: 'jonas@ficticia.example.com',
@@ -65,7 +64,7 @@ describe('parseContactsSpreadsheet', () => {
     expect(group.razaoSocial).toBe('FICTICIA METALURGICA LTDA');
     expect(group.uf).toBe('RS');
     expect(group.porte).toBe('GRANDE');
-    expect(group.socios).toEqual(['FULANO DE TAL']);
+    expect(group.representante).toBe('Fulano de Tal');
     expect(group.contacts).toHaveLength(2);
     expect(group.contacts[0]).toMatchObject({
       nome: 'Jonas Ficticio',
@@ -78,7 +77,7 @@ describe('parseContactsSpreadsheet', () => {
   });
 
   // Coluna "Tags" (2026-08-06, pedido direto do usuário — não existia no
-  // modelo padrão de importação) — mesmo separador "|" de Sócios (QSA).
+  // modelo padrão de importação) — separador "|" dentro da célula.
   it('lê a coluna Tags separada por "|"', async () => {
     const buffer = csvBuffer([
       row({

@@ -5,9 +5,9 @@ propósitos diferentes:
 
 1. **Resumo diário do Pipeline** — agendado, em lote, para a gestão. É o
    assunto da maior parte deste doc. Código em `src/reports/`.
-2. **Avisos pontuais** — reação imediata a uma ação de alguém (tarefa
-   designada, membro destacado numa anotação). Seção própria no fim.
-   Código em `src/notifications/`.
+2. **Avisos pontuais** — reação imediata a um fato: tarefa designada,
+   membro destacado numa anotação e **lead novo entrando pelos anúncios do
+   Meta**. Seção própria no fim. Código em `src/notifications/`.
 
 As duas usam o mesmo `src/mail/` (como o e-mail sai) e o mesmo domínio de
 envio.
@@ -183,25 +183,40 @@ de lote.
 
 ### 2.1 Quais eventos disparam e-mail
 
-**Decisão →** Dois, e só dois:
+**Decisão →** Três:
 
 - **tarefa designada a alguém** — na criação e quando o responsável é
   trocado depois;
 - **membro destacado numa anotação** do card do Pipeline — no comentário
-  novo e quando alguém é acrescentado à lista de destaques depois.
+  novo e quando alguém é acrescentado à lista de destaques depois;
+- **lead novo entrando pela Central de Leads do Meta** — tanto pelo
+  webhook direto quanto pela planilha do gestor de tráfego, que é o canal
+  em uso (ver `webhook-meta-leads.md`).
 
-**Fonte →** Pedido do usuário, 2026-09-15.
+**Fonte →** Pedido do usuário, 2026-09-15 (os dois primeiros) e
+2026-09-18 (o lead novo).
 
 ### 2.2 Quem recebe
 
-**Decisão →** Só a pessoa diretamente envolvida: quem ficou com a tarefa,
-quem foi destacado. **Inclusive representante** — ao contrário do resumo
-diário, que exclui `sales_rep`: ali é panorama de gestão, aqui é o
-trabalho da própria pessoa.
+**Decisão →** Tarefa e destaque vão só para a pessoa diretamente
+envolvida: quem ficou com a tarefa, quem foi destacado. **Inclusive
+representante** — ao contrário do resumo diário, que exclui `sales_rep`:
+ali é panorama de gestão, aqui é o trabalho da própria pessoa.
 **Fonte →** Decorrência direta de 2.1.
 
 Quem foi destacado recebe **um e-mail individual**, não uma cópia coletiva:
 o texto fala "você", e ninguém precisa ver o endereço dos colegas.
+
+**Decisão →** O aviso de **lead novo** é a exceção: não tem "pessoa
+envolvida" (o lead cai na carteira do gerente, mas quem precisa saber na
+hora é a equipe), então vai para a **lista escolhida na tela "E-mail
+automático"**, num e-mail só para todos. Lista vazia = todo membro ativo
+que não é representante, o mesmo padrão dos relatórios.
+**Fonte →** Pedido do usuário, 2026-09-18.
+
+Um e-mail para a lista, e não um por pessoa, porque a cota do provedor é
+diária: personalizar gastaria N vezes mais sem acrescentar nada — o texto
+fala do lead, não de quem lê.
 
 ### 2.3 Ninguém recebe aviso da própria ação
 
@@ -225,7 +240,30 @@ tarefa não pode ficar mais lento, nem falhar, por causa de e-mail.
 **Fonte →** Regra do projeto: chamada de rede dentro de `$transaction` já
 estourou o pool de conexões aqui antes.
 
-### 2.6 Relê o registro antes de enviar
+### 2.6 O aviso de lead novo traz o que decide a ligação
+
+**Decisão →** Vão no e-mail: nome/razão social, contato (nome, cargo,
+telefone, e-mail), CNPJ e localidade quando houver, a carteira em que o
+lead caiu, a hora da entrada, **o que a pessoa respondeu no formulário do
+anúncio** e a origem (plataforma, campanha, anúncio, formulário). Mais o
+botão que abre a ficha do lead no CRM.
+**Fonte →** Pedido do usuário, 2026-09-18.
+
+As respostas do formulário são o motivo de o e-mail existir: sem elas
+seria um "chegou um lead, entre no CRM", que não ajuda quem está na rua.
+
+### 2.7 Um aviso por lead, e o registro de que ele saiu
+
+**Decisão →** Cada lead avisado grava uma linha em `report_log` com a
+referência `lead <id do lead na Meta>`, e o envio vai com chave de
+idempotência do mesmo id. O índice único da tabela impede o segundo aviso
+do mesmo lead.
+**Fonte →** Mesmo raciocínio da decisão 1.4, aplicado ao evento.
+
+Efeito colateral útil: os avisos aparecem em "Últimos envios" na tela, com
+situação e motivo da falha — a mesma resposta para "saiu mesmo?".
+
+### 2.8 Relê o registro antes de enviar
 
 **Decisão →** Antes de mandar, o CRM relê a tarefa/anotação e confirma que
 o fato continua valendo (a tarefa existe e é daquela pessoa; a pessoa
@@ -318,10 +356,17 @@ representante.
 # Tela "E-mail automático" (Administração)
 
 Quarta entrega (pedido do usuário, 2026-09-15): `/dashboard/e-mail-automatico`,
-visível só para owner/admin. É onde se configura o **resumo diário** e o
-**follow-up das cotações** — os avisos de tarefa designada e de destaque
-em anotação NÃO aparecem lá de propósito: são reação a uma ação de
-alguém, não têm horário a definir.
+visível só para owner/admin. É onde se configuram o **resumo diário**, o
+**follow-up das cotações** e o **aviso de lead novo do Meta** (2026-09-18).
+
+O aviso de lead entra na tela mesmo sem ter horário porque tem as mesmas
+duas perguntas dos relatórios: está ligado? quem recebe? O card dele não
+mostra horário, dia útil nem "enviar agora" — só liga/desliga, envio de
+teste (com um lead fictício) e a lista de quem recebe.
+
+Os avisos de tarefa designada e de destaque em anotação continuam fora de
+propósito: quem recebe é sempre a pessoa envolvida, não há nada a
+escolher.
 
 ## Decisões
 

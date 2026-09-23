@@ -2,7 +2,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { globalSearch, type GlobalSearchResult } from "@/lib/api/search";
-import { effectiveTier, TIER_LABEL } from "@/lib/api/raw-leads";
+import {
+  effectiveTier,
+  faixaDoFunil,
+  FAIXA_FUNIL_LABEL,
+  FAIXA_FUNIL_PILL,
+  TIER_LABEL,
+} from "@/lib/api/raw-leads";
 import { taskTypeLabel } from "@/lib/api/tasks";
 import { formatDateOnlyBR } from "@/lib/format-date";
 import TopbarFilter from "@/app/_components/topbar-filter";
@@ -12,12 +18,6 @@ import TopbarFilter from "@/app/_components/topbar-filter";
 // o registro. Quem decide o que aparece é o backend (GET /busca) — mesma
 // visibilidade das telas de origem; seção que não vem é permissão que o
 // usuário não tem.
-
-const LEAD_STATUS_LABEL = {
-  novo: "Em triagem",
-  aprovado: "Aprovado",
-  descartado: "Descartado",
-} as const;
 
 const OPP_STATUS = {
   open: { label: "Aberta", pill: "pill pill-blue" },
@@ -115,11 +115,11 @@ export default async function BuscaGeralPage({
         {!result ? (
           <div className="empty">
             Busque por nome de empresa, CNPJ, cidade, contato, oportunidade ou tarefa. A busca
-            olha Empresas, Contatos, Prospecção, Pipeline e Tarefas de uma vez.
+            olha a Carteira de clientes, Contatos, Prospecção, Pipeline e Tarefas de uma vez.
           </div>
         ) : (
           <>
-            <Secao titulo="Empresas" itens={result.empresas} colunas={["Empresa", "CNPJ", "Cidade/UF", "Classe"]}>
+            <Secao titulo="Carteira de clientes" itens={result.empresas} colunas={["Empresa", "CNPJ", "Cidade/UF", "Classe"]}>
               {result.empresas?.map((e) => (
                 <tr key={e.id} className="row-clickable">
                   <td>
@@ -157,7 +157,11 @@ export default async function BuscaGeralPage({
               ))}
             </Secao>
 
-            <Secao titulo="Prospecção" itens={result.prospeccao} colunas={["Empresa", "CNPJ", "Cidade/UF", "Situação", "Classificação"]}>
+            {/* Coluna "Funil" no lugar de "Situação" (pedido do usuário,
+                2026-09-18): interessa em que faixa do funil o lead está,
+                não o nome interno do status. Régua em lib/api/raw-leads.ts
+                — a mesma das abas da Prospecção. */}
+            <Secao titulo="Prospecção" itens={result.prospeccao} colunas={["Empresa", "CNPJ", "Cidade/UF", "Funil", "Classificação"]}>
               {result.prospeccao?.map((l) => (
                 <tr key={l.id} className="row-clickable">
                   <td>
@@ -172,8 +176,8 @@ export default async function BuscaGeralPage({
                     {l.uf ? `/${l.uf}` : ""}
                   </td>
                   <td>
-                    <span className={l.status === "aprovado" ? "pill pill-green" : l.status === "descartado" ? "pill pill-gray" : "pill pill-blue"}>
-                      {LEAD_STATUS_LABEL[l.status]}
+                    <span className={FAIXA_FUNIL_PILL[faixaDoFunil(l)]}>
+                      {FAIXA_FUNIL_LABEL[faixaDoFunil(l)]}
                     </span>
                   </td>
                   <td>

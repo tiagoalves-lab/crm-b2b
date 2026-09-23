@@ -106,6 +106,9 @@ export interface CompanyResumo {
   ultimaCompra: string | null;
   // Interação mais recente da Timeline (anotação, ligação, reunião...).
   ultimoContato: string | null;
+  // Cliente × ainda em prospecção — quem já comprou (pedido no eGestor ou
+  // oportunidade ganha). Régua no backend: src/companies/cliente-regra.ts.
+  ehCliente: boolean;
 }
 
 export function listCompaniesResumo(
@@ -243,4 +246,15 @@ export function calcularCurvaAbc(token: string): Promise<CurvaAbcResumo> {
     method: "POST",
     token,
   });
+}
+
+// Cliente × ainda em prospecção, num lugar só (2026-09-23): a régua é do
+// backend (src/companies/cliente-regra.ts — pedido emitido no eGestor ou
+// oportunidade ganha), e `tags` é o fallback de quando o campo não vem
+// calculado. Decide a etiqueta do cabeçalho da ficha E quais abas
+// aparecem (Vendas/Pós-venda/ABC/Serviços são da carteira de clientes).
+export function ehClienteDaCarteira(
+  company: Pick<Company, "tags"> & { ehCliente?: boolean },
+): boolean {
+  return company.ehCliente ?? company.tags.includes("cliente");
 }

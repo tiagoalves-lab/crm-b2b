@@ -15,6 +15,7 @@ import { CompanyService } from '../companies/company.service';
 import { ContactService } from '../companies/contact.service';
 import type { CreateCompanyDto } from '../companies/dto/create-company.dto';
 import { resolveRazaoSocial } from '../common/sanitize-razao-social';
+import { SupabaseUserService } from '../memberships/supabase-user.service';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
@@ -27,6 +28,11 @@ import type { UpdateLeadTagsDto } from './dto/update-lead-tags.dto';
 import type { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
 import { LeadScoringService } from './lead-scoring.service';
 import {
+  indexarRepresentantes,
+  resolverRepresentante,
+  type IndiceRepresentantes,
+} from './representante-planilha';
+import {
   parseLeadsSpreadsheet,
   type RowError,
 } from './spreadsheet-import.util';
@@ -34,6 +40,16 @@ import {
 export interface BulkResult {
   ok: string[];
   failed: Array<{ id: string; reason: string }>;
+}
+
+// Dono do lead quando NÃO é quem está autenticado (coluna "Representante"
+// da planilha, 2026-09-23). Fica em `options`, e não no
+// CreateRawLeadDto, de propósito: o DTO é o corpo do POST /raw-leads, e
+// deixar o cliente escolher o dono por HTTP abriria a carteira de
+// qualquer representante pra quem souber o id. Quem preenche isto é o
+// importador, depois de checar alçada (ver representante-planilha.ts).
+export interface CriarLeadOptions extends SemTimeline {
+  ownerUserId?: string;
 }
 
 export interface ImportResult {
@@ -55,6 +71,7 @@ export class RawLeadService {
     private readonly contacts: ContactService,
     private readonly activities: ActivityService,
     private readonly policy: PolicyService,
+    private readonly supabaseUsers: SupabaseUserService,
   ) {}
 
   async create(
@@ -65,7 +82,7 @@ export class RawLeadService {
     // "cadastro criado" na Timeline — ver SemTimeline em
     // companies/company.service.ts. Cadastro manual pela Prospecção
     // continua registrando.
-    options: SemTimeline = {},
+    options: CriarLeadOptions = {},
   ): Promise<RawLead> {
     // Padroniza em caixa alta os campos de texto do cadastro (pedido do
     // usuário, 2026-08-10) — único ponto de entrada de criação de
@@ -135,6 +152,10 @@ export class RawLeadService {
       fones: dto.fones,
       dtCad: dto.dtAbertura,
       customFields: dto.socios?.length ? { socios: dto.socios } : undefined,
+      // Representante indicado na planilha (2026-09-23) — é o que faz o
+      // supervisor DELE (e não o de quem importou) entrar na equipe de
+      // vendas da empresa, via herdarSupervisor em CompanyService#create.
+      ownerUserId: options.ownerUserId,
     };
     const company = await this.companies.create(
       tx,
@@ -180,13 +201,13 @@ export class RawLeadService {
       data: {
         ...rawLeadData,
         // Carteira do representante (pedido direto do usuário, 2026-08-06)
-        // — sempre quem está autenticado no momento, nunca escolhido pelo
-        // cliente (mesmo critério de Company.ownerUserId em
-        // CompanyService.create). Não confundir com `company.ownerUserId`
-        // acima: são o mesmo valor aqui (a company nasce junto com o lead,
-        // ver comentário na classe), mas ownerUserId de RawLead é o que
+        // — quem está autenticado, ou o representante indicado na coluna
+        // da planilha (2026-09-23, alçada checada antes de chegar aqui;
+        // nunca escolhido pelo cliente via HTTP). Mesmo valor de
+        // `company.ownerUserId` acima (a company nasce junto com o lead,
+        // ver comentário na classe), mas é o ownerUserId do RawLead que
         // this.findAll/mustBeVisible checam pra Prospecção.
-        ownerUserId: membership.userId,
+        ownerUserId: options.ownerUserId ?? membership.userId,
       },
     });
   }
@@ -224,6 +245,32 @@ export class RawLeadService {
     return { total, imported, errors };
   }
 
+  // Preparo da coluna "Representante" (2026-09-23), em duas etapas de
+  // propósito: esta primeira é uma transação CURTA, só pra saber quem são
+  // os membros ativos do workspace…
+  async listarMembrosAtivos(
+    tx: TenantTx,
+    membership: MembershipContext,
+  ): Promise<string[]> {
+    const membros = await tx.membership.findMany({
+      where: { workspaceId: membership.workspaceId, status: 'active' },
+      select: { userId: true },
+    });
+    return membros.map((m) => m.userId);
+  }
+
+  // …e esta segunda é só rede (Admin API do Supabase, onde vivem nome/
+  // login/e-mail) — nunca deve rodar dentro de uma transação do Postgres,
+  // mesmo motivo documentado em EgestorUsuarioService. Falha na Admin API
+  // devolve índice vazio: nenhuma linha com representante preenchido é
+  // importada às cegas, cada uma vira erro de linha ("não encontrado").
+  async indexarRepresentantes(
+    userIds: string[],
+  ): Promise<IndiceRepresentantes> {
+    const identidades = await this.supabaseUsers.getIdentities(userIds);
+    return indexarRepresentantes(identidades);
+  }
+
   // Importação de planilha no MODELO PADRÃO com múltiplos contatos por
   // empresa (pedido do usuário, 2026-08-03) — diferente de importSpreadsheet
   // acima: aqui o layout é rígido (contactsSpreadsheetImportUtil rejeita
@@ -236,6 +283,16 @@ export class RawLeadService {
     tx: TenantTx,
     membership: MembershipContext,
     file: { buffer: Buffer; originalname: string },
+    // Índice nome/login/e-mail → membro da coluna "Representante"
+    // (2026-09-23), montado FORA desta transação pelo controller —
+    // resolvê-lo aqui dentro significaria uma chamada HTTP ao Supabase
+    // Auth segurando uma conexão do pool (mesmo cuidado já documentado em
+    // EgestorUsuarioService). Ausente = nenhuma linha distribui, todo lead
+    // fica com quem importou.
+    representantes: IndiceRepresentantes = {
+      porChave: new Map(),
+      ambiguas: new Set(),
+    },
   ): Promise<ImportResult> {
     const { groups, errors } = await parseContactsSpreadsheet(
       file.buffer,
@@ -246,6 +303,21 @@ export class RawLeadService {
 
     let imported = 0;
     for (const group of groups) {
+      // Coluna "Representante": erro de linha (não derruba a planilha
+      // inteira) quando o nome não casa com ninguém da equipe ou quando
+      // quem importa não tem alçada pra distribuir.
+      const dono = resolverRepresentante(group.representante, representantes, {
+        userId: membership.userId,
+        role: membership.role,
+      });
+      if (!dono.ok) {
+        errors.push({
+          row: group.firstRow,
+          reason: `${dono.motivo} Os ${group.contacts.length} contato(s) desta empresa não foram importados.`,
+        });
+        continue;
+      }
+
       const companyDto: CreateRawLeadDto = {
         razaoSocial: group.razaoSocial,
         cnpj: group.cnpj,
@@ -254,9 +326,7 @@ export class RawLeadService {
         uf: group.uf,
         municipio: group.municipio,
         situacao: group.situacao,
-        importador: group.importador,
         fantasia: group.fantasia,
-        socios: group.socios,
         tags: group.tags,
         dtAbertura: group.dtAbertura,
       };
@@ -265,6 +335,7 @@ export class RawLeadService {
       try {
         lead = await this.create(tx, membership, companyDto, {
           semTimeline: true,
+          ownerUserId: dono.userId,
         });
       } catch (error) {
         errors.push({
@@ -297,13 +368,22 @@ export class RawLeadService {
             continue;
           }
 
-          await this.contacts.create(tx, membership, lead.promotedCompanyId!, {
-            nome: contact.nome,
-            cargo: contact.cargo,
-            email: contact.email,
-            telefone: contact.telefone,
-            decisor: contact.decisor,
-          });
+          await this.contacts.create(
+            tx,
+            membership,
+            lead.promotedCompanyId!,
+            {
+              nome: contact.nome,
+              cargo: contact.cargo,
+              email: contact.email,
+              telefone: contact.telefone,
+              decisor: contact.decisor,
+            },
+            // Contato fica com o mesmo representante do lead — senão o
+            // gerente importa a carteira do outro e leva os contatos
+            // junto (a RLS de contacts filtra por dono).
+            dono.userId,
+          );
           imported++;
         } catch (error) {
           errors.push({
@@ -344,7 +424,10 @@ export class RawLeadService {
     // só o que ele mesmo importou/cadastrou — mesmo PolicyService já usado
     // por Company/Opportunity/Task (Fatia 9), reverte a decisão anterior de
     // raw_leads ser "área comum".
-    const ownerFilter = await this.policy.scopeFilter(tx, membership);
+    // rawLeadReadFilter (não scopeFilter puro) desde 2026-09-21: soma a
+    // carteira própria à equipe de vendas da empresa do lead — ver
+    // PolicyService.rawLeadReadFilter.
+    const ownerFilter = await this.policy.rawLeadReadFilter(tx, membership);
     const scoreRange = this.tierRange(query.tier);
     const where: Prisma.RawLeadWhereInput = {
       workspaceId: membership.workspaceId,
@@ -454,7 +537,10 @@ export class RawLeadService {
 
     await tx.rawLead.update({
       where: { id: lead.id },
-      data: { status: 'aprovado' },
+      // convertedAt (2026-09-21): a data da passagem, pro funil do Painel
+      // medir movimento por período em vez de estoque acumulado. Só na
+      // primeira conversão — reconversão não reescreve a série.
+      data: { status: 'aprovado', convertedAt: lead.convertedAt ?? new Date() },
     });
 
     const updated = await tx.company.update({
@@ -490,7 +576,12 @@ export class RawLeadService {
     const lead = await this.mustBeNovo(tx, membership, id);
     return tx.rawLead.update({
       where: { id: lead.id },
-      data: { status: 'descartado' },
+      // discardedAt: mesma razão de convertedAt em approve() — é a saída
+      // do funil, e o funil por período precisa saber quando foi.
+      data: {
+        status: 'descartado',
+        discardedAt: lead.discardedAt ?? new Date(),
+      },
     });
   }
 
@@ -504,10 +595,19 @@ export class RawLeadService {
     id: string,
     dto: UpdateLeadTierDto,
   ): Promise<RawLead> {
-    await this.mustBeVisible(tx, membership, id, 'write');
+    const atual = await this.mustBeVisible(tx, membership, id, 'write');
     return tx.rawLead.update({
       where: { id },
-      data: { manualTier: dto.tier },
+      // qualifiedAt (2026-09-21): a qualificação do SDR é o prazo de
+      // investimento, então a data da qualificação é a data em que o
+      // prazo entrou. Guarda a PRIMEIRA (trocar Curto por Médio não
+      // requalifica); limpar a classificação limpa a data, porque sem
+      // prazo não houve qualificação.
+      data: {
+        manualTier: dto.tier,
+        qualifiedAt:
+          dto.tier === null ? null : (atual.qualifiedAt ?? new Date()),
+      },
     });
   }
 
@@ -824,7 +924,10 @@ export class RawLeadService {
     if (!lead) {
       throw new NotFoundException('Lead não encontrado.');
     }
-    if (!(await this.policy.can(tx, membership, action, lead, 'leads'))) {
+    // canReachRawLead (não can() puro) desde 2026-09-21: quem está na
+    // equipe de vendas da empresa abre e trabalha o lead dela, mesmo sem
+    // ser o dono nem subordinado — ver PolicyService.rawLeadReadFilter.
+    if (!(await this.policy.canReachRawLead(tx, membership, action, lead))) {
       throw new NotFoundException('Lead não encontrado.');
     }
     return lead;

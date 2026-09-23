@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ActivityModule } from '../../activities/activity.module';
 import { CompanyModule } from '../../companies/company.module';
+import { NotificationModule } from '../../notifications/notification.module';
 import { RawLeadModule } from '../../raw-leads/raw-lead.module';
 import { TenancyModule } from '../../tenancy/tenancy.module';
 import { MetaGraphService } from './meta-graph.service';
@@ -19,7 +20,13 @@ import { MetaLeadsWebhookService } from './meta-leads-webhook.service';
 // planilha/crawler (scoring, quente/morno/frio, "Aprovar para Lead"), sem
 // tabela nova pro lead em si. Ver docs/webhook-meta-leads.md.
 @Module({
-  imports: [TenancyModule, RawLeadModule, CompanyModule, ActivityModule],
+  imports: [
+    TenancyModule,
+    RawLeadModule,
+    CompanyModule,
+    ActivityModule,
+    NotificationModule,
+  ],
   controllers: [MetaLeadsWebhookController, MetaLeadsPlanilhaController],
   providers: [
     MetaGraphService,

@@ -16,7 +16,7 @@ export class ApiError extends Error {
 }
 
 export interface ApiFetchOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   token: string;
   // Limite de espera pela resposta. O padrão cobre a operação mais longa

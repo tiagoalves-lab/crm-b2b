@@ -21,8 +21,10 @@ import { PipelineModule } from './pipelines/pipeline.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RawLeadModule } from './raw-leads/raw-lead.module';
+import { RelatorioModule } from './relatorios/relatorio.module';
 import { ReportModule } from './reports/report.module';
 import { DeletionLogModule } from './deletion-log/deletion-log.module';
+import { TelefoniaModule } from './telefonia/telefonia.module';
 import { SalesHistoryModule } from './sales-history/sales-history.module';
 import { SearchModule } from './search/search.module';
 import { TaskModule } from './tasks/task.module';
@@ -74,7 +76,9 @@ import { UserThrottlerGuard } from './common/throttler/user-throttler.guard';
     CotacoesModule,
     CountsModule,
     ReportModule,
+    RelatorioModule,
     DeletionLogModule,
+    TelefoniaModule,
   ],
   controllers: [AppController, MeController],
   providers: [
