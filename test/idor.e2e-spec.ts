@@ -325,8 +325,11 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
         .send({ amount: 999999 });
       expect(res.status).toBe(404);
 
-      const depois = await withTenant(prisma, admin.userId, workspace.id, (tx) =>
-        tx.opportunityItem.findUnique({ where: { id: item.id } }),
+      const depois = await withTenant(
+        prisma,
+        admin.userId,
+        workspace.id,
+        (tx) => tx.opportunityItem.findUnique({ where: { id: item.id } }),
       );
       expect(depois?.amount).toBeNull();
 
@@ -691,6 +694,49 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
         .post('/telefonia/eventos')
         .send({ evento: 'encerrada', telefone: '5551999998888' });
       expect(res.status).toBe(401);
+    }, 20000);
+
+    // Proposta congelada → PDF no card (2026-09-28). Sem esta checagem,
+    // qualquer um anexaria um "documento oficial" em qualquer card — e o
+    // anexo da integração é justamente o que ninguém pode remover pela tela.
+    // Payload válido de propósito (o 400 do ValidationPipe passaria verde
+    // sem exercitar o token); o HTML é mínimo porque o caminho feliz não é
+    // testado aqui — ele acordaria um Chromium fora do CI.
+    it('recusa envio de proposta com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/propostas')
+        .set('Authorization', 'Bearer token-forjado-de-proposito')
+        .send({
+          opportunity_id: '11111111-1111-4111-8111-111111111111',
+          orcamento_id: 3011,
+          documento_versao: 1,
+          codigo_verificacao: 'ABCD1234',
+          nome_arquivo: 'Proposta 3011-26',
+          html: '<html><body>x</body></html>',
+          html_sha256: 'a'.repeat(64),
+        });
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
+    it('recusa envio de proposta sem Authorization nenhum', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/propostas')
+        .send({
+          opportunity_id: '11111111-1111-4111-8111-111111111111',
+          orcamento_id: 3011,
+          documento_versao: 1,
+          codigo_verificacao: 'ABCD1234',
+          nome_arquivo: 'Proposta 3011-26',
+          html: '<html><body>x</body></html>',
+          html_sha256: 'a'.repeat(64),
+        });
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Authorization ausente ou mal formado.',
+      );
     }, 20000);
 
     it('recusa espelhamento de comentários com token forjado', async () => {

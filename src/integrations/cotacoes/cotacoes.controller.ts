@@ -16,6 +16,7 @@ import { TrelloComentariosDto } from './dto/trello-comentarios.dto';
 import { TrelloStatusQueryDto } from './dto/trello-status-query.dto';
 import { TrelloVinculoDto } from './dto/trello-vinculo.dto';
 import { UpsertClienteDto } from './dto/upsert-cliente.dto';
+import { UpsertPropostaDto } from './dto/upsert-proposta.dto';
 
 // Rotas públicas de propósito — quem chama é o servidor GAS do app de
 // cotações (gama-webapp/CrmService.js), não um usuário logado no Supabase.
@@ -101,6 +102,35 @@ export class CotacoesController {
   ) {
     this.cotacoes.assertTokenValido(authorization);
     return this.cotacoes.trelloVincular(dto);
+  }
+
+  // "Enviar proposta ao CRM" — recebe a proposta CONGELADA do app de
+  // cotações (HTML + hash), vira PDF aqui e entra como anexo do card.
+  // Throttle apertado de propósito: cada chamada acorda um Chromium e o
+  // envio é ato humano, um por proposta.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Public()
+  @HttpCode(200)
+  @Post('propostas')
+  async upsertProposta(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() dto: UpsertPropostaDto,
+  ) {
+    this.cotacoes.assertTokenValido(authorization);
+    return this.cotacoes.upsertProposta(dto);
+  }
+
+  // "O Chromium sobe neste contêiner?" — a única parte do envio de proposta
+  // que não se prova no PC de quem programa, só no servidor. Um curl com o
+  // token responde, sem precisar de uma proposta de verdade.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Public()
+  @Get('propostas/diagnostico')
+  async diagnosticoProposta(
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    this.cotacoes.assertTokenValido(authorization);
+    return this.cotacoes.diagnosticoPdf();
   }
 
   // "Sincronizar" — só acrescenta mensagem nova no chat do card.

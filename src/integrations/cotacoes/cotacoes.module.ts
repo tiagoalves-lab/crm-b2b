@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MembershipModule } from '../../memberships/membership.module';
 import { OpportunityModule } from '../../opportunities/opportunity.module';
+import { PdfModule } from '../../pdf/pdf.module';
+import { StorageModule } from '../../storage/storage.module';
 import { TenancyModule } from '../../tenancy/tenancy.module';
 import { CotacoesController } from './cotacoes.controller';
 import { CotacoesService } from './cotacoes.service';
@@ -20,7 +22,15 @@ import { CotacoesService } from './cotacoes.service';
 // solicitação é resolvido pelo NOME do quadro do Trello, e nome de membro
 // vive em auth.users, não em tabela nossa.
 @Module({
-  imports: [TenancyModule, OpportunityModule, MembershipModule],
+  imports: [
+    TenancyModule,
+    OpportunityModule,
+    MembershipModule,
+    // Proposta congelada do app de cotacoes -> PDF (Chromium) -> anexo do
+    // card, no bucket privado de anexos.
+    PdfModule,
+    StorageModule,
+  ],
   controllers: [CotacoesController],
   providers: [CotacoesService],
 })

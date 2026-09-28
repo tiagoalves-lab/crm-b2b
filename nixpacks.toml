@@ -1,0 +1,43 @@
+# Build do backend no Railway (builder NIXPACKS, ver railway.json).
+#
+# Existe por um motivo só: desde 2026-09-28 o CRM vira a proposta comercial
+# em PDF com Chromium headless (src/pdf/html-pdf.service.ts), e o Chrome que
+# o puppeteer baixa precisa de duas coisas que a imagem padrão não dá:
+#
+# 1. **Bibliotecas de sistema.** Chrome não sobe sem libnss3, libatk,
+#    libgbm e companhia — o erro é um "error while loading shared libraries"
+#    na hora do launch, não no build. As fontes entram na lista porque sem
+#    elas o PDF sai com caixinhas em vez de texto.
+# 2. **Um cache que sobreviva ao build.** Por padrão o puppeteer baixa o
+#    Chrome em ~/.cache/puppeteer, que fica FORA da imagem final; o serviço
+#    subia e só descobria a falta no primeiro envio de proposta. Apontando o
+#    cache para /app/.cache (a pasta da aplicação, que é o que é copiado), o
+#    navegador viaja junto com o código.
+#
+# Se um dia o Chrome parar de subir no servidor e funcionar na máquina de
+# quem programa, o diagnóstico é o GET integrations/cotacoes/propostas/
+# diagnostico — ele devolve a versão do Chromium ou o erro exato do launch.
+
+[phases.setup]
+aptPkgs = [
+  "libnss3",
+  "libnspr4",
+  "libatk1.0-0",
+  "libatk-bridge2.0-0",
+  "libcups2",
+  "libdrm2",
+  "libxkbcommon0",
+  "libxcomposite1",
+  "libxdamage1",
+  "libxfixes3",
+  "libxrandr2",
+  "libgbm1",
+  "libpango-1.0-0",
+  "libcairo2",
+  "libasound2",
+  "fonts-liberation",
+  "fonts-dejavu-core",
+]
+
+[variables]
+PUPPETEER_CACHE_DIR = "/app/.cache/puppeteer"

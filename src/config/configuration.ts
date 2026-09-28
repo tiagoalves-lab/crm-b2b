@@ -67,6 +67,11 @@ export default () => ({
   // fica sem responsável (owner_user_id é NOT NULL), e o dono é
   // remanejável na tela do CRM depois.
   cotacoesDefaultOwnerUserId: process.env.COTACOES_DEFAULT_OWNER_USER_ID,
+  // Caminho do Chromium usado pra virar a proposta em PDF (HtmlPdfService).
+  // Vazio = usa o Chrome que o puppeteer baixa no `npm ci` do build, que é o
+  // caso normal. A variável existe pro ambiente que já traz o chromium do
+  // sistema (imagem própria, nixpacks com o pacote) e não quer o download.
+  chromiumExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
   // Aceita uma ou mais origens separadas por vírgula (ex.: URL da Vercel +
   // domínio próprio coexistindo, caso 2026-08-06 — crm.gamabrasil.com.br
   // adicionado ao lado de web-gamma-olive-80.vercel.app) — sem isso,

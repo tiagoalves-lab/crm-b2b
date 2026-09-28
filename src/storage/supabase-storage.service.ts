@@ -47,6 +47,26 @@ export class SupabaseStorageService {
     return { signedUrl: data.signedUrl, token: data.token };
   }
 
+  // Upload feito PELO backend (não pelo navegador com URL assinada): é o
+  // caminho de arquivo que o próprio servidor produziu — hoje o PDF da
+  // proposta, gerado a partir do HTML congelado no app de cotações. Aqui não
+  // existe usuário com aba aberta pra assinar upload; e o ponto da feature é
+  // justamente o arquivo nunca passar pela mão de ninguém.
+  async upload(
+    path: string,
+    bytes: Buffer,
+    contentType: string,
+  ): Promise<void> {
+    const { error } = await this.getClient()
+      .storage.from(TASK_ATTACHMENTS_BUCKET)
+      .upload(path, bytes, { contentType, upsert: false });
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao gravar arquivo no storage: ${error.message}`,
+      );
+    }
+  }
+
   async createDownloadUrl(
     path: string,
     expiresInSeconds = 60,

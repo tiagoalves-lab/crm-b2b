@@ -1,10 +1,11 @@
+import { createHash } from 'crypto';
 import {
   ConflictException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { CotacoesService } from './cotacoes.service';
+import { CotacoesService, nomeArquivoProposta } from './cotacoes.service';
 
 const TOKEN = 'token-de-teste-cotacoes';
 const WORKSPACE_ID = '22222222-2222-4222-8222-222222222222';
@@ -14,6 +15,7 @@ const OWNER_USER_ID = '66666666-6666-4666-8666-666666666666';
 const MEMBERSHIP_ID = '77777777-7777-4777-8777-777777777777';
 const PIPELINE_ID = '88888888-8888-4888-8888-888888888888';
 const STAGE_ID = '99999999-9999-4999-8999-999999999999';
+const ATTACHMENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CARD_ID = 'abc0123456789abcdef01234';
 
 function companyFake(overrides: Record<string, unknown> = {}) {
@@ -69,11 +71,14 @@ interface Deps {
       update: jest.Mock;
     };
     opportunityComment: { findMany: jest.Mock; createMany: jest.Mock };
+    opportunityAttachment: { findFirst: jest.Mock; create: jest.Mock };
     pipeline: { findFirst: jest.Mock };
     stage: { findFirst: jest.Mock };
     membership: { findFirst: jest.Mock; findMany: jest.Mock };
     $queryRaw: jest.Mock;
   };
+  pdf: { renderPdf: jest.Mock };
+  storage: { upload: jest.Mock };
 }
 
 function montar(
@@ -101,6 +106,10 @@ function montar(
         .mockImplementation(({ data }: { data: unknown[] }) =>
           Promise.resolve({ count: data.length }),
         ),
+    },
+    opportunityAttachment: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: ATTACHMENT_ID }),
     },
     pipeline: {
       findFirst: jest.fn().mockResolvedValue({ id: PIPELINE_ID }),
@@ -144,6 +153,13 @@ function montar(
     supabaseUsers: {
       getIdentities: jest.fn().mockResolvedValue(new Map()),
     },
+    // O Chromium de verdade nunca sobe em teste unitario: o que importa aqui
+    // e o que a rota faz ANTES e DEPOIS do render (conferir hash, nao
+    // duplicar anexo, gravar com o usuario-sistema).
+    pdf: {
+      renderPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4 fake')),
+    },
+    storage: { upload: jest.fn().mockResolvedValue(undefined) },
     tx,
   };
 
@@ -153,6 +169,8 @@ function montar(
     deps.tenantContext as never,
     deps.opportunities as never,
     deps.supabaseUsers as never,
+    deps.pdf as never,
+    deps.storage as never,
   );
   return { service, deps };
 }
@@ -902,6 +920,112 @@ describe('CotacoesService', () => {
         deps.tx.company.findMany.mock.calls as unknown[][]
       )[0][0] as { where: { AND: [unknown, { OR: unknown[] }] } };
       expect(args.where.AND[1].OR).toHaveLength(2);
+    });
+  });
+  // ---------------------------------------------------------------
+  // Proposta congelada -> PDF no card (2026-09-28)
+  // ---------------------------------------------------------------
+  describe('upsertProposta', () => {
+    const HTML = '<html><body><h1>Proposta</h1></body></html>';
+    const HASH = createHash('sha256').update(HTML, 'utf8').digest('hex');
+
+    function payload(over: Record<string, unknown> = {}) {
+      return {
+        opportunity_id: OPPORTUNITY_ID,
+        orcamento_id: 3011,
+        documento_versao: 1,
+        codigo_verificacao: 'ABCD1234',
+        nome_arquivo: 'Proposta 3011-26 Ver. 1.0 CLIENTE LTDA',
+        html: HTML,
+        html_sha256: HASH,
+        ...over,
+      } as never;
+    }
+
+    it('gera o PDF e grava o anexo com o usuario-sistema', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
+
+      const res = await service.upsertProposta(payload());
+
+      expect(deps.pdf.renderPdf).toHaveBeenCalledWith(HTML);
+      expect(deps.storage.upload).toHaveBeenCalledTimes(1);
+      const [caminho, bytes, tipo] = deps.storage.upload.mock
+        .calls[0] as unknown[];
+      expect(caminho).toContain(
+        `${WORKSPACE_ID}/opportunities/${OPPORTUNITY_ID}/`,
+      );
+      expect(caminho).toContain('(ABCD1234).pdf');
+      expect(Buffer.isBuffer(bytes)).toBe(true);
+      expect(tipo).toBe('application/pdf');
+
+      const chamadas = deps.tx.opportunityAttachment.create.mock
+        .calls as unknown[][];
+      const criado = chamadas[0][0] as { data: Record<string, unknown> };
+      // Quem enviou e o sistema: e o que impede qualquer pessoa de remover
+      // a proposta oficial pela tela (so o autor do anexo pode).
+      expect(criado.data.uploadedBy).toBe(
+        '00000000-0000-4000-8000-000000000000',
+      );
+      expect(criado.data.mimeType).toBe('application/pdf');
+      expect(res.ja_existia).toBe(false);
+      expect(res.attachment_id).toBe(ATTACHMENT_ID);
+      expect(res.pdf_sha256).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('recusa quando o HTML nao corresponde ao hash da proposta congelada', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
+
+      await expect(
+        service.upsertProposta(payload({ html_sha256: 'b'.repeat(64) })),
+      ).rejects.toThrow(/não corresponde ao hash/);
+
+      // Nada de PDF nem de anexo: documento que nao casa com registro nenhum
+      // nao entra no card.
+      expect(deps.pdf.renderPdf).not.toHaveBeenCalled();
+      expect(deps.storage.upload).not.toHaveBeenCalled();
+      expect(deps.tx.opportunityAttachment.create).not.toHaveBeenCalled();
+    });
+
+    it('nao duplica: reenvio do mesmo codigo devolve o anexo existente', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
+      deps.tx.opportunityAttachment.findFirst.mockResolvedValue({
+        id: ATTACHMENT_ID,
+        storagePath: 'caminho/antigo.pdf',
+        sizeBytes: BigInt(1234),
+      });
+
+      const res = await service.upsertProposta(payload());
+
+      expect(res.ja_existia).toBe(true);
+      expect(res.bytes).toBe(1234);
+      expect(deps.pdf.renderPdf).not.toHaveBeenCalled();
+      expect(deps.storage.upload).not.toHaveBeenCalled();
+    });
+
+    it('recusa oportunidade de outro workspace com 404, nao 403', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue(null);
+
+      await expect(service.upsertProposta(payload())).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(deps.pdf.renderPdf).not.toHaveBeenCalled();
+    });
+
+    it('sanea o nome do arquivo e carimba o codigo de verificacao', () => {
+      expect(nomeArquivoProposta('Proposta 3011/26 Ver. 1.0', 'ABCD1234')).toBe(
+        'Proposta 3011_26 Ver. 1.0 (ABCD1234).pdf',
+      );
+      // Path traversal e extensao repetida nao passam.
+      expect(nomeArquivoProposta('../../etc/passwd.pdf', 'ZZZZ0000')).toBe(
+        '____etc_passwd (ZZZZ0000).pdf',
+      );
+      expect(nomeArquivoProposta('   ', 'ZZZZ0000')).toBe(
+        'Proposta (ZZZZ0000).pdf',
+      );
     });
   });
 });

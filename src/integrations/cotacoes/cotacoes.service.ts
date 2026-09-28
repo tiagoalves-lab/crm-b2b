@@ -7,10 +7,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, type Company, type OpportunityStatus } from '@prisma/client';
-import { timingSafeEqual } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { SupabaseUserService } from '../../memberships/supabase-user.service';
+import { HtmlPdfService } from '../../pdf/html-pdf.service';
 import { OpportunityService } from '../../opportunities/opportunity.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SupabaseStorageService } from '../../storage/supabase-storage.service';
 import {
   TenantContextService,
   type TenantTx,
@@ -26,6 +28,7 @@ import {
 } from './dto/trello-status-query.dto';
 import { TrelloVinculoDto } from './dto/trello-vinculo.dto';
 import { UpsertClienteDto } from './dto/upsert-cliente.dto';
+import { UpsertPropostaDto } from './dto/upsert-proposta.dto';
 
 // Mesmos sentinelas do webhook do Meta (meta-leads-webhook.service.ts):
 // integração é sempre do workspace da Gama, e o ator é o usuário-sistema.
@@ -115,6 +118,11 @@ export class CotacoesService {
     // representante. Mesmo uso que o módulo do eGestor faz pra casar
     // vendedor do ERP com membro do CRM.
     private readonly supabaseUsers: SupabaseUserService,
+    // Proposta congelada chega como HTML e sai como PDF anexado ao card:
+    // o Chromium fica no HtmlPdfService e o arquivo no bucket privado de
+    // anexos (mesmo bucket das tarefas, prefixo de oportunidade).
+    private readonly pdf: HtmlPdfService,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
   // Controle substituto do login nas rotas @Public() deste módulo (decisão
@@ -571,6 +579,117 @@ export class CotacoesService {
     );
   }
 
+  // "Enviar proposta ao CRM" (gama-webapp/planejamento/integracao-crm.md §18).
+  // O app de cotações monta e CONGELA o documento no servidor dele e manda o
+  // HTML pra cá; aqui ele vira PDF e entra como anexo do card.
+  //
+  // Quatro coisas que o código não deixa óbvias:
+  // - **O render NÃO acontece dentro da transação.** Virar 28 páginas A4 em
+  //   PDF leva segundos; segurar uma transação aberta nesse tempo prende
+  //   conexão do pool e pode estourar o timeout do tenant. São duas idas ao
+  //   banco (achar/conferir antes, gravar depois) com o trabalho pesado no
+  //   meio, fora de transação.
+  // - **Idempotência pelo código de verificação**: clique repetido (ou
+  //   reenvio depois de um erro de rede) devolve o anexo que já existe em vez
+  //   de duplicar a proposta no card. Documento novo tem código novo, porque
+  //   o outro lado congela uma versão nova a cada envio.
+  // - **`uploadedBy` é o usuário-sistema**, e o CRM só deixa remover anexo
+  //   quem enviou (OpportunityAttachmentService.remove). É isso — e não uma
+  //   permissão nova — que faz a proposta oficial não poder ser apagada nem
+  //   trocada por ninguém pela tela.
+  // - **O hash é conferido antes de gerar o PDF.** Se o que chegou não bate
+  //   com o que está congelado do outro lado, nada é gravado: PDF que não
+  //   corresponde a um registro é pior que nenhum PDF.
+  async upsertProposta(dto: UpsertPropostaDto): Promise<{
+    opportunity_id: string;
+    attachment_id: string;
+    file_name: string;
+    storage_path: string;
+    pdf_sha256: string;
+    bytes: number;
+    ja_existia: boolean;
+  }> {
+    const workspaceId = await this.workspaceId();
+    const codigo = dto.codigo_verificacao.toUpperCase();
+    const fileName = nomeArquivoProposta(dto.nome_arquivo, codigo);
+
+    const jaGravado = await this.tenantContext.run(
+      this.ctxSistema(workspaceId),
+      async (tx) => {
+        const oportunidade = await tx.opportunity.findFirst({
+          where: { id: dto.opportunity_id, workspaceId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!oportunidade) {
+          // 404 e não 403: recurso fora do escopo do token não revela que
+          // existe em outro workspace (seção 8 do plano).
+          throw new NotFoundException('Oportunidade não encontrada.');
+        }
+        const existente = await tx.opportunityAttachment.findFirst({
+          where: { opportunityId: oportunidade.id, fileName },
+          select: { id: true, storagePath: true, sizeBytes: true },
+        });
+        return existente;
+      },
+    );
+
+    if (jaGravado) {
+      return {
+        opportunity_id: dto.opportunity_id,
+        attachment_id: jaGravado.id,
+        file_name: fileName,
+        storage_path: jaGravado.storagePath,
+        pdf_sha256: '',
+        bytes: Number(jaGravado.sizeBytes ?? 0),
+        ja_existia: true,
+      };
+    }
+
+    const hashRecebido = createHash('sha256')
+      .update(dto.html, 'utf8')
+      .digest('hex');
+    if (hashRecebido !== dto.html_sha256.toLowerCase()) {
+      throw new BadRequestException(
+        'O HTML recebido não corresponde ao hash da proposta congelada.',
+      );
+    }
+
+    const pdf = await this.pdf.renderPdf(dto.html);
+    const pdfSha256 = createHash('sha256').update(pdf).digest('hex');
+    const storagePath = `${workspaceId}/opportunities/${dto.opportunity_id}/${randomUUID()}-${fileName}`;
+    await this.storage.upload(storagePath, pdf, 'application/pdf');
+
+    const attachment = await this.tenantContext.run(
+      this.ctxSistema(workspaceId),
+      async (tx) =>
+        tx.opportunityAttachment.create({
+          data: {
+            opportunityId: dto.opportunity_id,
+            storagePath,
+            fileName,
+            mimeType: 'application/pdf',
+            sizeBytes: pdf.length,
+            uploadedBy: SYSTEM_ACTOR_USER_ID,
+          },
+          select: { id: true },
+        }),
+    );
+
+    return {
+      opportunity_id: dto.opportunity_id,
+      attachment_id: attachment.id,
+      file_name: fileName,
+      storage_path: storagePath,
+      pdf_sha256: pdfSha256,
+      bytes: pdf.length,
+      ja_existia: false,
+    };
+  }
+
+  diagnosticoPdf(): Promise<{ ok: boolean; versao?: string; erro?: string }> {
+    return this.pdf.diagnostico();
+  }
+
   // Grava as mensagens do cartão que ainda não estão no card. A chave de
   // idempotência é `external_ref` (id da action no Trello): o que já foi
   // espelhado não entra de novo, e comentário escrito por gente no CRM
@@ -868,6 +987,24 @@ export class CotacoesService {
       atualizado_em: c.updatedAt.toISOString(),
     };
   }
+}
+
+// Nome do arquivo do anexo. O app de cotações já monta o nome no padrão dos
+// PDFs antigos da Gama ("Proposta 3011-26 Ver. 1.0 CLIENTE LTDA"); aqui só se
+// acrescenta o código de verificação e se tira o que o Storage/Windows não
+// aceitam. As regras de saneamento são as mesmas do buildStoragePath do
+// OpportunityAttachmentService (path traversal e caractere fora do conjunto
+// seguro) — quem mexer numa, olhe a outra.
+export function nomeArquivoProposta(base: string, codigo: string): string {
+  const limpo = base
+    .replace(/\.pdf$/i, '')
+    .replace(/[^a-zA-Z0-9 ._-]/g, '_')
+    .replace(/\.{2,}/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 150);
+  const nome = limpo.length > 0 ? limpo : 'Proposta';
+  return `${nome} (${codigo}).pdf`;
 }
 
 interface ComentarioEspelhado {
