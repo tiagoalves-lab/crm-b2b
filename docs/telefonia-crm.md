@@ -150,7 +150,18 @@ Duas constatações que mudaram o plano original:
 
 **Etapa 3 — Transcrição e resumo automáticos**
 - A conversa vira texto e resumo na Timeline, poucos minutos depois de
-  desligar.
+  desligar. **Guardamos as duas coisas**: a transcrição literal, palavra
+  por palavra, e um resumo curto por cima dela (o que o cliente pediu,
+  objeções, próximo passo). O resumo é o que se lê na Timeline; a
+  transcrição fica logo abaixo, recolhida, para quando alguém precisar do
+  que foi dito exatamente. Resumo sem o original vira boato; original sem
+  resumo ninguém lê.
+- **A transcrição separa quem falou**, marcando cada fala como do
+  representante ou do cliente. A separação é feita pela leitura do áudio;
+  nome próprio do cliente só aparece se ele se identificar na conversa.
+  Na construção desta etapa eu confiro se o programa de telefone consegue
+  gravar cada lado num canal separado — se conseguir, a marcação passa a
+  ser exata, sem chance de trocar as falas.
 - Esforço estimado: cerca de 2 dias.
 
 **Etapa 4 — Fila do dia e números da operação**

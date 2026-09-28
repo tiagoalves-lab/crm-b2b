@@ -21,3 +21,8 @@ export const CONTACT_REQUIRED_TASK_TYPES: TaskType[] = [
   'visita',
   'email',
 ];
+
+// Teto de pessoas envolvidas numa reunião (2026-09-24) — número
+// arbitrário e generoso, só pra impedir payload absurdo; reunião de
+// verdade tem meia dúzia de gente.
+export const PARTICIPANTS_MAX = 20;

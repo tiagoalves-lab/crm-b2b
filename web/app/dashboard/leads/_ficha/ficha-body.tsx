@@ -2,7 +2,7 @@ import Link from "next/link";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import type { Activity, Membership } from "@/lib/api/types";
 import { effectiveTier, TIER_LABEL } from "@/lib/api/raw-leads";
-import { formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
+import { formatDateTimeBR, formatPrazoBR } from "@/lib/format-date";
 import type { LeadFicha } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
 import AddNoteForm from "../../empresas/_ficha/add-note-form";
@@ -156,7 +156,9 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
             <div key={t.id} className="drawer-list-item">
               <div>
                 <div className="dli-title">{t.title}</div>
-                <div className="dli-sub">{t.dueAt ? `vence ${formatDateOnlyBR(t.dueAt)}` : "sem prazo"}</div>
+                <div className="dli-sub">
+                  {t.dueAt ? `vence ${formatPrazoBR(t.dueAt, t.dueHasTime)}` : "sem prazo"}
+                </div>
               </div>
               <span className={t.status === "done" ? "pill pill-green" : "pill pill-gray"}>
                 {t.status === "done" ? "Concluída" : "Pendente"}

@@ -12,7 +12,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { dayKeyBR, formatDateOnlyBR } from "@/lib/format-date";
+import {
+  dayKeyBR,
+  formatDateOnlyBR,
+  formatPrazoBR,
+  inputLocalParaISO,
+  isoParaInputLocal,
+} from "@/lib/format-date";
 import { moveOpportunityCloseDateAction } from "../pipeline/actions";
 import { moveTaskDueDateAction } from "./actions";
 
@@ -28,6 +34,9 @@ export interface CalendarTask {
   id: string;
   title: string;
   dueAt: string | null;
+  // Prazo com hora marcada (2026-09-23) — muda em que dia o card cai
+  // (instante real em Brasília × meia-noite UTC) e o que o arrasto grava.
+  dueHasTime: boolean;
   done: boolean;
   tipoLabel: string;
   assigneeLabel: string;
@@ -52,11 +61,16 @@ export interface CalendarOpportunity {
 // Id do arrasto das oportunidades — separa das tarefas no mesmo DndContext.
 const OPP_PREFIX = "opp:";
 
-// dueAt vem de um <input type="date"> (sem hora) — o backend grava como
-// meia-noite UTC. Agrupar por toISOString().slice(0,10) evita o dia
-// "vazar" pro dia anterior por causa de fuso local (bug clássico de
-// calendário com Date local vs. UTC).
-function dueDateKey(dueAt: string): string {
+// Prazo só-data vem de um <input type="date"> — o backend grava como
+// meia-noite UTC, e agrupar por toISOString().slice(0,10) evita o dia
+// "vazar" pro anterior por causa de fuso local (bug clássico de calendário
+// com Date local vs. UTC).
+//
+// Prazo COM hora (2026-09-23) é o contrário: é instante real, então o dia
+// é aquele em que ele cai em BRASÍLIA. Uma reunião às 22h de segunda é
+// 01h de terça em UTC — pela régua de cima cairia no dia errado.
+function dueDateKey(dueAt: string, comHora = false): string {
+  if (comHora) return dayKeyBR(new Date(dueAt));
   return new Date(dueAt).toISOString().slice(0, 10);
 }
 
@@ -179,7 +193,7 @@ export default function CalendarView({
   const tasksByDay = new Map<string, CalendarTask[]>();
   for (const task of rows) {
     if (!task.dueAt) continue;
-    const key = dueDateKey(task.dueAt);
+    const key = dueDateKey(task.dueAt, task.dueHasTime);
     const list = tasksByDay.get(key) ?? [];
     list.push(task);
     tasksByDay.set(key, list);
@@ -237,17 +251,31 @@ export default function CalendarView({
     }
 
     const task = rows.find((t) => t.id === draggedId);
-    if (!task || !task.dueAt || dueDateKey(task.dueAt) === targetKey) return;
+    if (!task || !task.dueAt || dueDateKey(task.dueAt, task.dueHasTime) === targetKey) return;
+    // Tarefa com hora marcada troca de DIA e mantém o HORÁRIO — arrastar
+    // uma reunião das 14h pro dia seguinte não pode virar meia-noite.
+    const horaOriginal = task.dueHasTime ? isoParaInputLocal(task.dueAt).slice(11, 16) : null;
+    const novoPrazo = horaOriginal
+      ? inputLocalParaISO(`${targetKey}T${horaOriginal}`)
+      : nextDate;
     const previous = rows;
     setError(null);
-    setRows(previous.map((t) => (t.id === draggedId ? { ...t, dueAt: nextDate } : t)));
-    const res = await moveTaskDueDateAction(draggedId, targetKey);
+    setRows(previous.map((t) => (t.id === draggedId ? { ...t, dueAt: novoPrazo } : t)));
+    const res = await moveTaskDueDateAction(
+      draggedId,
+      targetKey,
+      horaOriginal ? novoPrazo : undefined,
+    );
     if (!res.ok) {
       setRows(previous);
       setError(res.message);
       return;
     }
-    window.dispatchEvent(new CustomEvent("crm:toast", { detail: `Prazo alterado para ${formatDateOnlyBR(nextDate)}` }));
+    window.dispatchEvent(
+      new CustomEvent("crm:toast", {
+        detail: `Prazo alterado para ${formatPrazoBR(novoPrazo, Boolean(horaOriginal))}`,
+      }),
+    );
   }
 
   return (

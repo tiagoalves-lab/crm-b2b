@@ -142,6 +142,17 @@ enum RawLeadStatus {
   descartado
 }
 
+// Etapas do funil de prospecção (2026-09-23) — ver
+// src/raw-leads/etapa-funil.ts pro porquê de a faixa ter deixado de ser
+// derivada de status + manualTier.
+enum RawLeadEtapa {
+  entrada
+  andamento
+  reuniao
+  qualificado
+  negociacao
+}
+
 enum LeadFonte {
   econodata
   apify
@@ -746,6 +757,11 @@ model RawLead {
   score             Int           @default(0)
   manualTier        LeadTier?     @map("manual_tier")
   status            RawLeadStatus @default(novo)
+  // Etapa do funil de prospecção (2026-09-23) — coluna do quadro Kanban
+  // da Prospecção, movida pelo arrasto do cartão e empurrada sozinha pelos
+  // eventos do lead (ver src/raw-leads/etapa-funil.ts). Descartado não é
+  // etapa: continua em `status`, e o lead guarda a etapa em que parou.
+  etapa             RawLeadEtapa  @default(entrada)
   promotedCompanyId String?       @map("promoted_company_id") @db.Uuid
   // Tags livres de organização do usuário (pedido direto, 2026-08-05, fora
   // do SPEC-CRM-GAMA.md original) — coluna própria, não reaproveita
@@ -795,6 +811,7 @@ model RawLead {
   promotedCompany Company?  @relation(fields: [promotedCompanyId], references: [id])
 
   @@index([workspaceId, status])
+  @@index([workspaceId, etapa])
   @@index([workspaceId, ownerUserId])
   @@map("raw_leads")
 }
@@ -1013,6 +1030,13 @@ model Task {
   title          String
   description    String?
   dueAt          DateTime?  @map("due_at")
+  // O prazo tem HORA marcada? (2026-09-23) Até aqui toda tarefa era só
+  // dia: o campo vinha de um <input type="date"> e virava meia-noite UTC,
+  // e a tela formatava em UTC de propósito (formatDateOnlyBR). Reunião
+  // agendada precisa de hora, e sem esta marca não dá pra saber se
+  // "00:00" é meia-noite de verdade ou "dia sem hora". Falso em tudo que
+  // já existia.
+  dueHasTime     Boolean    @default(false) @map("due_has_time")
   status         TaskStatus @default(pending)
   tipo           TaskType?
   // Obrigatório (checado no service, não dá pra expressar "obrigatório
@@ -1020,6 +1044,13 @@ model Task {
   // `tipo` é ligação/reunião/visita — contato precisa pertencer à mesma
   // company da tarefa (direta ou via opportunity.companyId).
   contactId      String?    @map("contact_id") @db.Uuid
+  // Pessoas envolvidas na reunião (2026-09-24, pedido do usuário) — os
+  // outros contatos da MESMA empresa que participam, além do contactId
+  // principal. Lista de ids em vez de tabela de ligação porque não
+  // carrega dado próprio (papel, confirmação) e só é lida junto da
+  // tarefa — mesma escolha de tags logo abaixo. O service impede que o
+  // contato principal entre aqui duas vezes.
+  participantContactIds String[] @default([]) @map("participant_contact_ids") @db.Uuid
   // Carimbo de itens da oportunidade de origem (2026-09-04) — só faz
   // sentido com opportunityId preenchido; validado no service contra a
   // lista da oportunidade (opportunities/opportunity-tags.ts).

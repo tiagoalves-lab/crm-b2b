@@ -36,12 +36,6 @@ const ABA_DE: Record<string, Aba> = {
   descartados: "descartados",
 };
 
-// Sentinela pro filtro "Sem tag" (pedido do usuário, 2026-08-10) — valor
-// de query string que não colide com tag nenhuma de verdade (tag livre
-// digitada pelo usuário nunca começa com "__"), pra distinguir de
-// currentTag === "" (que significa "sem filtro", mostra tudo).
-const NO_TAG_VALUE = "__sem_tag__";
-
 // Uma linha por LEAD CONVERTIDO do CRM (2026-09-21, pedido do usuário:
 // "os leads convertidos estão herdando a importação ainda, retratar
 // somente registros do CRM").
@@ -116,9 +110,11 @@ async function carregarConvertidos(token: string, aprovados: RawLead[]): Promise
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; tier?: string; q?: string; tag?: string; segmento?: string }>;
+  // `tag`/`segmento` saíram da querystring em 2026-09-24: filtrar virou
+  // estado do navegador (modal de Filtros), sem recarregar a tela.
+  searchParams: Promise<{ error?: string; tier?: string; q?: string }>;
 }) {
-  const { error, tier, q, tag, segmento } = await searchParams;
+  const { error, tier, q } = await searchParams;
   const token = await getServerAccessToken();
 
   const [{ items: novos }, { items: aprovadosItems }, { items: descartadosItems }, membros] =
@@ -151,48 +147,38 @@ export default async function LeadsPage({
       : "prospects";
   const abaAtual: Aba = ABA_DE[currentTier] ?? "prospects";
   const search = (q ?? "").trim().toLowerCase();
-  const currentTag = (tag ?? "").trim();
-  const currentSegmento = (segmento ?? "").trim();
 
-  // Filtro por tag/segmento (2026-08-05, pedido direto do usuário) — mesmo
-  // padrão do filtro por tier/busca: tudo client-side a partir da lista já
-  // carregada (até 200 leads), sem round-trip novo no backend. O conjunto
-  // de valores disponíveis pro filtro vem da mesma base que a aba atual
-  // usa (novos ou descartados), pra nunca oferecer um valor sem lead
-  // nenhum pra mostrar naquela aba.
-  const tagBase = abaAtual === "descartados" ? descartadosItems : novos;
-  const availableTags = Array.from(new Set(tagBase.flatMap((r) => r.tags))).sort((a, b) =>
+  // Tags e segmentos que existem na Prospecção inteira — é o que o modal
+  // de filtro oferece (2026-09-24). A lista sai das TRÊS bases, não só da
+  // aba aberta: filtrar é estado do navegador agora e vale nas quatro
+  // abas e no quadro ao mesmo tempo, então uma tag que só existe em
+  // Descartados não pode sumir da lista por causa da aba em que a pessoa
+  // está.
+  const baseCompleta = [...novos, ...aprovadosItems, ...descartadosItems];
+  const availableTags = Array.from(new Set(baseCompleta.flatMap((r) => r.tags))).sort((a, b) =>
     a.localeCompare(b, "pt-BR"),
   );
   const availableSegmentos = Array.from(
-    new Set(tagBase.map((r) => r.segmento).filter((s): s is string => Boolean(s))),
+    new Set(baseCompleta.map((r) => r.segmento).filter((s): s is string => Boolean(s))),
   ).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  // Só oferece o chip "Sem tag" se existir pelo menos um lead sem tag na
-  // aba atual — mesmo critério de availableTags (nunca mostra opção sem
-  // nada pra filtrar).
-  const hasUntagged = tagBase.some((r) => r.tags.length === 0);
 
   const searchFilter = (r: (typeof novos)[number]) =>
     !search ||
     r.razaoSocial.toLowerCase().includes(search) ||
     (r.cnaePrincipal ?? "").toLowerCase().includes(search) ||
     (r.cnaeDescricao ?? "").toLowerCase().includes(search);
-  const tagFilter = (r: (typeof novos)[number]) =>
-    !currentTag || (currentTag === NO_TAG_VALUE ? r.tags.length === 0 : r.tags.includes(currentTag));
-  const segmentoFilter = (r: (typeof novos)[number]) => !currentSegmento || r.segmento === currentSegmento;
 
-  // O servidor entrega as duas bases já filtradas por busca/tag/segmento;
-  // quem separa Prospects × Qualificados × Descartados é o componente de
-  // abas, no navegador (ver prospeccao-tabs.tsx).
+  // O servidor entrega as bases inteiras; quem separa as abas e quem
+  // aplica tag/segmento é o componente de abas, no navegador (ver
+  // prospeccao-tabs.tsx).
   const novosFiltrados = novos
     .filter(searchFilter)
-    .filter(tagFilter)
-    .filter(segmentoFilter)
     .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial, "pt-BR"));
-  const descartadosFiltrados = descartadosItems
-    .filter(searchFilter)
-    .filter(tagFilter)
-    .filter(segmentoFilter);
+  const descartadosFiltrados = descartadosItems.filter(searchFilter);
+  // Os convertidos como LEAD (2026-09-23) — é o que o quadro Kanban põe
+  // na coluna Negociação/Fechamento. A lista agregada por empresa
+  // (`convertidos`, logo abaixo) continua servindo a aba da visão lista.
+  const aprovadosFiltrados = aprovadosItems.filter(searchFilter);
 
   // Leads convertidos: uma linha por empresa que tem proposta no Pipeline.
   // Carregado em TODA visita, não só quando a aba está aberta (pedido do
@@ -226,19 +212,11 @@ export default async function LeadsPage({
   // tarefas-table.tsx), então vira objeto plano antes de repassar.
   const contactsByCompanyId: Record<string, Contact[]> = Object.fromEntries(contactsByCompany);
 
-  // Os links de tag/segmento preservam a aba atual na querystring — quem
-  // troca de aba é o componente cliente, mas o link precisa voltar pra
-  // mesma aba em que a pessoa estava.
-  const tagHref = (t: string) =>
-    `/dashboard/leads?tier=${currentTier}${q ? `&q=${encodeURIComponent(q)}` : ""}${t ? `&tag=${encodeURIComponent(t)}` : ""}${currentSegmento ? `&segmento=${encodeURIComponent(currentSegmento)}` : ""}`;
-  const segmentoHref = (s: string) =>
-    `/dashboard/leads?tier=${currentTier}${q ? `&q=${encodeURIComponent(q)}` : ""}${currentTag ? `&tag=${encodeURIComponent(currentTag)}` : ""}${s ? `&segmento=${encodeURIComponent(s)}` : ""}`;
-
   return (
     <TopbarFilterProvider>
       <div className="topbar">
         <div>
-          <div className="page-title">Prospecção</div>
+          <div className="page-title">Funil de vendas</div>
           <div className="page-sub">Relação de empresas com oportunidades de negócios</div>
         </div>
         <TopbarFilter placeholder="Buscar razão social, CNPJ, CNAE, cidade…" />
@@ -293,47 +271,22 @@ export default async function LeadsPage({
           </div>
         </div>
 
-        {(availableTags.length > 0 || hasUntagged) && (
-          <div className="tag-filter-row">
-            <Link href={tagHref("")} className={currentTag === "" ? "tag-chip active" : "tag-chip"}>
-              Todas as tags
-            </Link>
-            {hasUntagged && (
-              <Link
-                href={tagHref(NO_TAG_VALUE)}
-                className={currentTag === NO_TAG_VALUE ? "tag-chip active" : "tag-chip"}
-              >
-                Sem tag
-              </Link>
-            )}
-            {availableTags.map((t) => (
-              <Link key={t} href={tagHref(t)} className={currentTag === t ? "tag-chip active" : "tag-chip"}>
-                {t}
-              </Link>
-            ))}
-          </div>
-        )}
-
-        {availableSegmentos.length > 0 && (
-          <div className="tag-filter-row">
-            <Link href={segmentoHref("")} className={currentSegmento === "" ? "tag-chip active" : "tag-chip"}>
-              Todos os segmentos
-            </Link>
-            {availableSegmentos.map((s) => (
-              <Link key={s} href={segmentoHref(s)} className={currentSegmento === s ? "tag-chip active" : "tag-chip"}>
-                {s}
-              </Link>
-            ))}
-          </div>
-        )}
+        {/* As duas fileiras de pastilhas de tag/segmento que ficavam aqui
+            foram apagadas em 2026-09-24: viraram o botão "Filtros" da
+            barra, que abre o modal de seleção múltipla
+            (leads/filtro-modal.tsx). Com 27 tags a fileira tomava três
+            linhas da tela e só deixava escolher uma por vez. */}
 
         <ProspeccaoTabs
           abaInicial={abaAtual}
           novos={novosFiltrados}
+          aprovados={aprovadosFiltrados}
           descartados={descartadosFiltrados}
           convertidos={convertidos}
           contactsByCompanyId={contactsByCompanyId}
           nomePorUserId={nomePorUserId}
+          tagsDisponiveis={availableTags}
+          segmentosDisponiveis={availableSegmentos}
         />
       </div>
     </TopbarFilterProvider>

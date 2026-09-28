@@ -20,6 +20,7 @@ import { BulkRawLeadsDto } from './dto/bulk-raw-leads.dto';
 import { CreateRawLeadDto } from './dto/create-raw-lead.dto';
 import { ListRawLeadsQueryDto } from './dto/list-raw-leads-query.dto';
 import { UpdateLeadCadastroDto } from './dto/update-lead-cadastro.dto';
+import { UpdateLeadEtapaDto } from './dto/update-lead-etapa.dto';
 import { UpdateLeadSegmentoDto } from './dto/update-lead-segmento.dto';
 import { UpdateLeadTagsDto } from './dto/update-lead-tags.dto';
 import { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
@@ -251,6 +252,24 @@ export class RawLeadController {
         role: membership.role,
       },
       (tx) => this.rawLeads.setManualTier(tx, membership, id, dto),
+    );
+  }
+
+  // Etapa do funil de prospecção — o arrasto do cartão no quadro
+  // (2026-09-23). Ver RawLeadService#setEtapa.
+  @Patch(':id/etapa')
+  setEtapa(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLeadEtapaDto,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.rawLeads.setEtapa(tx, membership, id, dto),
     );
   }
 

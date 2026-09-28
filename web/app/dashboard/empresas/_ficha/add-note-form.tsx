@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { CONTACT_REQUIRED_ACTIVITY_SUBTIPOS } from "@/lib/api/activities";
+import { inputLocalParaISO } from "@/lib/format-date";
 import type { Contact } from "@/lib/api/types";
 import { createContactInlineAction } from "../../tarefas/actions";
 import { createNoteRpcAction } from "../actions";
@@ -44,6 +45,10 @@ export default function AddNoteForm({
   const refresh = useRefresh();
   const [subtipo, setSubtipo] = useState(subtipoOptions[0]?.value ?? "nota");
   const [texto, setTexto] = useState("");
+  // Data/hora da reunião (2026-09-23) — texto do <input
+  // type="datetime-local">, no horário de Brasília. Vazio = reunião que
+  // já aconteceu: registra na Timeline e não cria tarefa.
+  const [reuniaoEm, setReuniaoEm] = useState("");
   const [localContacts, setLocalContacts] = useState<Contact[]>(contacts);
   const [selectedContactId, setSelectedContactId] = useState("");
   const [creating, setCreating] = useState(false);
@@ -61,6 +66,7 @@ export default function AddNoteForm({
   }, [contacts]);
 
   const requiresContact = CONTACT_REQUIRED_ACTIVITY_SUBTIPOS.includes(subtipo);
+  const ehReuniao = subtipo === "reuniao";
 
   async function handleCreateContact() {
     const trimmedNome = nome.trim();
@@ -109,6 +115,9 @@ export default function AddNoteForm({
       subtipo,
       texto: trimmedTexto,
       contactId: selectedContactId || undefined,
+      // Só a reunião agenda; nos outros tipos o campo nem aparece.
+      reuniaoEm: ehReuniao && reuniaoEm ? inputLocalParaISO(reuniaoEm) : undefined,
+      contatoNome: localContacts.find((c) => c.id === selectedContactId)?.nome,
     });
     setBusy(false);
     if (!res.ok) {
@@ -117,6 +126,7 @@ export default function AddNoteForm({
     }
     setTexto("");
     setSelectedContactId("");
+    setReuniaoEm("");
     refresh();
   }
 
@@ -209,6 +219,21 @@ export default function AddNoteForm({
               </div>
             </div>
           )}
+        </div>
+      )}
+      {ehReuniao && (
+        <div className="field" style={{ marginTop: 10 }}>
+          <label htmlFor="reuniao-em">Data e hora da reunião</label>
+          <input
+            id="reuniao-em"
+            type="datetime-local"
+            value={reuniaoEm}
+            onChange={(event) => setReuniaoEm(event.target.value)}
+          />
+          <div className="field-hint">
+            Preenchido, cria a reunião em Tarefas com esse horário. Deixe em branco se a reunião já
+            aconteceu.
+          </div>
         </div>
       )}
       <textarea value={texto} onChange={(event) => setTexto(event.target.value)} placeholder={placeholder} />

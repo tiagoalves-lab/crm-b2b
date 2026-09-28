@@ -14,7 +14,7 @@ import {
 import type { Membership, TaskStatus, TaskWithDetails } from "@/lib/api/types";
 import type { TaskAttachment } from "@/lib/api/task-attachments";
 import type { UpdateTaskInput } from "@/lib/api/tasks";
-import { formatDateTimeBR } from "@/lib/format-date";
+import { formatDateTimeBR, inputLocalParaISO } from "@/lib/format-date";
 import { REFRESH_SESSION_KEY, TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { AttachmentsSection } from "@/app/dashboard/_overlay/attachments";
@@ -290,6 +290,14 @@ export function DetailBody() {
   const podeLigar = hasPermission(me.membership.role, me.membership.permissions, "telefonia", "criar");
   const contatoDaTarefa = contacts.find((c) => c.id === task.contactId);
 
+  // Texto do campo de prazo → o que o backend grava. Com hora, converte
+  // de Brasília pra ISO; sem hora, segue o dia cru (o backend guarda como
+  // meia-noite UTC, que é a régua de "dia sem horário" do projeto).
+  function prazoISO(valor: string | undefined, comHora: string | undefined): string | undefined {
+    if (!valor) return undefined;
+    return comHora ? inputLocalParaISO(valor) : valor;
+  }
+
   function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
@@ -303,9 +311,17 @@ export function DetailBody() {
         saveTaskDetailAction(task.id, {
           title: campo("title"),
           description: campo("description") ?? "",
-          dueAt: campo("dueAt"),
+          // Prazo com hora vem do input em horário de Brasília e precisa
+          // virar instante (o datetime-local não carrega fuso).
+          dueAt: prazoISO(campo("dueAt"), campo("dueHasTime")),
+          dueHasTime: Boolean(campo("dueHasTime")),
           tipo: campo("tipo") as UpdateTaskInput["tipo"],
           contactId: campo("contactId"),
+          // Pessoas envolvidas (2026-09-24) — lista inteira a cada
+          // salvamento; vazia quando o tipo deixou de ser reunião.
+          participantContactIds: fd
+            .getAll("participantContactIds")
+            .filter((v): v is string => typeof v === "string"),
           assigneeUserId: campo("assigneeUserId"),
           tags: tagOptions.length > 0 ? fd.getAll("tags").filter((t): t is string => typeof t === "string") : undefined,
         }),
@@ -417,21 +433,18 @@ export function DetailBody() {
             <TagPicker options={tagOptions} selected={tags} onChange={setTags} name="tags" disabled={busy !== null} />
           </div>
         )}
+        {/* Tipo, Prazo e Contato saem juntos daqui (2026-09-23): o
+            formato do Prazo depende do Tipo — reunião tem hora —, e o
+            Tipo é estado do TipoContatoFields. */}
         <TipoContatoFields
           initialTipo={task.tipo}
           contactId={task.contactId}
           contacts={contacts}
           companyId={companyId}
+          initialDueAt={task.dueAt}
+          initialDueHasTime={task.dueHasTime}
+          initialParticipantIds={task.participantContactIds ?? []}
         />
-        <label>
-          Prazo
-          <input
-            name="dueAt"
-            type="date"
-            defaultValue={task.dueAt ? task.dueAt.slice(0, 10) : ""}
-            required
-          />
-        </label>
         <label>
           Responsável
           <select name="assigneeUserId" defaultValue={task.assigneeUserId} required>

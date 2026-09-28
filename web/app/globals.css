@@ -2805,6 +2805,171 @@ button.tag-chip.active {
   color: var(--text-primary);
 }
 
+/* Botão "Filtros" da Prospecção (2026-09-24) — abre o modal de seleção
+   de tags/segmentos e mostra quantos filtros estão valendo, como o
+   "Filtros: 3 Aplicados" do Auvo. Quando há filtro ativo ele fica cheio,
+   pra ninguém estranhar uma lista curta sem saber o motivo. */
+.filtro-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Empurra o par de botões de visão junto pra ponta direita da barra. */
+  margin-left: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.filtro-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.filtro-btn.ativo {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.filtro-btn .ic {
+  width: 14px;
+  height: 14px;
+}
+
+/* Conteúdo do modal de filtros */
+.filtro-secao-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.filtro-busca {
+  width: 180px;
+  font-size: 12px;
+  padding: 4px 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+.filtro-modo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.filtro-modo label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.filtro-modo input {
+  width: auto;
+}
+
+/* Lista rolável: 27 tags não cabem na tela sem isto, e o rodapé do modal
+   (Limpar/Aplicar) precisa continuar visível. */
+.filtro-lista {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.filtro-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.filtro-item:last-child {
+  border-bottom: none;
+}
+
+.filtro-item:hover {
+  background: var(--surface-hover);
+}
+
+.filtro-item input {
+  width: auto;
+  margin: 0;
+}
+
+.filtro-item > span:first-of-type {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filtro-contagem {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Alternador Lista × Quadro da Prospecção (2026-09-23) — mesma ideia do
+   par de ícones do Auvo: dois botões grudados, o ativo em destaque. Mora
+   na ponta direita da toolbar, longe das abas, porque não é mais um
+   filtro: é como a mesma informação é desenhada. */
+.visao-toggle {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  gap: 2px;
+}
+
+.visao-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.visao-toggle button:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.visao-toggle button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.visao-toggle .ic {
+  width: 15px;
+  height: 15px;
+}
+
 /* ---------- Definition list de detalhe ---------- */
 .kv {
   display: grid;

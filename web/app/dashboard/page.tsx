@@ -5,9 +5,9 @@ import { companyDisplayName, companyRazaoSocialName } from "@/lib/api/companies"
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listMemberships } from "@/lib/api/memberships";
 import { listPipelines } from "@/lib/api/pipelines";
-import { listRawLeads } from "@/lib/api/raw-leads";
+import { ETAPA_LABEL, listRawLeads } from "@/lib/api/raw-leads";
 import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
-import type { Activity, Membership, Opportunity, Task } from "@/lib/api/types";
+import type { Activity, Membership, Opportunity, RawLeadEtapa, Task } from "@/lib/api/types";
 import { dayKeyBR } from "@/lib/format-date";
 import RecentActivityTable from "./recent-activity-table";
 import WeeklyTasksTable from "./weekly-tasks-table";
@@ -363,13 +363,7 @@ export default async function DashboardPage({
   //     qualificação". Não passou: quem nunca teve prazo registrado
   //     entrou pelo caminho da oportunidade pronta (decisão 6.1), e é
   //     isso que a tela diz agora.
-  const qualificadosNaFila = leadsNovos.filter((l) => l.manualTier !== null).length;
-  const semPrazo = leadsNovos.length - qualificadosNaFila;
   const leadsConvertidos = leadsAprovados.length;
-  // Converteu tendo passado pela qualificação × converteu direto: o prazo
-  // fica gravado no lead depois da conversão (approve() só tira a tag),
-  // então dá pra separar os dois caminhos sem histórico de transição.
-  const convertidosQualificados = leadsAprovados.filter((l) => l.manualTier !== null).length;
 
   // Só o ciclo corrente. Uma carga histórica futura (ou o app de
   // orçamentos, na fase 2) é marcada em origem e cai fora daqui sozinha.
@@ -462,57 +456,90 @@ export default async function DashboardPage({
   // Pendências: o que fazer olhando cada faixa. É o que faltava pro funil
   // "direcionar para alguma linha de ação" (pedido do usuário, 2026-09-21:
   // "olhando para ele como está não sei o que fazer").
-  const semInteracao = leadsNovos.filter((l) => !l.qualifiedAt).length;
   const propostasSemValor = abertasCiclo.filter((o) => Number(o.amount) === 0).length;
   const propostasSemPrazo = abertasCiclo.filter((o) => !o.expectedCloseDate).length;
 
+  // ── As cinco etapas do funil (2026-09-23) ───────────────────────────────
+  // Pedido do usuário: "reestruturar as etapas do funil — Prospectar/
+  // Entrada > Andamento > Reunião > Qualificado > Negociação/Fechamento".
+  //
+  // O estoque de cada faixa agora vem da COLUNA `etapa` do lead (a mesma
+  // que o quadro Kanban da Prospecção move), não de uma derivação de
+  // status + prazo. É o que permitiu existirem as duas faixas do meio —
+  // "já falei com a empresa" e "tem reunião marcada" —, que a régua antiga
+  // não sabia representar.
+  //
+  // O MOVIMENTO no período continua saindo das datas de passagem
+  // (qualifiedAt/convertedAt/discardedAt, 2026-09-21). Andamento e Reunião
+  // não têm data de passagem própria: mostram só o estoque, e as pastilhas
+  // de movimento não são desenhadas quando zeradas — inventar número ali
+  // seria pior que não mostrar.
+  const emTriagemPorEtapa = (etapa: RawLeadEtapa) =>
+    leadsNovos.filter((l) => l.etapa === etapa).length;
+
   const faixas = [
     {
-      nome: "Prospectar",
-      detalhe: "Empresas na fila da Prospecção",
-      agora: semPrazo,
+      nome: ETAPA_LABEL.entrada,
+      detalhe: "Empresas na fila, ainda sem nenhum contato registrado",
+      agora: emTriagemPorEtapa("entrada"),
       entrou: entraramNaJanela,
-      avancou: qualificadosNaJanela,
+      avancou: 0,
       saiu: descartadosNaJanela,
       valor: null as number | null,
       acao:
-        semInteracao > 0
+        emTriagemPorEtapa("entrada") > 0
           ? {
-              texto: `${semInteracao.toLocaleString("pt-BR")} sem prazo de investimento registrado`,
+              texto: `${emTriagemPorEtapa("entrada").toLocaleString("pt-BR")} esperando a primeira abordagem`,
               href: "/dashboard/leads?tier=prospects",
               rotulo: "Abrir fila",
             }
           : null,
     },
     {
-      nome: "Leads Qualificados",
+      nome: ETAPA_LABEL.andamento,
+      detalhe: "SDR já registrou contato, sem reunião marcada",
+      agora: emTriagemPorEtapa("andamento"),
+      entrou: 0,
+      avancou: 0,
+      saiu: 0,
+      valor: null as number | null,
+      acao: null,
+    },
+    {
+      nome: ETAPA_LABEL.reuniao,
+      detalhe: "Reunião marcada ou realizada com o cliente",
+      agora: emTriagemPorEtapa("reuniao"),
+      entrou: 0,
+      avancou: 0,
+      saiu: 0,
+      valor: null as number | null,
+      acao: null,
+    },
+    {
+      nome: ETAPA_LABEL.qualificado,
       detalhe: "Prazo de investimento informado ao SDR",
-      agora: qualificadosNaFila,
+      agora: emTriagemPorEtapa("qualificado"),
       entrou: qualificadosNaJanela,
       avancou: convertidosNaJanela,
       saiu: 0,
       valor: null as number | null,
       acao:
-        qualificadosNaFila > 0
+        emTriagemPorEtapa("qualificado") > 0
           ? {
-              texto: `${qualificadosNaFila} qualificados esperando proposta`,
+              texto: `${emTriagemPorEtapa("qualificado")} qualificados esperando proposta`,
               href: "/dashboard/leads?tier=qualificados",
               rotulo: "Abrir qualificados",
             }
-          : {
-              texto: "Nenhum lead qualificado — a abordagem do SDR ainda não gerou prazo",
-              href: "/dashboard/leads?tier=prospects",
-              rotulo: "Abrir fila",
-            },
+          : null,
     },
     {
-      nome: "Leads Convertidos",
-      detalhe: "Lead do CRM com proposta em andamento no Pipeline",
-      agora: convertidosEmNegociacao,
+      nome: ETAPA_LABEL.negociacao,
+      detalhe: "Lead convertido: proposta em negociação e resultado do período",
+      agora: abertasCiclo.length,
       entrou: convertidosNaJanela,
-      avancou: convertidosComResultado,
-      saiu: 0,
-      valor: null as number | null,
+      avancou: ganhasNaJanela.length,
+      saiu: perdidasNaJanela.length,
+      valor: valorAbertoCiclo,
       acao:
         convertidosSemProposta > 0
           ? {
@@ -520,34 +547,24 @@ export default async function DashboardPage({
               href: "/dashboard/leads?tier=convertidos",
               rotulo: "Abrir convertidos",
             }
-          : null,
-    },
-    {
-      nome: "Venda e Fechamento",
-      detalhe: "Propostas em negociação e o resultado do período",
-      agora: abertasCiclo.length,
-      entrou: abertasCiclo.length,
-      avancou: ganhasNaJanela.length,
-      saiu: perdidasNaJanela.length,
-      valor: valorAbertoCiclo,
-      acao:
-        propostasSemValor + propostasSemPrazo > 0
-          ? {
-              texto: [
-                propostasSemValor > 0 ? `${propostasSemValor} sem valor` : null,
-                propostasSemPrazo > 0 ? `${propostasSemPrazo} sem previsão de fechamento` : null,
-              ]
-                .filter(Boolean)
-                .join(" · "),
-              href: "/dashboard/pipeline",
-              rotulo: "Abrir pipeline",
-            }
-          : null,
+          : propostasSemValor + propostasSemPrazo > 0
+            ? {
+                texto: [
+                  propostasSemValor > 0 ? `${propostasSemValor} sem valor` : null,
+                  propostasSemPrazo > 0 ? `${propostasSemPrazo} sem previsão de fechamento` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                href: "/dashboard/pipeline",
+                rotulo: "Abrir pipeline",
+              }
+            : null,
     },
   ];
   // Metade da largura (2026-09-18): as faixas estreitam menos que na
   // prévia em tela cheia, senão a última fica sem espaço pras pastilhas.
-  const LARGURAS_FUNIL = ["100%", "94%", "88%", "82%"];
+  // Cinco degraus desde 2026-09-23.
+  const LARGURAS_FUNIL = ["100%", "95%", "90%", "85%", "80%"];
 
   // Gráfico do pipeline, ao lado do funil: uma barra por etapa com o valor
   // em aberto. É a leitura operacional ("onde estão as propostas agora"),
@@ -677,15 +694,25 @@ export default async function DashboardPage({
                         <small>{faixa.detalhe}</small>
                       </div>
                       <div className="funil-numeros">
-                        <span className="fchip entrou">
-                          +{faixa.entrou.toLocaleString("pt-BR")} <small>entraram</small>
-                        </span>
+                        {/* Pastilha zerada não é desenhada (2026-09-23):
+                            com cinco faixas, Andamento e Reunião não têm
+                            data de passagem própria, e "+0 entraram" ao
+                            lado do estoque só confunde. "Hoje" sempre
+                            aparece — é o estoque da faixa, e zero ali é
+                            informação. */}
+                        {faixa.entrou > 0 && (
+                          <span className="fchip entrou">
+                            +{faixa.entrou.toLocaleString("pt-BR")} <small>entraram</small>
+                          </span>
+                        )}
                         <span className="fchip ficou">
                           {faixa.agora.toLocaleString("pt-BR")} <small>hoje</small>
                         </span>
-                        <span className="fchip avancou">
-                          {faixa.avancou.toLocaleString("pt-BR")} <small>avançaram</small>
-                        </span>
+                        {faixa.avancou > 0 && (
+                          <span className="fchip avancou">
+                            {faixa.avancou.toLocaleString("pt-BR")} <small>avançaram</small>
+                          </span>
+                        )}
                         {faixa.saiu > 0 && (
                           <span className="fchip perdeu">
                             {faixa.saiu.toLocaleString("pt-BR")} <small>saíram</small>

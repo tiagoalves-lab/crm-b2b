@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { Contact, RawLead } from "@/lib/api/types";
 import {
+  ETAPA_LABEL,
   faixaDoFunil,
-  FAIXA_FUNIL_LABEL,
+  FAIXA_FUNIL_LABEL_CURTO,
   FAIXA_FUNIL_PILL,
   TIER_LABEL,
   type ScoreTier,
@@ -182,8 +183,11 @@ export default function LeadsTable({
                   </td>
                 )}
                 <td>
-                  <span className={FAIXA_FUNIL_PILL[faixaDoFunil(lead)]}>
-                    {FAIXA_FUNIL_LABEL[faixaDoFunil(lead)]}
+                  <span
+                    className={FAIXA_FUNIL_PILL[faixaDoFunil(lead)]}
+                    title={ETAPA_LABEL[lead.etapa]}
+                  >
+                    {FAIXA_FUNIL_LABEL_CURTO[faixaDoFunil(lead)]}
                   </span>
                 </td>
                 <td className="row-clickable">

@@ -62,7 +62,10 @@ Referência sob demanda: `arquitetura-dados.md` (modelo de dados),
 `integracao-cotacoes.md` (docs técnicos das integrações),
 `reports-email.md` (e-mails que o CRM envia: resumo diário + avisos de
 tarefa designada e de destaque em anotação), `telefonia-crm.md` (plano da
-ligação telefônica do SDR de dentro do CRM).
+ligação telefônica do SDR de dentro do CRM),
+`design-system-gama.md` (identidade visual da Gama — cores, tipografia e
+componentes; consultar antes de criar tela ou componente novo, e copiar
+pra qualquer produto Gama novo).
 
 **Regra**: arquivo `.md` novo entra nesta lista no mesmo commit que o
 cria. Se não está aqui, não existe pro agente.

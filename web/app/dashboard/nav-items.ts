@@ -28,8 +28,8 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Painel", group: "Comercial", icon: "painel" },
-  { href: "/dashboard/leads", label: "Prospecção", group: "Comercial", icon: "leads", count: "leads" },
-  { href: "/dashboard/pipeline", label: "Pipeline", group: "Comercial", icon: "pipeline", count: "pipeline" },
+  { href: "/dashboard/leads", label: "Funil de vendas", group: "Comercial", icon: "leads", count: "leads" },
+  { href: "/dashboard/pipeline", label: "Oportunidades", group: "Comercial", icon: "pipeline", count: "pipeline" },
   { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" },
   // Carteira de clientes entrou em Comercial (pedido do usuário,
   // 2026-09-18): o grupo "Cadastros" existia só pra ela e não agrupava

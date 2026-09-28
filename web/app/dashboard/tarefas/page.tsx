@@ -6,7 +6,7 @@ import { listOpportunities } from "@/lib/api/opportunities";
 import { listPipelines } from "@/lib/api/pipelines";
 import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
 import type { Membership, Opportunity, Pipeline, Task } from "@/lib/api/types";
-import { dayKeyBR, formatDateOnlyBR } from "@/lib/format-date";
+import { dayKeyBR, formatPrazoBR } from "@/lib/format-date";
 import CalendarView from "./calendar-view";
 import TarefasTable from "./tarefas-table";
 import TopbarFilter from "@/app/_components/topbar-filter";
@@ -31,6 +31,17 @@ function targetLabel(task: Task): string {
 
 function dueClass(task: Task): string {
   if (task.status === "done" || !task.dueAt) return "due-ok";
+  // Prazo com HORA marcada (2026-09-23, reunião agendada): o instante é
+  // real, então a comparação é com o dia calendário em Brasília em que
+  // esse instante cai — não dá pra tratá-lo como meia-noite UTC igual ao
+  // prazo só-data logo abaixo (uma reunião às 22h viraria "amanhã").
+  if (task.dueHasTime) {
+    const diaDaReuniao = dayKeyBR(new Date(task.dueAt));
+    const hoje = dayKeyBR(new Date());
+    if (diaDaReuniao < hoje) return "due-late";
+    if (diaDaReuniao === hoje) return "due-today";
+    return "due-ok";
+  }
   const due = new Date(task.dueAt);
   // Achado 2026-08-13: `today.setHours(0,0,0,0)` usava o fuso LOCAL de
   // onde o código roda — na Vercel isso é UTC, então perto da virada do
@@ -96,7 +107,7 @@ export default async function TarefasPage({
     tipoLabel: taskTypeLabel(task.tipo),
     vinculoLabel: targetLabel(task),
     assigneeLabel: memberDisplayName(task.assigneeUserId, memberships),
-    dueLabel: task.dueAt ? formatDateOnlyBR(task.dueAt) : "—",
+    dueLabel: task.dueAt ? formatPrazoBR(task.dueAt, task.dueHasTime) : "—",
     dueClass: dueClass(task),
     nAnexos: task._count?.attachments ?? 0,
     nComentarios: task._count?.comments ?? 0,
@@ -109,6 +120,7 @@ export default async function TarefasPage({
     id: task.id,
     title: task.title,
     dueAt: task.dueAt,
+    dueHasTime: task.dueHasTime,
     done: task.status === "done",
     tipoLabel: taskTypeLabel(task.tipo),
     assigneeLabel: memberDisplayName(task.assigneeUserId, memberships),

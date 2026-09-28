@@ -79,18 +79,30 @@ export class TaskService {
         'Contato é obrigatório para tarefas do tipo ligação, reunião, visita ou e-mail.',
       );
     }
-    if (dto.contactId) {
+    // Contato principal e pessoas envolvidas (2026-09-24) saem da mesma
+    // agenda — a empresa por trás da tarefa é resolvida uma vez só.
+    let participantes: string[] = [];
+    if (dto.contactId || (dto.participantContactIds?.length ?? 0) > 0) {
       const companyId = await this.resolveCompanyId(
         tx,
         membership.workspaceId,
         dto.companyId,
         dto.opportunityId,
       );
-      await this.mustContactBelongToCompany(
+      if (dto.contactId) {
+        await this.mustContactBelongToCompany(
+          tx,
+          membership.workspaceId,
+          dto.contactId,
+          companyId,
+        );
+      }
+      participantes = await this.resolveParticipants(
         tx,
         membership.workspaceId,
-        dto.contactId,
+        dto.participantContactIds,
         companyId,
+        dto.contactId ?? null,
       );
     }
 
@@ -102,8 +114,12 @@ export class TaskService {
         title: dto.title,
         description: dto.description,
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        // Prazo com hora marcada (2026-09-23) — só faz sentido junto com
+        // dueAt; tarefa sem prazo nunca tem horário.
+        dueHasTime: dto.dueAt ? (dto.dueHasTime ?? false) : false,
         tipo: dto.tipo,
         contactId: dto.contactId,
+        participantContactIds: participantes,
         assigneeUserId,
         companyId: dto.companyId,
         opportunityId: dto.opportunityId,
@@ -237,18 +253,31 @@ export class TaskService {
         'Contato é obrigatório para tarefas do tipo ligação, reunião, visita ou e-mail.',
       );
     }
-    if (dto.contactId) {
+    // Trocar o contato principal também mexe na lista de envolvidos
+    // (2026-09-24): quem virou o principal sai de lá, senão o mesmo nome
+    // apareceria duas vezes na ficha.
+    let participantes: string[] | undefined;
+    if (dto.contactId !== undefined || dto.participantContactIds !== undefined) {
       const companyId = await this.resolveCompanyId(
         tx,
         membership.workspaceId,
         existing.companyId ?? undefined,
         existing.opportunityId ?? undefined,
       );
-      await this.mustContactBelongToCompany(
+      if (dto.contactId) {
+        await this.mustContactBelongToCompany(
+          tx,
+          membership.workspaceId,
+          dto.contactId,
+          companyId,
+        );
+      }
+      participantes = await this.resolveParticipants(
         tx,
         membership.workspaceId,
-        dto.contactId,
+        dto.participantContactIds ?? existing.participantContactIds,
         companyId,
+        effectiveContactId,
       );
     }
 
@@ -267,8 +296,12 @@ export class TaskService {
         title: dto.title,
         description: dto.description,
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        // Só acompanha quando o prazo vem junto: um PATCH que mexe apenas
+        // no status (Concluir/Reabrir) não pode zerar o horário marcado.
+        dueHasTime: dto.dueAt ? (dto.dueHasTime ?? false) : undefined,
         tipo: dto.tipo,
         contactId: dto.contactId,
+        participantContactIds: participantes,
         status: dto.status,
         assigneeUserId: dto.assigneeUserId,
         tags,
@@ -473,6 +506,35 @@ export class TaskService {
       select: { companyId: true },
     });
     return opportunity?.companyId;
+  }
+
+  // Pessoas envolvidas na reunião (2026-09-24) — mesma agenda do contato
+  // principal, com ele fora da lista (é exibido à parte) e sem repetidos.
+  // Id que não seja contato daquela empresa derruba o salvamento inteiro:
+  // é erro de quem chamou, não escolha do usuário, e ignorar em silêncio
+  // faria a ficha reabrir sem a pessoa que ele marcou.
+  private async resolveParticipants(
+    tx: TenantTx,
+    workspaceId: string,
+    ids: string[] | undefined,
+    companyId: string | undefined,
+    mainContactId: string | null,
+  ): Promise<string[]> {
+    if (!ids || ids.length === 0) return [];
+    const unicos = Array.from(new Set(ids)).filter((id) => id !== mainContactId);
+    if (unicos.length === 0) return [];
+    const encontrados = companyId
+      ? await tx.contact.findMany({
+          where: { id: { in: unicos }, workspaceId, companyId },
+          select: { id: true },
+        })
+      : [];
+    if (encontrados.length !== unicos.length) {
+      throw new BadRequestException(
+        'Pessoa envolvida não encontrada para a empresa desta tarefa.',
+      );
+    }
+    return unicos;
   }
 
   private async mustContactBelongToCompany(

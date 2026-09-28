@@ -1,5 +1,12 @@
 import { apiFetch, ApiError } from "./client";
-import type { Company, LeadFonte, PaginatedResult, RawLead, RawLeadStatus } from "./types";
+import type {
+  Company,
+  LeadFonte,
+  PaginatedResult,
+  RawLead,
+  RawLeadEtapa,
+  RawLeadStatus,
+} from "./types";
 
 export type ScoreTier = "quente" | "morno" | "frio";
 
@@ -21,40 +28,85 @@ export function effectiveTier(lead: Pick<RawLead, "manualTier">): ScoreTier | nu
   return lead.manualTier ?? null;
 }
 
-// Faixa do funil de vendas em que o lead está (2026-09-18) — régua ÚNICA,
-// usada pelas abas da Prospecção, pela coluna "Funil" da Busca geral e
-// pelo funil do Painel. Espelha as decisões 6.1/6.2/6.6:
+// Faixa do funil em que o lead está — régua ÚNICA, usada pelo quadro e
+// pelas abas da Prospecção, pela coluna "Funil" da Busca geral e pelo
+// funil do Painel. Sem ela cada tela escrevia isso do seu jeito
+// ("Aprovado" na Busca geral, aba na Prospecção) e o mesmo lead aparecia
+// com nome diferente em cada lugar.
 //
-//   Prospect        → na fila, ainda sem prazo de investimento informado
-//   Lead qualificado → prazo informado ao SDR, ainda sem proposta
-//   Lead convertido → saiu da triagem; é a proposta que o torna convertido
-//   Descartado      → saiu do funil
+// São as cinco etapas do funil mais "Descartado", que não é etapa: quem
+// saiu do funil sai do quadro e tem aba própria.
+export type FaixaFunil = RawLeadEtapa | "descartado";
+
+// Etapas do funil de prospecção, na ordem (2026-09-23, pedido do
+// usuário: "Prospectar/Entrada > Andamento > Reunião > Qualificado >
+// Negociação/Fechamento"). Espelha ETAPAS_FUNIL do backend
+// (src/raw-leads/etapa-funil.ts).
 //
-// Antes cada tela escrevia isso do seu jeito ("Aprovado" na Busca geral,
-// aba na Prospecção), e o mesmo lead aparecia com nome diferente em cada
-// lugar.
-export type FaixaFunil = "prospect" | "qualificado" | "convertido" | "descartado";
+// A régua deixou de ser DERIVADA de status + prazo: virou coluna própria
+// do lead, que o quadro Kanban move no arrasto e que os eventos da ficha
+// empurram sozinhos. Descartado continua fora da régua — é status, tem
+// aba própria e não é coluna do quadro.
+export const ETAPAS_FUNIL: RawLeadEtapa[] = [
+  "entrada",
+  "andamento",
+  "reuniao",
+  "qualificado",
+  "negociacao",
+];
+
+export const ETAPA_LABEL: Record<RawLeadEtapa, string> = {
+  entrada: "Prospectar/Entrada",
+  andamento: "Andamento",
+  reuniao: "Reunião",
+  qualificado: "Qualificado",
+  negociacao: "Negociação/Fechamento",
+};
+
+// Versão curta pra pastilha de tabela e cabeçalho estreito, onde o nome
+// inteiro não cabe.
+export const ETAPA_LABEL_CURTO: Record<RawLeadEtapa, string> = {
+  entrada: "Entrada",
+  andamento: "Andamento",
+  reuniao: "Reunião",
+  qualificado: "Qualificado",
+  negociacao: "Negociação",
+};
+
+// Cor de cada coluna do quadro. Usa as variáveis do tema (globals.css)
+// pra acompanhar claro/escuro sozinha.
+export const ETAPA_COR: Record<RawLeadEtapa, string> = {
+  entrada: "var(--text-tertiary)",
+  andamento: "var(--blue)",
+  reuniao: "var(--purple)",
+  qualificado: "var(--accent-secondary)",
+  negociacao: "var(--green)",
+};
 
 export const FAIXA_FUNIL_LABEL: Record<FaixaFunil, string> = {
-  prospect: "Prospect",
-  qualificado: "Lead qualificado",
-  convertido: "Lead convertido",
+  ...ETAPA_LABEL,
+  descartado: "Descartado",
+};
+
+// Para a pastilha da coluna "Funil" em tabela, onde "Prospectar/Entrada"
+// e "Negociação/Fechamento" estouram a célula.
+export const FAIXA_FUNIL_LABEL_CURTO: Record<FaixaFunil, string> = {
+  ...ETAPA_LABEL_CURTO,
   descartado: "Descartado",
 };
 
 export const FAIXA_FUNIL_PILL: Record<FaixaFunil, string> = {
-  prospect: "pill pill-blue",
+  entrada: "pill pill-blue",
+  andamento: "pill pill-blue",
+  reuniao: "pill pill-purple",
   qualificado: "pill pill-amber",
-  convertido: "pill pill-green",
+  negociacao: "pill pill-green",
   descartado: "pill pill-gray",
 };
 
-export function faixaDoFunil(
-  lead: Pick<RawLead, "status" | "manualTier">,
-): FaixaFunil {
+export function faixaDoFunil(lead: Pick<RawLead, "status" | "etapa">): FaixaFunil {
   if (lead.status === "descartado") return "descartado";
-  if (lead.status === "aprovado") return "convertido";
-  return effectiveTier(lead) === null ? "prospect" : "qualificado";
+  return lead.etapa;
 }
 
 // 5000 (não 200): a tela de Prospecção busca tudo numa página só e
@@ -132,6 +184,21 @@ export function updateLeadTier(
     method: "PATCH",
     token,
     body: { tier },
+  });
+}
+
+// Etapa do funil de prospecção — é o que o arrasto do cartão no quadro
+// grava. O backend recusa mover lead fora da triagem e recusa
+// "negociacao" à mão (essa vem de converter o lead).
+export function updateLeadEtapa(
+  token: string,
+  id: string,
+  etapa: RawLeadEtapa,
+): Promise<RawLead> {
+  return apiFetch<RawLead>(`/raw-leads/${id}/etapa`, {
+    method: "PATCH",
+    token,
+    body: { etapa },
   });
 }
 

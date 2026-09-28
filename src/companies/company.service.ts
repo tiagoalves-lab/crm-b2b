@@ -19,6 +19,7 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateCompanyDto } from './dto/create-company.dto';
 import type { UpdateCompanyDto } from './dto/update-company.dto';
+import { montarLogradouro } from './logradouro';
 import { registrarExclusao } from '../deletion-log/registrar-exclusao';
 import { empresasQueJaCompraram, jaComprou } from './cliente-regra';
 import { herdarSupervisor } from './equipe-de-vendas';
@@ -154,6 +155,9 @@ interface BrasilApiCnpjResponse {
   email?: string;
   ddd_telefone_1?: string;
   ddd_telefone_2?: string;
+  // A Receita guarda o TIPO do logradouro separado do nome: "AVENIDA" +
+  // "BRASIL", nunca "AVENIDA BRASIL" num campo só. Ver montarLogradouro.
+  descricao_tipo_de_logradouro?: string;
   logradouro?: string;
   numero?: string;
   complemento?: string;
@@ -766,7 +770,10 @@ export class CompanyService {
       fones: [data.ddd_telefone_1, data.ddd_telefone_2].filter(
         (value): value is string => !!value,
       ),
-      logradouro: data.logradouro,
+      logradouro: montarLogradouro(
+        data.descricao_tipo_de_logradouro,
+        data.logradouro,
+      ),
       numero: data.numero,
       complemento: data.complemento,
       bairro: data.bairro,

@@ -23,9 +23,11 @@ import { parseContactsSpreadsheet } from './contacts-spreadsheet-import.util';
 import type { CreateRawLeadDto } from './dto/create-raw-lead.dto';
 import type { ListRawLeadsQueryDto } from './dto/list-raw-leads-query.dto';
 import type { UpdateLeadCadastroDto } from './dto/update-lead-cadastro.dto';
+import type { UpdateLeadEtapaDto } from './dto/update-lead-etapa.dto';
 import type { UpdateLeadSegmentoDto } from './dto/update-lead-segmento.dto';
 import type { UpdateLeadTagsDto } from './dto/update-lead-tags.dto';
 import type { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
+import { etapaAvancada } from './etapa-funil';
 import { LeadScoringService } from './lead-scoring.service';
 import {
   indexarRepresentantes,
@@ -540,7 +542,13 @@ export class RawLeadService {
       // convertedAt (2026-09-21): a data da passagem, pro funil do Painel
       // medir movimento por período em vez de estoque acumulado. Só na
       // primeira conversão — reconversão não reescreve a série.
-      data: { status: 'aprovado', convertedAt: lead.convertedAt ?? new Date() },
+      // etapa (2026-09-23): converter é a passagem pra última faixa do
+      // funil de prospecção — dali pra frente quem acompanha é o Pipeline.
+      data: {
+        status: 'aprovado',
+        etapa: 'negociacao',
+        convertedAt: lead.convertedAt ?? new Date(),
+      },
     });
 
     const updated = await tx.company.update({
@@ -607,6 +615,58 @@ export class RawLeadService {
         manualTier: dto.tier,
         qualifiedAt:
           dto.tier === null ? null : (atual.qualifiedAt ?? new Date()),
+        // Informar o prazo É a qualificação (decisão 6.2), então o cartão
+        // sobe sozinho pra etapa Qualificado no quadro — sem isso o SDR
+        // classificaria e depois arrastaria, dando a mesma informação
+        // duas vezes. Limpar o prazo devolve o cartão pra Andamento (sem
+        // prazo não houve qualificação) e nunca mexe em quem já está em
+        // Negociação/Fechamento.
+        etapa:
+          dto.tier === null
+            ? atual.etapa === 'qualificado'
+              ? 'andamento'
+              : atual.etapa
+            : etapaAvancada(atual.etapa, 'qualificado'),
+      },
+    });
+  }
+
+  // Mover o cartão de etapa no quadro da Prospecção (2026-09-23) — é onde
+  // o arrasto do Kanban cai. Diferente do avanço automático (que só
+  // empurra pra frente, ver etapa-funil.ts), aqui quem manda é a pessoa:
+  // dá pra puxar o cartão de volta pra Andamento quando a reunião não
+  // aconteceu.
+  //
+  // Lead fora da triagem não se move à mão: quem está em
+  // Negociação/Fechamento chegou lá por ter sido convertido (a etapa é
+  // consequência do status), e descartado nem aparece no quadro.
+  async setEtapa(
+    tx: TenantTx,
+    membership: MembershipContext,
+    id: string,
+    dto: UpdateLeadEtapaDto,
+  ): Promise<RawLead> {
+    const atual = await this.mustBeVisible(tx, membership, id, 'write');
+    if (atual.status !== 'novo') {
+      throw new BadRequestException(
+        'Só lead em triagem muda de etapa — este já saiu do funil de prospecção.',
+      );
+    }
+    if (dto.etapa === 'negociacao') {
+      throw new BadRequestException(
+        'Negociação/Fechamento é consequência de converter o lead — use "Converter lead".',
+      );
+    }
+    return tx.rawLead.update({
+      where: { id },
+      // A data de qualificação acompanha a etapa: arrastar o cartão pra
+      // Qualificado sem prazo informado não inventa prazo, mas marca a
+      // passagem — que é o que o funil do Painel mede por período.
+      data: {
+        etapa: dto.etapa,
+        ...(dto.etapa === 'qualificado' && !atual.qualifiedAt
+          ? { qualifiedAt: new Date() }
+          : {}),
       },
     });
   }

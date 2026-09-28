@@ -116,11 +116,9 @@ export default function NovaForm({
           <TagPicker options={opportunityItems} selected={tags} onChange={setTags} name="tags" />
         </div>
       )}
+      {/* Prazo saiu daqui em 2026-09-23: o formato dele depende do Tipo
+          (reunião tem hora), e o Tipo é estado do TipoContatoFields. */}
       <TipoContatoFields contacts={contacts} companyId={companyId} />
-      <label>
-        Prazo
-        <input name="dueAt" type="date" required />
-      </label>
       <label>
         Responsável
         <select name="assigneeUserId" defaultValue={assigneeOptions[0]?.userId ?? ""} required>

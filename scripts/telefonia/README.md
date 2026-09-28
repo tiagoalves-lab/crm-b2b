@@ -32,15 +32,19 @@ Feche o MicroSIP.
    `C:\gama-telefonia`.
 2. No CRM, em **Administração → Telefonia**, gere a credencial daquele
    computador e copie o endereço do CRM e o token.
-3. Clique com o botão direito na pasta → **Abrir no Terminal**, e rode:
+3. **Feche o MicroSIP** (com ele aberto, a configuração que o instalador
+   grava se perde ao fechar) e, na pasta, clique com o botão direito →
+   **Abrir no Terminal**. Rode:
 
    ```powershell
    .\instalar.ps1 -ApiUrl "https://ENDERECO-DO-CRM" -Token "gama-fone_..."
    ```
 
 O instalador guarda a credencial, associa o botão **Ligar** do CRM ao
-MicroSIP e liga o registro automático das chamadas. Se o MicroSIP ainda
-não tiver sido aberto nenhuma vez, ele avisa e basta rodar de novo depois.
+MicroSIP, liga o registro automático das chamadas e, no fim, manda um
+sinal de teste ao CRM. Ele só termina com "Pronto" em verde se o CRM tiver
+respondido — qualquer outra coisa na tela é problema a resolver antes de
+sair da máquina.
 
 ## 4. Conferir
 

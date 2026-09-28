@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { errorMessage, redirectWithError, redirectWithMessage } from "@/lib/api/action-helpers";
 import { createActivity } from "@/lib/api/activities";
+import { createTask } from "@/lib/api/tasks";
 import { createContact, deleteContact, updateContact } from "@/lib/api/contacts";
 import type { Activity, Company, Contact, PessoaTipo } from "@/lib/api/types";
 import type { CnpjLookupResult, CreateCompanyInput } from "@/lib/api/companies";
@@ -326,7 +327,18 @@ const SUBTYPE_TO_TYPE: Record<string, "note" | "call" | "email"> = {
 // registro novo.
 export async function createNoteRpcAction(
   companyId: string,
-  data: { subtipo: string; texto: string; contactId?: string },
+  data: {
+    subtipo: string;
+    texto: string;
+    contactId?: string;
+    // Reunião agendada (2026-09-23, pedido do usuário): instante já em
+    // ISO com fuso, convertido do campo de data/hora pela tela
+    // (inputLocalParaISO). Vazio = reunião que já aconteceu, só registro.
+    reuniaoEm?: string;
+    // Nome do contato, só pra escrever o título da tarefa sem ter que
+    // buscar o contato de novo aqui.
+    contatoNome?: string;
+  },
 ): Promise<ActionResult<Activity>> {
   const token = await getServerAccessToken();
   try {
@@ -337,6 +349,36 @@ export async function createNoteRpcAction(
       subtipo: data.subtipo,
       contactId: data.contactId,
     });
+
+    // Reunião com data/hora vira TAREFA (pedido do usuário, 2026-09-23:
+    // "ao agendar uma reunião inclua campo de data hora e coloque isso no
+    // menu de tarefas também"). O registro na Timeline conta o que foi
+    // combinado; a tarefa é o que faz a reunião aparecer na agenda de
+    // quem marcou, com o horário.
+    //
+    // Se a tarefa falhar, a anotação já está gravada e não dá pra
+    // desfazer — o erro volta com o texto explícito pra pessoa saber que
+    // precisa criar a tarefa à mão, em vez de achar que nada aconteceu.
+    if (data.subtipo === "reuniao" && data.reuniaoEm) {
+      try {
+        await createTask(token, {
+          title: data.contatoNome ? `Reunião com ${data.contatoNome}` : "Reunião",
+          description: data.texto,
+          dueAt: data.reuniaoEm,
+          dueHasTime: true,
+          tipo: "reuniao",
+          contactId: data.contactId,
+          companyId,
+        });
+        revalidatePath("/dashboard/tarefas");
+      } catch (error) {
+        return {
+          ok: false,
+          message: `Registro salvo na Timeline, mas a tarefa da reunião não foi criada: ${errorMessage(error)}`,
+        };
+      }
+    }
+
     revalidatePath("/dashboard/empresas");
     revalidatePath("/dashboard/leads");
     return { ok: true, data: activity };

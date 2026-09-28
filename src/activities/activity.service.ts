@@ -7,6 +7,7 @@ import type { Activity, ActivityType, Prisma } from '@prisma/client';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
+import { etapaAvancada, etapaDoSubtipo } from '../raw-leads/etapa-funil';
 import { CONTACT_REQUIRED_ACTIVITY_SUBTIPOS } from './activity-subtipo.constants';
 import type { CreateActivityDto } from './dto/create-activity.dto';
 
@@ -119,7 +120,7 @@ export class ActivityService {
       contatoNome = contact.nome;
     }
 
-    return this.emit(tx, {
+    const activity = await this.emit(tx, {
       workspaceId: membership.workspaceId,
       actorUserId: membership.userId,
       type: dto.type,
@@ -131,6 +132,49 @@ export class ActivityService {
       companyId: dto.companyId,
       opportunityId: dto.opportunityId,
       contactId: dto.contactId,
+    });
+
+    if (dto.companyId) {
+      await this.avancarEtapaDoLead(tx, dto.companyId, dto.subtipo);
+    }
+
+    return activity;
+  }
+
+  // Registro na Timeline empurra o lead no funil de prospecção
+  // (2026-09-23) — anotação/ligação/visita/e-mail tiram o cartão da fila
+  // parada e o levam pra Andamento; reunião leva pra Reunião. Só empurra
+  // pra frente e só mexe em lead ainda em triagem (ver etapa-funil.ts).
+  //
+  // Escrito direto pelo tx (updateMany, não o RawLeadService): a
+  // visibilidade da empresa já foi conferida acima, o RLS por workspace
+  // vale na mesma transação, e injetar o service de leads aqui criaria
+  // ciclo de módulo — RawLeadModule já depende de ActivityService.
+  private async avancarEtapaDoLead(
+    tx: TenantTx,
+    companyId: string,
+    subtipo: string | undefined,
+  ): Promise<void> {
+    const alvo = etapaDoSubtipo(subtipo);
+    if (!alvo) return;
+
+    const lead = await tx.rawLead.findFirst({
+      where: { promotedCompanyId: companyId, status: 'novo' },
+      select: { id: true, etapa: true },
+    });
+    if (!lead) return;
+
+    const proxima = etapaAvancada(lead.etapa, alvo);
+    if (proxima === lead.etapa) return;
+
+    // updateMany (não update): o RLS de raw_leads pode deixar a pessoa
+    // LER o lead pela equipe de vendas da empresa e não deixar escrever
+    // nele. Com update por id isso viraria P2025 e derrubaria o registro
+    // da anotação, que é a ação que a pessoa pediu — aqui, no máximo, a
+    // etapa não anda.
+    await tx.rawLead.updateMany({
+      where: { id: lead.id },
+      data: { etapa: proxima },
     });
   }
 

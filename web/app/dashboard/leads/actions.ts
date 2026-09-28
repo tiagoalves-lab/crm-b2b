@@ -12,6 +12,7 @@ import {
   discardLead,
   importRawLeadsWithContactsSpreadsheet,
   updateLeadCadastro,
+  updateLeadEtapa,
   updateLeadSegmento,
   updateLeadTags,
   updateLeadTier,
@@ -22,7 +23,7 @@ import {
   type UpdateLeadCadastroInput,
 } from "@/lib/api/raw-leads";
 import { setCompanyTeam, type CompanyTeam } from "@/lib/api/company-team";
-import type { Company, RawLead } from "@/lib/api/types";
+import type { Company, RawLead, RawLeadEtapa } from "@/lib/api/types";
 import type { FormState } from "@/app/_components/action-form";
 
 // Cadastro manual de empresa na Prospecção (2026-09-14): o formulário em
@@ -149,6 +150,23 @@ export async function setLeadTierAction(
     return { ok: true, data: result };
   } catch (error) {
     return { ok: false, message: actionError(error, "Erro ao classificar o lead.") };
+  }
+}
+
+// Arrasto do cartão no quadro da Prospecção (2026-09-23) — mesmo padrão
+// RPC de setLeadTierAction: não navega, devolve o lead atualizado pro
+// quadro confirmar (ou reverter) o movimento que já desenhou na tela.
+export async function moveLeadEtapaAction(
+  id: string,
+  etapa: RawLeadEtapa,
+): Promise<ActionResult<RawLead>> {
+  const token = await getServerAccessToken();
+  try {
+    const result = await updateLeadEtapa(token, id, etapa);
+    revalidatePath("/dashboard/leads");
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, message: actionError(error, "Erro ao mover o lead de etapa.") };
   }
 }
 

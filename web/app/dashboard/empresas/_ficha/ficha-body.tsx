@@ -1,7 +1,7 @@
 import { companyDisplayName, ehClienteDaCarteira } from "@/lib/api/companies";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import type { Activity, Membership } from "@/lib/api/types";
-import { formatDateBR, formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
+import { formatDateBR, formatDateOnlyBR, formatDateTimeBR, formatPrazoBR } from "@/lib/format-date";
 import type { FichaData } from "./load";
 import { currentAbaOf } from "./ficha-tabs";
 import { refreshCnpjDataAction, updateCustomFieldsAction } from "../actions";
@@ -533,7 +533,9 @@ export default function FichaBody({
           <div key={t.id} className="drawer-list-item">
             <div>
               <div className="dli-title">{t.title}</div>
-              <div className="dli-sub">{t.dueAt ? `prazo ${fmtDia(t.dueAt)}` : "sem prazo"}</div>
+              <div className="dli-sub">
+                {t.dueAt ? `prazo ${formatPrazoBR(t.dueAt, t.dueHasTime)}` : "sem prazo"}
+              </div>
             </div>
             <span className={t.status === "done" ? "pill pill-green" : "pill pill-gray"}>
               {t.status === "done" ? "Concluída" : "Pendente"}

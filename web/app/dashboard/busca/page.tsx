@@ -5,7 +5,7 @@ import { globalSearch, type GlobalSearchResult } from "@/lib/api/search";
 import {
   effectiveTier,
   faixaDoFunil,
-  FAIXA_FUNIL_LABEL,
+  FAIXA_FUNIL_LABEL_CURTO,
   FAIXA_FUNIL_PILL,
   TIER_LABEL,
 } from "@/lib/api/raw-leads";
@@ -177,7 +177,7 @@ export default async function BuscaGeralPage({
                   </td>
                   <td>
                     <span className={FAIXA_FUNIL_PILL[faixaDoFunil(l)]}>
-                      {FAIXA_FUNIL_LABEL[faixaDoFunil(l)]}
+                      {FAIXA_FUNIL_LABEL_CURTO[faixaDoFunil(l)]}
                     </span>
                   </td>
                   <td>

@@ -14,6 +14,7 @@ import {
 import { createTask, deleteTask, updateTask } from "@/lib/api/tasks";
 import type { CreateTaskInput, UpdateTaskInput } from "@/lib/api/tasks";
 import { createContact, listContacts } from "@/lib/api/contacts";
+import { inputLocalParaISO } from "@/lib/format-date";
 import type { CreateContactInput } from "@/lib/api/contacts";
 import type { Contact, Task, TaskComment, TaskStatus } from "@/lib/api/types";
 
@@ -61,6 +62,15 @@ function tagsFrom(formData: FormData): string[] | undefined {
   return tags.length > 0 ? tags : undefined;
 }
 
+// Pessoas envolvidas na reunião (2026-09-24): um <input type="hidden"
+// name="participantContactIds"> por pessoa marcada (TipoContatoFields).
+function participantesFrom(formData: FormData): string[] | undefined {
+  const ids = formData
+    .getAll("participantContactIds")
+    .filter((v): v is string => typeof v === "string" && v.trim() !== "");
+  return ids.length > 0 ? ids : undefined;
+}
+
 // Toda action de formulário volta pra essa mesma URL (preserva view/card/
 // month via campo oculto `back`) — sem isso, um erro no card detail
 // mandaria o usuário de volta pra lista em vez do card que ele editava.
@@ -86,11 +96,19 @@ export async function createTaskModalAction(
 
   let task: Task;
   try {
+    // Prazo com hora (2026-09-23) chega em horário de Brasília, sem fuso
+    // — vira instante aqui, mesma régua de saveTaskDetailAction.
+    const comHora = Boolean(emptyToUndefined(formData.get("dueHasTime")));
+    const prazo = emptyToUndefined(formData.get("dueAt"));
     task = await createTask(token, {
       title: String(formData.get("title") ?? "").trim(),
-      dueAt: emptyToUndefined(formData.get("dueAt")),
+      dueAt: prazo && comHora ? inputLocalParaISO(prazo) : prazo,
+      dueHasTime: comHora,
       tipo: emptyToUndefined(formData.get("tipo")) as CreateTaskInput["tipo"],
       contactId: emptyToUndefined(formData.get("contactId")),
+      // Pessoas envolvidas na reunião (2026-09-24) — um <input hidden>
+      // por pessoa marcada, mesmo esquema das tags.
+      participantContactIds: participantesFrom(formData),
       companyId: emptyToUndefined(formData.get("companyId")),
       opportunityId: emptyToUndefined(formData.get("opportunityId")),
       assigneeUserId: emptyToUndefined(formData.get("assigneeUserId")),
@@ -205,13 +223,27 @@ export async function setTaskStatusAction(
 // Arrastar o card no calendário pra outro dia = mudar o prazo (2026-09-04).
 // Chamada direta do client component (calendar-view.tsx), devolve
 // resultado — mesmo padrão de moveOpportunityStageAction no Pipeline.
-export async function moveTaskDueDateAction(id: string, dayKey: string): Promise<ActionResult<Task>> {
+// `dueAtComHora` (2026-09-23): arrastar no calendário uma tarefa que tem
+// HORA marcada (reunião) muda o dia e MANTÉM o horário — quem monta o
+// instante novo é o calendário, que é quem sabe a hora exibida. Sem isso,
+// mover uma reunião das 14h pro dia seguinte a jogava pra meia-noite.
+export async function moveTaskDueDateAction(
+  id: string,
+  dayKey: string,
+  dueAtComHora?: string,
+): Promise<ActionResult<Task>> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dayKey))) {
     return { ok: false, message: "Data inválida." };
   }
   const token = await getServerAccessToken();
   try {
-    const task = await updateTask(token, String(id), { dueAt: String(dayKey) });
+    const task = await updateTask(
+      token,
+      String(id),
+      dueAtComHora
+        ? { dueAt: String(dueAtComHora), dueHasTime: true }
+        : { dueAt: String(dayKey), dueHasTime: false },
+    );
     revalidatePath("/dashboard/tarefas");
     return { ok: true, data: task };
   } catch (error) {
@@ -229,8 +261,17 @@ export async function saveTaskDetailAction(
       title: str(input.title),
       description: typeof input.description === "string" ? input.description : "",
       dueAt: str(input.dueAt),
+      // Sem isto (bug de 2026-09-23 corrigido em 2026-09-24) o backend
+      // recebia o prazo sem a marca de hora e rebaixava a reunião pra
+      // "dia sem horário" a cada salvamento da ficha.
+      dueHasTime: str(input.dueAt) ? Boolean(input.dueHasTime) : undefined,
       tipo: str(input.tipo) as UpdateTaskInput["tipo"],
       contactId: str(input.contactId),
+      // Lista inteira de pessoas envolvidas (vazia = tirar todas); só vai
+      // quando a ficha mandou o campo.
+      participantContactIds: Array.isArray(input.participantContactIds)
+        ? input.participantContactIds.map(String)
+        : undefined,
       assigneeUserId: str(input.assigneeUserId),
       // Lista inteira de carimbos (pode ser vazia = tirar todos); só vai
       // quando a ficha mandou o campo.

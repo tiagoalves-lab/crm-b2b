@@ -81,7 +81,7 @@ export default async function PipelinePage({
       <>
         <div className="topbar">
           <div>
-            <div className="page-title">Pipeline de Oportunidades</div>
+            <div className="page-title">Oportunidades</div>
             <div className="page-sub">Ciclo de vida da venda</div>
           </div>
         </div>
@@ -165,7 +165,7 @@ export default async function PipelinePage({
     <TopbarFilterProvider>
       <div className="topbar">
         <div>
-          <div className="page-title">Pipeline de Oportunidades</div>
+          <div className="page-title">Oportunidades</div>
           <div className="page-sub">Ciclo de vida da venda · unidade: R$</div>
         </div>
         <TopbarFilter placeholder="Buscar oportunidade por empresa..." />

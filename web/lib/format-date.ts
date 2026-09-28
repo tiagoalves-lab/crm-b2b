@@ -36,3 +36,46 @@ export function dayKeyBR(date: Date): string {
 export function formatDateOnlyBR(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" });
 }
+
+// ── Prazo com HORA (2026-09-23) ─────────────────────────────────────────
+// Até aqui todo prazo era "um dia sem hora": vinha de um <input
+// type="date"> e virava meia-noite UTC, formatada em UTC (formatDateOnlyBR
+// acima). Agendar reunião exige hora de verdade, e um <input
+// type="datetime-local"> devolve texto SEM fuso ("2026-09-24T14:30") — se
+// isso for direto pro backend, o instante gravado depende de onde o código
+// rodou (UTC na Vercel), e a reunião das 14:30 vira 11:30.
+//
+// Brasília é UTC-3 fixo desde 2019 (o horário de verão acabou), então a
+// conversão é uma constante — não precisa de biblioteca de fuso.
+const OFFSET_BRASILIA = "-03:00";
+
+// "2026-09-24T14:30" (digitado, horário de Brasília) → ISO com fuso, que é
+// o que o backend grava como instante.
+export function inputLocalParaISO(local: string): string {
+  const texto = local.length === 16 ? `${local}:00` : local;
+  return new Date(`${texto}${OFFSET_BRASILIA}`).toISOString();
+}
+
+// Caminho inverso, pra preencher o <input type="datetime-local"> com o que
+// está salvo.
+export function isoParaInputLocal(iso: string): string {
+  const d = new Date(iso);
+  const emBrasilia = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  return emBrasilia.toISOString().slice(0, 16);
+}
+
+// Prazo da tarefa como a tela mostra: com hora quando foi marcada
+// (instante real → Brasília), só o dia quando não (UTC, ver
+// formatDateOnlyBR). Uma função só pra nenhuma tela ter que lembrar a
+// regra.
+export function formatPrazoBR(iso: string, comHora: boolean): string {
+  if (!comHora) return formatDateOnlyBR(iso);
+  return new Date(iso).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

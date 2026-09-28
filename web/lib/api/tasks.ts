@@ -44,8 +44,14 @@ export interface CreateTaskInput {
   title: string;
   description?: string;
   dueAt?: string;
+  // O prazo tem hora marcada? (2026-09-23) Só faz sentido junto com dueAt;
+  // ausente = "um dia sem horário", como toda tarefa nasceu até aqui.
+  dueHasTime?: boolean;
   tipo?: TaskType;
   contactId?: string;
+  // Pessoas envolvidas na reunião (2026-09-24) — contatos da mesma
+  // empresa, sem repetir o contactId principal.
+  participantContactIds?: string[];
   companyId?: string;
   opportunityId?: string;
   assigneeUserId?: string;
@@ -62,8 +68,11 @@ export interface UpdateTaskInput {
   title?: string;
   description?: string;
   dueAt?: string;
+  dueHasTime?: boolean;
   tipo?: TaskType;
   contactId?: string;
+  // Substitui a lista inteira de pessoas envolvidas (vazia = limpa).
+  participantContactIds?: string[];
   status?: TaskStatus;
   assigneeUserId?: string;
   // Substitui a lista inteira de carimbos (mesma regra de CreateTaskInput).

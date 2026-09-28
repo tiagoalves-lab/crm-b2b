@@ -1,5 +1,12 @@
 import { apiFetch } from "./client";
-import type { LeadTier, OpportunityStatus, RawLeadStatus, TaskStatus, TaskType } from "./types";
+import type {
+  LeadTier,
+  OpportunityStatus,
+  RawLeadEtapa,
+  RawLeadStatus,
+  TaskStatus,
+  TaskType,
+} from "./types";
 
 export interface BuscaEmpresaLeadResult {
   id: string;
@@ -53,6 +60,9 @@ export interface LeadEncontrado {
   municipio: string | null;
   uf: string | null;
   status: RawLeadStatus;
+  // Etapa do funil de prospecção (2026-09-23) — a coluna "Funil" usa a
+  // mesma régua da Prospecção (faixaDoFunil em lib/api/raw-leads.ts).
+  etapa: RawLeadEtapa;
   score: number;
   manualTier: LeadTier | null;
   segmento: string | null;

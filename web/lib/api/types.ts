@@ -254,8 +254,17 @@ export interface Task {
   title: string;
   description: string | null;
   dueAt: string | null;
+  // O prazo tem hora marcada? (2026-09-23) Falso = "um dia sem horário",
+  // que é como toda tarefa nasceu até aqui e continua nascendo quando o
+  // prazo vem de um campo de data. Verdadeiro = reunião/compromisso com
+  // hora — muda como a data é formatada (Brasília × UTC) e como a régua
+  // de atraso conta.
+  dueHasTime: boolean;
   tipo: TaskType | null;
   contactId: string | null;
+  // Pessoas envolvidas na reunião (2026-09-24) — outros contatos da mesma
+  // empresa, além do contato principal. Vazio nos outros tipos.
+  participantContactIds: string[];
   assigneeUserId: string;
   companyId: string | null;
   opportunityId: string | null;
@@ -359,6 +368,16 @@ export interface Contact {
 }
 
 export type RawLeadStatus = "novo" | "aprovado" | "descartado";
+
+// Etapas do funil de prospecção (2026-09-23) — espelha o enum
+// RawLeadEtapa do backend (src/raw-leads/etapa-funil.ts), mantido à mão
+// aqui como todo tipo compartilhado entre os dois projetos npm.
+export type RawLeadEtapa =
+  | "entrada"
+  | "andamento"
+  | "reuniao"
+  | "qualificado"
+  | "negociacao";
 export type LeadFonte = "econodata" | "apify" | "comexstat" | "manual";
 export type LeadTier = "quente" | "morno" | "frio";
 
@@ -377,6 +396,9 @@ export interface RawLead {
   score: number;
   manualTier: LeadTier | null;
   status: RawLeadStatus;
+  // Etapa do funil de prospecção (2026-09-23) — coluna do quadro Kanban
+  // da Prospecção. Descartado não é etapa: continua em `status`.
+  etapa: RawLeadEtapa;
   promotedCompanyId: string | null;
   // Tags livres de organização do usuário (2026-08-05, fora do
   // SPEC-CRM-GAMA.md original) — não confundir com companies.tags (marcador

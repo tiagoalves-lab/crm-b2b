@@ -610,10 +610,10 @@ outras.
 
 **6.6**
 - Decisão → **Prospecção é a casa do lead; Empresas é a casa do cliente.**
-  - A tela **Prospecção** tem quatro abas: **Prospects** (na fila, ainda sem
-    prazo informado), **Leads qualificados** (já com prazo — as faixas
-    Curto/Médio/Longo viram **sub-filtro** desta aba), **Leads convertidos**
-    e **Descartados**.
+  - A tela **Prospecção** tem quatro abas: **Prospects** (ainda não
+    qualificados — as etapas Entrada, Andamento e Reunião), **Leads
+    qualificados** (as faixas Curto/Médio/Longo viram **sub-filtro** desta
+    aba), **Leads convertidos** e **Descartados**.
   - **Leads convertidos** é a lista dos **leads do CRM que saíram da
     triagem**, com quantas propostas cada um tem em negociação, ganhas e
     perdidas, o valor em negociação e o último movimento. Conta só proposta
@@ -634,23 +634,6 @@ outras.
     **bandeira** ao lado do nome da empresa.
 - Fonte → Pedido do usuário, 2026-09-18.
 
-**6.11**
-- Decisão → **Cliente é quem já comprou** — pedido emitido no eGestor ou
-  oportunidade ganha no Pipeline. Estar cadastrado como cliente no eGestor
-  **não basta**: o ERP marca assim quem nunca comprou (145 cadastros em
-  2026-09-18, todos levados para a Prospecção). A régua é a mesma na
-  **Carteira de clientes**, na ficha da empresa e na busca geral.
-  - Empresa criada por import de cotação, por conversão de lead ou na mão
-    **não é cliente** enquanto não fechar nada: fica na Prospecção.
-  - Empresa que já comprou **não é mais lead**: sai da fila de triagem e
-    da seção Prospecção da busca, e aparece na Carteira de clientes.
-  - O item de menu **Empresas** passou a se chamar **Carteira de clientes**.
-  - A promoção de contatos do eGestor não tira mais da Prospecção quem
-    ainda não comprou.
-- Fonte → Usuário, 2026-09-18, ao achar a CRDC FERRAMENTARIA listada como
-  empresa e como prospect na mesma busca: "se tem pedido e nota fiscal é
-  cliente".
-
 **6.7**
 - Decisão → O **Painel** mostra, em **metade da página cada**, o **Funil de
   vendas** (leitura de jornada) e o **Pipeline por etapa** (leitura
@@ -659,13 +642,16 @@ outras.
 - Fonte → Pedido do usuário, 2026-09-18.
 
 **6.8**
-- Decisão → O funil tem as quatro faixas da jornada — Prospectar, Leads
-  Qualificados, Leads Convertidos e Venda e Fechamento —, cada uma com **o
-  que seguiu adiante, o que está parado e o que saiu do funil** (número +
-  palavra dentro da pastilha; pastilha zerada não é desenhada), a **taxa de
-  passagem** entre faixas, os **pedidos fechados** no fim e, embaixo, taxa
-  de conversão, perdas e valor perdido.
-- Fonte → Pedido do usuário, 2026-09-18, sobre a prévia aprovada.
+- Decisão → O funil tem as **cinco etapas** da jornada —
+  **Prospectar/Entrada**, **Andamento**, **Reunião**, **Qualificado** e
+  **Negociação/Fechamento** —, cada uma com **o que entrou, o que está
+  parado e o que saiu** (número + palavra dentro da pastilha; pastilha
+  zerada não é desenhada), a **taxa de passagem** entre etapas, os
+  **pedidos fechados** no fim e, embaixo, aproveitamento, perdas e valor
+  perdido.
+  Andamento e Reunião mostram **só o estoque**: não têm data de passagem
+  própria, e número de movimento inventado ali seria pior que a ausência.
+- Fonte → Usuário, 2026-09-23, ao reestruturar as etapas do funil.
 
 **6.9**
 - Decisão → O funil conta **só o ciclo comercial corrente**. Oportunidade
@@ -688,11 +674,13 @@ outras.
   prospects não tem nenhum?".
 
 **6.11**
-- Decisão → A faixa do funil é **régua única** em todo o CRM: Prospect,
-  Lead qualificado, Lead convertido e Descartado. Na **Busca geral** a
-  coluna "Situação" (que mostrava o nome interno do status — "Aprovado",
-  "Em triagem") virou **Funil** e mostra a faixa.
-- Fonte → Pedido do usuário, 2026-09-18.
+- Decisão → A etapa do funil é **régua única** em todo o CRM:
+  Entrada, Andamento, Reunião, Qualificado, Negociação/Fechamento e
+  Descartado (que não é etapa — é ter saído do funil). O quadro, a lista
+  da Prospecção, a coluna **Funil** da Busca geral e o funil do Painel
+  leem todos a **mesma coluna** do lead.
+- Fonte → Pedido do usuário, 2026-09-18; etapas reestruturadas em
+  2026-09-23.
 
 **6.12**
 - Decisão → **Lead convertido sem proposta cadastrada aparece em Leads
@@ -726,12 +714,10 @@ outras.
   importação ainda, retratar somente registros do CRM".
 
 **6.15**
-- Decisão → No funil, **quem sai da fila para frente conta como "seguiu
-  adiante" na faixa Prospectar**, mesmo tendo pulado a qualificação — senão
-  a corrente quebra na tela (a faixa dizia "0 seguiu adiante" com 31 leads
-  na faixa de baixo). O salto é explicado em texto embaixo do funil, junto
-  com quantos convertidos ainda não têm proposta e quantos estão em
-  negociação.
+- Decisão → Quem pula etapas não desaparece da leitura: o texto embaixo
+  do funil diz **quantas propostas vieram de oportunidade pronta** (sem
+  passar pela Prospecção), quantos convertidos ainda não têm proposta e
+  quantas conversões são anteriores ao registro de datas.
 - Fonte → Correção a partir do usuário, 2026-09-21.
 
 **6.16**
@@ -781,6 +767,89 @@ outras.
   Aparece como uma linha só embaixo do funil, fora do movimento.
 - Fonte → Decorrência de 6.17: sem data de passagem não existe funil por
   período.
+
+**6.20**
+- Decisão → As etapas do funil de prospecção são
+  **Prospectar/Entrada → Andamento → Reunião → Qualificado →
+  Negociação/Fechamento**, e viraram um **campo próprio do lead** — antes
+  a faixa era deduzida do par status + prazo, que só sabia representar
+  três degraus e não tinha onde pendurar o meio do trabalho do SDR.
+  O cartão anda sozinho quando o fato acontece:
+  - **registrou qualquer contato** na Timeline → Andamento;
+  - **registrou/agendou reunião** → Reunião;
+  - **informou o prazo de investimento** → Qualificado;
+  - **converteu o lead** → Negociação/Fechamento.
+  O automático só empurra **para frente** (mais uma ligação não rebaixa
+  quem já está qualificado); quem puxa para trás é a pessoa, arrastando no
+  quadro. **Descartado não é etapa** — é ter saído do funil, tem aba
+  própria, e o lead guarda a etapa em que parou.
+  **Negociação/Fechamento não se alcança arrastando**: entra por
+  "Converter lead", que exige CNPJ e cria a empresa.
+- Fonte → Usuário, 2026-09-23: "preciso reestruturar as etapas do funil".
+
+**6.21**
+- Decisão → A Prospecção tem **duas visões da mesma informação**, trocadas
+  por um par de ícones no canto da barra (lista e quadro), e a escolha
+  **fica gravada no navegador** de quem usa:
+  - **Lista** — a tabela de sempre, com as abas e as ações em lote.
+  - **Quadro (Kanban)** — uma coluna por etapa do funil, cartão arrastável
+    entre colunas. Cada coluna desenha 30 cartões por vez, com "Mostrar
+    mais": a fila de entrada tem milhares de leads.
+- Fonte → Usuário, 2026-09-23, apontando a tela de Tickets do Auvo como
+  referência.
+
+**6.22**
+- Decisão → **Reunião tem data e hora.** Ao registrar uma reunião na
+  Timeline, o CRM pede **data e horário** (Brasília) e, com eles
+  preenchidos, cria sozinho a **tarefa da reunião** em Tarefas, com o
+  contato, a empresa e o horário — é o que faz a reunião aparecer na
+  agenda de quem marcou. Campo vazio = reunião que já aconteceu: registra
+  o histórico e não cria tarefa.
+  Em Tarefas, o prazo passa a ter **dois formatos**: tarefa do tipo
+  Reunião pede data + hora; todo o resto continua sendo um dia só. Arrastar
+  uma reunião no calendário **muda o dia e mantém o horário**.
+  A tarefa de Reunião também registra **pessoas envolvidas**: os demais
+  contatos da mesma empresa que participam, marcados além do contato
+  principal. Só aparece no tipo Reunião; trocar o contato principal tira
+  essa pessoa da lista de envolvidos.
+- Fonte → Usuário, 2026-09-23: "ao agendar uma reunião inclua campo de
+  data hora e coloque isso no tarefa menu de tarefas também"; 2026-09-24:
+  "para a tarefa tipo reuniao crie campo para selecionar pessoas
+  envolvidas".
+
+**6.23**
+- Decisão → **Cliente é quem já comprou** — pedido emitido no eGestor ou
+  oportunidade ganha no Pipeline. Estar cadastrado como cliente no eGestor
+  **não basta**: o ERP marca assim quem nunca comprou (145 cadastros em
+  2026-09-18, todos levados para a Prospecção). A régua é a mesma na
+  **Carteira de clientes**, na ficha da empresa e na busca geral.
+  - Empresa criada por import de cotação, por conversão de lead ou na mão
+    **não é cliente** enquanto não fechar nada: fica na Prospecção.
+  - Empresa que já comprou **não é mais lead**: sai da fila de triagem e
+    da seção Prospecção da busca, e aparece na Carteira de clientes.
+  - O item de menu **Empresas** passou a se chamar **Carteira de clientes**.
+  - A promoção de contatos do eGestor não tira mais da Prospecção quem
+    ainda não comprou.
+- Fonte → Usuário, 2026-09-18, ao achar a CRDC FERRAMENTARIA listada como
+  empresa e como prospect na mesma busca: "se tem pedido e nota fiscal é
+  cliente".
+
+**6.24**
+- Decisão → O filtro de **tags e segmentos** da Prospecção é um **botão
+  "Filtros"** na barra, que abre uma janela de seleção com **caixas de
+  marcar** — dá para escolher **quantas tags quiser**. As duas fileiras de
+  pastilhas que ficavam em cima da tabela foram **apagadas**: com 27 tags
+  elas tomavam três linhas da tela e só deixavam escolher uma por vez.
+  - Com **mais de uma tag** marcada, a janela pergunta se é **qualquer uma
+    delas** (padrão) ou **todas ao mesmo tempo**.
+  - Cada opção mostra **quantos leads** ela traz, contados na Prospecção
+    inteira — não muda conforme a seleção.
+  - O botão mostra **quantos filtros estão valendo**, e as marcações ficam
+    à vista abaixo da barra, cada uma removível num clique.
+  - Filtrar **não recarrega a tela** e vale nas quatro abas **e no
+    quadro** ao mesmo tempo.
+- Fonte → Usuário, 2026-09-24: "vamos melhorar aqueles filtros de tags;
+  crie um ícone que abra um modal para filtrar, inclusive mais de um".
 
 
 

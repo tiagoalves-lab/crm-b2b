@@ -3,6 +3,7 @@ import type {
   LeadTier,
   OpportunityStatus,
   Prisma,
+  RawLeadEtapa,
   RawLeadStatus,
   TaskStatus,
   TaskType,
@@ -51,6 +52,9 @@ export interface LeadEncontrado {
   municipio: string | null;
   uf: string | null;
   status: RawLeadStatus;
+  // Etapa do funil de prospecção (2026-09-23) — a coluna "Funil" da busca
+  // usa a mesma régua da Prospecção, que passou a ser esta coluna.
+  etapa: RawLeadEtapa;
   score: number;
   manualTier: LeadTier | null;
   segmento: string | null;
@@ -250,6 +254,7 @@ export class GlobalSearchService {
           municipio: true,
           uf: true,
           status: true,
+          etapa: true,
           score: true,
           manualTier: true,
           segmento: true,
