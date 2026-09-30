@@ -696,6 +696,28 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       expect(res.status).toBe(401);
     }, 20000);
 
+    // Fila de cotação (2026-09-30). Sem token, qualquer um leria o funil
+    // inteiro — empresa, valor negociado e o que cada cliente pediu.
+    it('recusa a fila de cotação sem Authorization nenhum', async () => {
+      const res = await request(app.getHttpServer()).get(
+        '/integrations/cotacoes/fila',
+      );
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Authorization ausente ou mal formado.',
+      );
+    }, 20000);
+
+    it('recusa a fila de cotação com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/integrations/cotacoes/fila?limite=10')
+        .set('Authorization', 'Bearer token-forjado-de-proposito');
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
     // Proposta congelada → PDF no card (2026-09-28). Sem esta checagem,
     // qualquer um anexaria um "documento oficial" em qualquer card — e o
     // anexo da integração é justamente o que ninguém pode remover pela tela.

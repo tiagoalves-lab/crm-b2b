@@ -1028,4 +1028,106 @@ describe('CotacoesService', () => {
       );
     });
   });
+  // ---------------------------------------------------------------
+  // Fila de cotação (2026-09-30) — o funil pedindo, sem saber de orçamento
+  // ---------------------------------------------------------------
+  describe('fila', () => {
+    function oportunidadeFake(over: Record<string, unknown> = {}) {
+      return {
+        id: OPPORTUNITY_ID,
+        description: 'duas máquinas',
+        amount: null,
+        createdAt: new Date('2026-09-01T12:00:00Z'),
+        updatedAt: new Date('2026-09-02T12:00:00Z'),
+        slaDueDate: null,
+        trelloCardId: 'abc0123456789abcdef01234',
+        trelloCardUrl: 'https://trello.com/c/abc',
+        ownerUserId: OWNER_USER_ID,
+        company: {
+          id: COMPANY_ID,
+          razaoSocial: 'EMPRESA TESTE LTDA',
+          fantasia: null,
+          cpfCnpj: '00.000.000/0001-91',
+          uf: 'RS',
+        },
+        stage: { id: STAGE_ID, name: 'Solicitação de Propostas', order: 1 },
+        items: [
+          { id: 'item-1', name: 'Laser 3015 6kW', amount: null, position: 0 },
+          { id: 'item-2', name: 'Dobradeira 135T', amount: 250000, position: 1 },
+        ],
+        ...over,
+      };
+    }
+
+    it('devolve a solicitação com os itens pedidos e o responsável resolvido', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findMany.mockResolvedValue([oportunidadeFake()]);
+      deps.supabaseUsers.getIdentities.mockResolvedValue(
+        new Map([[OWNER_USER_ID, { login: 'darla', name: 'Darlã', email: null }]]),
+      );
+
+      const res = await service.fila({});
+
+      expect(res.truncado).toBe(false);
+      expect(res.solicitacoes).toHaveLength(1);
+      const s = res.solicitacoes[0];
+      expect(s.opportunity_id).toBe(OPPORTUNITY_ID);
+      expect(s.empresa.cnpj).toBe('00000000000191'); // só dígitos
+      expect(s.etapa).toBe('Solicitação de Propostas');
+      expect(s.representante).toBe('Darlã');
+      expect(s.itens.map((i) => i.item_id)).toEqual(['item-1', 'item-2']);
+      expect(s.itens[1].valor).toBe(250000);
+    });
+
+    it('deixa a carga histórica de fora por padrão e a inclui quando pedido', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findMany.mockResolvedValue([]);
+
+      await service.fila({});
+      const semHistorico = deps.tx.opportunity.findMany.mock
+        .calls[0][0] as { where: Record<string, unknown> };
+      expect(semHistorico.where.NOT).toEqual({ origem: 'historico-cotacoes' });
+
+      await service.fila({ incluir_historico: true });
+      const comHistorico = deps.tx.opportunity.findMany.mock
+        .calls[1][0] as { where: Record<string, unknown> };
+      expect(comHistorico.where.NOT).toBeUndefined();
+    });
+
+    it('avisa quando cortou a lista em vez de mentir por omissão', async () => {
+      const { service, deps } = montar();
+      // pede 1: a busca traz limite+1 justamente pra saber que havia mais
+      deps.tx.opportunity.findMany.mockResolvedValue([
+        oportunidadeFake({ id: OPPORTUNITY_ID }),
+        oportunidadeFake({ id: COMPANY_ID }),
+      ]);
+
+      const res = await service.fila({ limite: 1 });
+
+      expect(res.truncado).toBe(true);
+      expect(res.solicitacoes).toHaveLength(1);
+    });
+
+    it('só traz oportunidade aberta e viva', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findMany.mockResolvedValue([]);
+
+      await service.fila({});
+
+      const args = deps.tx.opportunity.findMany.mock
+        .calls[0][0] as { where: Record<string, unknown> };
+      expect(args.where.status).toBe('open');
+      expect(args.where.deletedAt).toBeNull();
+    });
+
+    it('solicitação sem itens continua aparecendo (é trabalho a detalhar)', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findMany.mockResolvedValue([oportunidadeFake({ items: [] })]);
+
+      const res = await service.fila({});
+
+      expect(res.solicitacoes).toHaveLength(1);
+      expect(res.solicitacoes[0].itens).toEqual([]);
+    });
+  });
 });

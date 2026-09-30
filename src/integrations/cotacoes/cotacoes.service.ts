@@ -19,6 +19,7 @@ import {
 } from '../../tenancy/tenant-context.service';
 import type { MembershipContext } from '../../tenancy/tenant-membership.guard';
 import { BuscarCompaniesQueryDto } from './dto/buscar-companies-query.dto';
+import { FilaQueryDto } from './dto/fila-query.dto';
 import { ListCompaniesQueryDto } from './dto/list-companies-query.dto';
 import { TrelloComentarioDto } from './dto/trello-comentario.dto';
 import { TrelloComentariosDto } from './dto/trello-comentarios.dto';
@@ -686,6 +687,109 @@ export class CotacoesService {
     };
   }
 
+  // "O que o funil está pedindo" — uma linha por ITEM de solicitação, para a
+  // Fila de cotação do app (gama-webapp, planejamento/integracao-crm.md §19).
+  //
+  // Quatro decisões que o código não deixa óbvias:
+  // - **O CRM não sabe o que já foi cotado**, e é de propósito: quem cruza é o
+  //   app, que tem os orçamentos e guarda `crm_item_id` em cada linha de
+  //   produto. Trazer "cotado" para cá exigiria o CRM conhecer orçamento —
+  //   duas verdades sobre o mesmo fato.
+  // - **Só oportunidade ABERTA**: ganha/perde saiu do fluxo de cotação. A
+  //   carga histórica ('historico-cotacoes') fica fora por padrão — ela não
+  //   passou pela jornada e encheria a fila com pedido que ninguém vai cotar.
+  // - **Sai o pedido inteiro, mesmo sem itens**: solicitação cadastrada sem
+  //   checklist aparece com a lista vazia, e é assim que quem cota descobre
+  //   que falta detalhar — some-la seria esconder trabalho.
+  // - **Nomes de responsável vêm do Supabase Auth em UMA chamada** para todos
+  //   os donos da página (`getIdentities`), fora de transação: é requisição
+  //   HTTP, e segurar transação esperando HTTP já estourou o pool aqui antes.
+  async fila(query: FilaQueryDto): Promise<{
+    atualizado_em: string;
+    truncado: boolean;
+    solicitacoes: SolicitacaoDaFila[];
+  }> {
+    const limite = query.limite ?? 200;
+    const workspaceId = await this.workspaceId();
+
+    const oportunidades = await this.tenantContext.run(
+      this.ctxSistema(workspaceId),
+      async (tx) =>
+        tx.opportunity.findMany({
+          where: {
+            workspaceId,
+            status: 'open',
+            deletedAt: null,
+            ...(query.incluir_historico
+              ? {}
+              : { NOT: { origem: 'historico-cotacoes' } }),
+          },
+          select: {
+            id: true,
+            description: true,
+            amount: true,
+            createdAt: true,
+            updatedAt: true,
+            slaDueDate: true,
+            trelloCardId: true,
+            trelloCardUrl: true,
+            ownerUserId: true,
+            company: {
+              select: { id: true, razaoSocial: true, fantasia: true, cpfCnpj: true, uf: true },
+            },
+            stage: { select: { id: true, name: true, order: true } },
+            items: {
+              select: { id: true, name: true, amount: true, position: true },
+              orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
+          orderBy: [{ updatedAt: 'asc' }],
+          take: limite + 1,
+        }),
+    );
+
+    const truncado = oportunidades.length > limite;
+    const pagina = truncado ? oportunidades.slice(0, limite) : oportunidades;
+
+    const identidades = await this.supabaseUsers.getIdentities(
+      Array.from(new Set(pagina.map((o) => o.ownerUserId))),
+    );
+
+    return {
+      atualizado_em: new Date().toISOString(),
+      truncado,
+      solicitacoes: pagina.map((o) => {
+        const dono = identidades.get(o.ownerUserId);
+        return {
+          opportunity_id: o.id,
+          empresa: {
+            id: o.company.id,
+            nome: o.company.razaoSocial || o.company.fantasia || '',
+            cnpj: (o.company.cpfCnpj ?? '').replace(/\D/g, ''),
+            uf: o.company.uf ?? '',
+          },
+          etapa: o.stage.name,
+          etapa_posicao: o.stage.order,
+          representante: dono?.name ?? dono?.login ?? '',
+          descricao: o.description ?? '',
+          valor: o.amount == null ? null : Number(o.amount),
+          criado_em: o.createdAt.toISOString(),
+          atualizado_em: o.updatedAt.toISOString(),
+          // Vazio = proposta ainda pendente (o CRM zera quando ela sai das
+          // etapas de proposta). É o mesmo sinal do SLA da tela do CRM.
+          proposta_em: o.slaDueDate ? o.slaDueDate.toISOString() : null,
+          trello_card_id: o.trelloCardId ?? null,
+          trello_card_url: o.trelloCardUrl ?? null,
+          itens: o.items.map((i) => ({
+            item_id: i.id,
+            descricao: i.name,
+            valor: i.amount == null ? null : Number(i.amount),
+          })),
+        };
+      }),
+    };
+  }
+
   diagnosticoPdf(): Promise<{ ok: boolean; versao?: string; erro?: string }> {
     return this.pdf.diagnostico();
   }
@@ -1005,6 +1109,25 @@ export function nomeArquivoProposta(base: string, codigo: string): string {
     .slice(0, 150);
   const nome = limpo.length > 0 ? limpo : 'Proposta';
   return `${nome} (${codigo}).pdf`;
+}
+
+// Uma solicitação do funil como a Fila de cotação do app precisa vê-la: o
+// pedido (empresa, etapa, responsável) e os itens pedidos. Nada de orçamento —
+// quem sabe o que já foi cotado é o app.
+export interface SolicitacaoDaFila {
+  opportunity_id: string;
+  empresa: { id: string; nome: string; cnpj: string; uf: string };
+  etapa: string;
+  etapa_posicao: number;
+  representante: string;
+  descricao: string;
+  valor: number | null;
+  criado_em: string;
+  atualizado_em: string;
+  proposta_em: string | null;
+  trello_card_id: string | null;
+  trello_card_url: string | null;
+  itens: Array<{ item_id: string; descricao: string; valor: number | null }>;
 }
 
 interface ComentarioEspelhado {

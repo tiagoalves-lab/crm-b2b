@@ -11,6 +11,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../auth/public.decorator';
 import { CotacoesService } from './cotacoes.service';
 import { BuscarCompaniesQueryDto } from './dto/buscar-companies-query.dto';
+import { FilaQueryDto } from './dto/fila-query.dto';
 import { ListCompaniesQueryDto } from './dto/list-companies-query.dto';
 import { TrelloComentariosDto } from './dto/trello-comentarios.dto';
 import { TrelloStatusQueryDto } from './dto/trello-status-query.dto';
@@ -102,6 +103,19 @@ export class CotacoesController {
   ) {
     this.cotacoes.assertTokenValido(authorization);
     return this.cotacoes.trelloVincular(dto);
+  }
+
+  // Fila de cotação: as solicitações abertas com seus itens. Uma chamada por
+  // abertura da tela do app; o cruzamento com os orçamentos é lá.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Public()
+  @Get('fila')
+  async fila(
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: FilaQueryDto,
+  ) {
+    this.cotacoes.assertTokenValido(authorization);
+    return this.cotacoes.fila(query);
   }
 
   // "Enviar proposta ao CRM" — recebe a proposta CONGELADA do app de
