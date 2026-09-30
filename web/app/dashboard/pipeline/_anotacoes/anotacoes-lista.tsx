@@ -7,6 +7,7 @@ import type { Membership, OpportunityCommentFeedItem } from "@/lib/api/types";
 import { formatDateTimeBR } from "@/lib/format-date";
 import { markAllCommentsReadAction, setCommentReadAction } from "../actions";
 import { TagChips } from "../_detail/item-tags";
+import { TextoTrello } from "../_detail/texto-trello";
 
 // Histórico de anotações dos cards do Pipeline (2026-09-09): tudo que foi
 // comentado nos cards, em ordem cronológica invertida, com as anotações
@@ -76,7 +77,9 @@ function Anotacao({
           onClick={onToggleLido}
         />
       </div>
-      <div className="anotacoes-texto">{item.body}</div>
+      <div className="anotacoes-texto">
+        {item.externalAuthor?.trim() ? <TextoTrello texto={item.body} /> : item.body}
+      </div>
       <TagChips tags={item.tags ?? []} />
     </div>
   );

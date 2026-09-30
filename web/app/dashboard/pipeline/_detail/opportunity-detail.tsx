@@ -31,6 +31,7 @@ import {
 } from "../actions";
 import { ItemsPanel, TagChips, TagPicker } from "./item-tags";
 import HistoricoSection from "./historico";
+import { TextoTrello } from "./texto-trello";
 import { enviarAnexosOportunidade } from "./enviar-anexos";
 
 // Card da oportunidade (modal interceptado e página cheia) — client
@@ -899,7 +900,12 @@ export function DetailBody() {
                       {minhaPendencia && <span className="chat-pendencia-tag">⚠ Para você</span>}
                       <span className="chat-time">{formatDateTimeBR(c.createdAt)}</span>
                     </div>
-                    <div className="chat-text">{c.body}</div>
+                    {/* pre-wrap: o texto guarda as quebras de linha (quem
+                        escreve no Trello separa cada máquina em linhas) e
+                        sem isso o navegador emendava tudo. */}
+                    <div className="chat-text" style={{ whiteSpace: "pre-wrap" }}>
+                      {externo ? <TextoTrello texto={c.body} /> : c.body}
+                    </div>
                     {destacados.length > 0 && (
                       <div className="tag-stamp-row">
                         {destacados.map((userId) => (
