@@ -743,6 +743,7 @@ export class CotacoesService {
             amount: true,
             createdAt: true,
             updatedAt: true,
+            position: true,
             slaDueDate: true,
             trelloCardId: true,
             trelloCardUrl: true,
@@ -783,6 +784,9 @@ export class CotacoesService {
           },
           etapa: o.stage.name,
           etapa_posicao: o.stage.order,
+          // Ordem do card dentro da etapa no quadro (null = nunca arrastado):
+          // a Fila de cotação do app ordena igual ao pipeline.
+          posicao: o.position ?? null,
           representante: dono?.name ?? dono?.login ?? '',
           descricao: o.description ?? '',
           valor: o.amount == null ? null : Number(o.amount),
@@ -1132,6 +1136,7 @@ export interface SolicitacaoDaFila {
   empresa: { id: string; nome: string; cnpj: string; uf: string };
   etapa: string;
   etapa_posicao: number;
+  posicao: number | null;
   representante: string;
   descricao: string;
   valor: number | null;
