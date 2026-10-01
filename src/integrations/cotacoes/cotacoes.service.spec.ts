@@ -1079,19 +1079,27 @@ describe('CotacoesService', () => {
       expect(s.itens[1].valor).toBe(250000);
     });
 
-    it('deixa a carga histórica de fora por padrão e a inclui quando pedido', async () => {
+    // O filtro tem que ser NULL-safe: oportunidade nascida no CRM tem
+    // `origem` nula, e um `NOT` seco a descartaria junto com a carga
+    // histórica — foi o que esvaziou a fila inteira em 2026-10-01.
+    it('deixa a carga histórica de fora por padrão sem perder quem não tem origem', async () => {
       const { service, deps } = montar();
       deps.tx.opportunity.findMany.mockResolvedValue([]);
 
       await service.fila({});
       const semHistorico = deps.tx.opportunity.findMany.mock
         .calls[0][0] as { where: Record<string, unknown> };
-      expect(semHistorico.where.NOT).toEqual({ origem: 'historico-cotacoes' });
+      expect(semHistorico.where.NOT).toBeUndefined();
+      expect(semHistorico.where.OR).toEqual([
+        { origem: null },
+        { origem: { not: 'historico-cotacoes' } },
+      ]);
 
       await service.fila({ incluir_historico: true });
       const comHistorico = deps.tx.opportunity.findMany.mock
         .calls[1][0] as { where: Record<string, unknown> };
       expect(comHistorico.where.NOT).toBeUndefined();
+      expect(comHistorico.where.OR).toBeUndefined();
     });
 
     it('avisa quando cortou a lista em vez de mentir por omissão', async () => {

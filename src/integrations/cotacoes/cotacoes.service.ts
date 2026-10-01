@@ -720,9 +720,22 @@ export class CotacoesService {
             workspaceId,
             status: 'open',
             deletedAt: null,
+            // Fora a carga histórica — mas `NOT: { origem: ... }` sozinho é uma
+            // armadilha: vira `origem <> '...'` no SQL, que dá NULL para quem tem
+            // `origem` nula, e NULL não passa no WHERE. Oportunidade nascida no
+            // CRM tem origem NULL (o caso das 21 abertas em 2026-10-01), então o
+            // filtro esvaziava a fila inteira em silêncio — ela respondia 200 com
+            // lista vazia, que a tela lê como "nada pendente". O OR explícito diz
+            // o que se quer: não é a carga histórica, incluindo quem não tem
+            // origem nenhuma.
             ...(query.incluir_historico
               ? {}
-              : { NOT: { origem: 'historico-cotacoes' } }),
+              : {
+                  OR: [
+                    { origem: null },
+                    { origem: { not: 'historico-cotacoes' } },
+                  ],
+                }),
           },
           select: {
             id: true,
