@@ -4,12 +4,13 @@ import { getMe } from "@/lib/api/me";
 import { listMemberships } from "@/lib/api/memberships";
 import { companyRazaoSocialName } from "@/lib/api/companies";
 import { listOpportunities } from "@/lib/api/opportunities";
-import { contarComentariosFixados } from "@/lib/api/opportunity-comments";
+import { contarAnotacoes } from "@/lib/api/opportunity-comments";
 import { listPipelines } from "@/lib/api/pipelines";
 import type { Opportunity } from "@/lib/api/types";
-import { dayKeyBR, formatDateBR } from "@/lib/format-date";
+import { dayKeyBR, formatDateBR, formatDateOnlyBR } from "@/lib/format-date";
 import { createPipelineAction } from "./actions";
 import PipelineBoard from "./pipeline-board";
+import StandbyTile, { type StandbyRow } from "./standby-tile";
 import { calcularSla, slaSelo, slaTitulo } from "./sla";
 import SubmitButton from "@/app/_components/submit-button";
 import TopbarFilter, { TopbarFilterProvider } from "@/app/_components/topbar-filter";
@@ -61,16 +62,18 @@ export default async function PipelinePage({
   const { error, mes, periodo, ini, fim } = await searchParams;
   const token = await getServerAccessToken();
   // memberships (2026-09-11): nome do representante no card do quadro.
-  // fixados (2026-09-14): quantas anotações estão fixadas, mostrado
-  // abaixo do ícone de histórico.
-  const [me, { items: pipelines }, { items: opportunities }, memberships, fixados] =
+  // anotacoes (2026-09-14): quantas estão fixadas, mostrado abaixo do
+  // ícone de histórico; não lidas (2026-10-21) no selo do ícone.
+  const [me, { items: pipelines }, { items: opportunities }, memberships, anotacoes] =
     await Promise.all([
       getMe(token),
       listPipelines(token),
       listOpportunities(token),
       listMemberships(token),
-      contarComentariosFixados(token),
+      contarAnotacoes(token),
     ]);
+  const fixados = anotacoes?.fixados ?? null;
+  const naoLidas = anotacoes?.naoLidas ?? 0;
 
   const canManagePipeline =
     me.membership.role === "owner" || me.membership.role === "admin";
@@ -116,14 +119,36 @@ export default async function PipelinePage({
   const companyName = (opp: Opportunity) => (opp.company ? companyRazaoSocialName(opp.company) : "—");
 
   const pipelineOpps = opportunities.filter((o) => o.pipelineId === pipeline.id && !o.deletedAt);
-  const openOpps = pipelineOpps.filter((o) => o.status === "open");
+  // Stand by (2026-10-22): continua aberta, mas sai do quadro — fica no
+  // card "Stand by" do topo, que lista todas.
+  const openOpps = pipelineOpps.filter((o) => o.status === "open" && !o.standbyAt);
+  const standbyOpps = pipelineOpps
+    .filter((o) => o.status === "open" && o.standbyAt)
+    .sort((a, b) => (a.expectedCloseDate ?? "9999").localeCompare(b.expectedCloseDate ?? "9999"));
   const wonOpps = pipelineOpps.filter((o) => o.status === "won");
   const lostOpps = pipelineOpps.filter((o) => o.status === "lost");
 
   // Valor em aberto = soma simples do valor das oportunidades abertas
   // (2026-09-14). Antes era ponderado pela probabilidade da etapa, o que
-  // exibia um número que não existia em card nenhum do quadro.
+  // exibia um número que não existia em card nenhum do quadro — pelo
+  // mesmo motivo as em stand by (fora do quadro) não entram.
   const valorEmAberto = openOpps.reduce((sum, o) => sum + Number(o.amount), 0);
+
+  const ownerName = (userId: string) => {
+    const m = memberships.find((mm) => mm.userId === userId);
+    return m?.name?.trim() || m?.login?.trim() || "Sem representante";
+  };
+  const standbyRows: StandbyRow[] = standbyOpps.map((o) => ({
+    id: o.id,
+    companyLabel: companyName(o),
+    ownerLabel: ownerName(o.ownerUserId),
+    amountLabel: brl(Number(o.amount), o.currency),
+    retomadaLabel: o.expectedCloseDate ? formatDateOnlyBR(o.expectedCloseDate) : "—",
+    desdeLabel: o.standbyAt ? formatDateBR(o.standbyAt) : "—",
+  }));
+  const proximaRetomada = standbyOpps[0]?.expectedCloseDate
+    ? formatDateOnlyBR(standbyOpps[0].expectedCloseDate)
+    : null;
 
   const taxaFechamentoGlobal =
     wonOpps.length + lostOpps.length > 0
@@ -161,8 +186,12 @@ export default async function PipelinePage({
     .toISOString()
     .slice(0, 10);
 
+  // Tela inteira na altura da janela (pedido do usuário, 2026-10-29): o
+  // quadro estica no que sobra e cada coluna rola por dentro, pra faixa
+  // de encerradas ficar sempre à vista embaixo, sem rolar a página.
   return (
     <TopbarFilterProvider>
+      <div className="pipeline-tela">
       <div className="topbar">
         <div>
           <div className="page-title">Oportunidades</div>
@@ -171,18 +200,33 @@ export default async function PipelinePage({
         <TopbarFilter placeholder="Buscar oportunidade por empresa..." />
         {/* Histórico de anotações (2026-09-09): tudo que foi comentado
             nos cards num lugar só, fixados em cima. Abre em modal. Abaixo
-            do ícone, quantas anotações estão fixadas (2026-09-14). */}
+            do ícone, quantas anotações estão fixadas (2026-09-14). Selo
+            vermelho com as não lidas no canto do ícone, no molde do sino
+            do Trello (2026-10-21). */}
         <div className="anotacoes-atalho">
           <Link
             href="/dashboard/pipeline/anotacoes"
             className="btn btn-anotacoes"
-            title="Histórico de anotações dos cards"
-            aria-label="Histórico de anotações dos cards"
+            title={
+              naoLidas > 0
+                ? `Histórico de anotações dos cards · ${naoLidas} não ${naoLidas === 1 ? "lida" : "lidas"}`
+                : "Histórico de anotações dos cards"
+            }
+            aria-label={
+              naoLidas > 0
+                ? `Histórico de anotações dos cards, ${naoLidas} não ${naoLidas === 1 ? "lida" : "lidas"}`
+                : "Histórico de anotações dos cards"
+            }
           >
             <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
               <path d="M8 9h8M8 13h5" />
             </svg>
+            {naoLidas > 0 && (
+              <span className="anotacoes-nao-lidas" aria-hidden="true">
+                {naoLidas > 99 ? "99+" : naoLidas}
+              </span>
+            )}
           </Link>
           {fixados !== null && (
             <span className="anotacoes-fixadas">
@@ -201,7 +245,7 @@ export default async function PipelinePage({
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
 
-        <div className="stat-grid">
+        <div className="stat-grid pipeline-stats">
           <div className="stat-tile green">
             <div className="stat-label">Taxa de fechamento</div>
             <div className="stat-value">{taxaFechamentoGlobal}%</div>
@@ -210,6 +254,7 @@ export default async function PipelinePage({
             <div className="stat-label">Valor em aberto</div>
             <div className="stat-value">{brl(valorEmAberto)}</div>
           </div>
+          <StandbyTile rows={standbyRows} proximaRetomada={proximaRetomada} />
           <div className="stat-tile">
             <div className="stat-label">Ganhas / encerradas</div>
             <div className="stat-value">
@@ -235,6 +280,23 @@ export default async function PipelinePage({
             <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>
               azul = fechada · vermelho = perdida
             </span>
+            <div className="closed-summary">
+              <span className="cs-stat">
+                Encerradas: <b>{encerradas.length}</b>
+              </span>
+              <span className="cs-stat" style={{ color: "var(--blue)" }}>
+                Fechadas: <b>{ganhasNoPeriodo.length}</b>
+              </span>
+              <span className="cs-stat" style={{ color: "var(--danger)" }}>
+                Perdidas: <b>{perdidasNoPeriodo.length}</b>
+              </span>
+              <span className="cs-stat" style={{ color: "var(--green)" }}>
+                Ganho no período: <b>{brl(valorGanhoPeriodo)}</b>
+              </span>
+              <span className="cs-stat">
+                Taxa de fechamento: <b>{taxaFechamentoPeriodo}%</b>
+              </span>
+            </div>
 
             {!isCustom ? (
               <div className="period-filter">
@@ -285,23 +347,6 @@ export default async function PipelinePage({
             </form>
           )}
 
-          <div className="closed-summary">
-            <span className="cs-stat">
-              Encerradas: <b>{encerradas.length}</b>
-            </span>
-            <span className="cs-stat" style={{ color: "var(--blue)" }}>
-              Fechadas: <b>{ganhasNoPeriodo.length}</b>
-            </span>
-            <span className="cs-stat" style={{ color: "var(--danger)" }}>
-              Perdidas: <b>{perdidasNoPeriodo.length}</b>
-            </span>
-            <span className="cs-stat" style={{ color: "var(--green)" }}>
-              Ganho no período: <b>{brl(valorGanhoPeriodo)}</b>
-            </span>
-            <span className="cs-stat">
-              Taxa de fechamento: <b>{taxaFechamentoPeriodo}%</b>
-            </span>
-          </div>
 
           <div className="closed-grid">
             {encerradas.length > 0 ? (
@@ -310,7 +355,9 @@ export default async function PipelinePage({
                 return (
                   <Link key={opp.id} href={`/dashboard/pipeline/${opp.id}`} className={`closed-card ${won ? "ganho" : "perdido"}`}>
                     <div className="closed-card-top">
-                      <span className="closed-co">{companyName(opp)}</span>
+                      <span className="closed-co" title={companyName(opp)}>
+                        {companyName(opp)}
+                      </span>
                       {/* SLA da proposta, automático
                           (2026-09-16) — ver sla.ts. */}
                       <span className="card-sla" title={slaTitulo(calcularSla(opp))}>
@@ -327,7 +374,11 @@ export default async function PipelinePage({
                     </div>
                     <div className="closed-foot">
                       <span className={`closed-val ${won ? "ganho" : "perdido"}`}>{brl(Number(opp.amount), opp.currency)}</span>
-                      {!won && opp.lostReason && <span className="closed-motivo">{opp.lostReason}</span>}
+                      {!won && opp.lostReason && (
+                        <span className="closed-motivo" title={opp.lostReason}>
+                          {opp.lostReason}
+                        </span>
+                      )}
                     </div>
                   </Link>
                 );
@@ -337,6 +388,7 @@ export default async function PipelinePage({
             )}
           </div>
         </div>
+      </div>
       </div>
     </TopbarFilterProvider>
   );

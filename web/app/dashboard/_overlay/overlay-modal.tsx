@@ -13,6 +13,7 @@ export default function OverlayModal({
   footer,
   wide,
   xl,
+  split,
 }: {
   title: string;
   children: React.ReactNode;
@@ -21,6 +22,10 @@ export default function OverlayModal({
   // Mais largo ainda (card de Oportunidade, 2026-09-04): o card tem duas
   // colunas — conteúdo + lista lateral de itens — e não cabe em 720px.
   xl?: boolean;
+  // Card de Oportunidade em três colunas (2026-10-16): mais largo, altura
+  // fixa na tela e cada coluna rolando por conta própria, como o cartão
+  // do Trello — ver .modal.split no globals.css.
+  split?: boolean;
 }) {
   const router = useRouter();
   const close = () => router.back();
@@ -37,7 +42,9 @@ export default function OverlayModal({
   return (
     <div className="overlay open" onClick={close}>
       <div
-        className={xl ? "modal wide xl" : wide ? "modal wide" : "modal"}
+        className={
+          split ? "modal wide xl split" : xl ? "modal wide xl" : wide ? "modal wide" : "modal"
+        }
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-head">

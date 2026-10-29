@@ -1,6 +1,13 @@
 import { PartialType } from '@nestjs/mapped-types';
 import type { OpportunityStatus } from '@prisma/client';
-import { IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { SLA_TRATAMENTOS, type SlaTratamento } from '../opportunity-sla';
 import { CreateOpportunityDto } from './create-opportunity.dto';
 
@@ -27,4 +34,11 @@ export class UpdateOpportunityDto extends PartialType(CreateOpportunityDto) {
   @IsOptional()
   @IsIn(SLA_TRATAMENTOS)
   slaTratamento?: SlaTratamento;
+
+  // Stand by (2026-10-22): true coloca a oportunidade em espera — exige
+  // `expectedCloseDate` nova, de hoje em diante; false retoma a negociação.
+  // Ver OpportunityService#proximoStandby.
+  @IsOptional()
+  @IsBoolean()
+  standby?: boolean;
 }

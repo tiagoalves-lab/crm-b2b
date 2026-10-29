@@ -21,6 +21,7 @@
 //   node_modules\.bin\ts-node scripts/sanitizar-cadastros-cnpj.ts --limit=5           # dry-run só nas 5 primeiras (teste)
 //   node_modules\.bin\ts-node scripts/sanitizar-cadastros-cnpj.ts --apply             # grava de verdade
 //   node_modules\.bin\ts-node scripts/sanitizar-cadastros-cnpj.ts --sem-ficha --apply # só as que nunca foram consultadas na Receita
+//   node_modules\.bin\ts-node scripts/sanitizar-cadastros-cnpj.ts --sem-ficha --com-lead --apply # idem, só empresas de lead da Prospecção
 //
 // Decisões de segurança de dado tomadas aqui (evitar perda de dado real
 // coletado manualmente pela equipe, que o Cartão CNPJ não tem como saber
@@ -75,6 +76,10 @@ const APLICAR = process.argv.includes('--apply') && !CSV_PATH;
 // Só as empresas que ainda não têm a ficha da Receita (customFields.
 // cnpj_lookup) — ver comentário no filtro dentro de main().
 const SOMENTE_SEM_FICHA = process.argv.includes('--sem-ficha');
+// `--com-lead` (2026-10-26): só empresas de lead ativo da Prospecção que já
+// tem CNAE — as que mostravam dado na Prospecção e ficha vazia em Empresas.
+// Inclui as de tag "lead-triagem", que o filtro padrão deixa de fora.
+const SOMENTE_COM_LEAD = process.argv.includes('--com-lead');
 const DELAY_MS = 500;
 
 function sleep(ms: number) {
@@ -121,17 +126,32 @@ async function main() {
   });
   const ctx = { userId: owner.userId, workspaceId: workspace.id, role: owner.role };
 
-  const todas = await tenantContext.run(ctx, (tx) =>
-    tx.company.findMany({
+  const todas = await tenantContext.run(ctx, async (tx) => {
+    const idsComLead = SOMENTE_COM_LEAD
+      ? (
+          await tx.rawLead.findMany({
+            where: {
+              workspaceId: workspace.id,
+              status: { not: 'descartado' },
+              cnaePrincipal: { not: null },
+              promotedCompanyId: { not: null },
+            },
+            select: { promotedCompanyId: true },
+          })
+        ).map((r) => r.promotedCompanyId as string)
+      : undefined;
+    return tx.company.findMany({
       where: {
         workspaceId: workspace.id,
         deletedAt: null,
         cpfCnpj: { not: null },
-        NOT: { tags: { has: 'lead-triagem' } },
+        ...(idsComLead
+          ? { id: { in: idsComLead } }
+          : { NOT: { tags: { has: 'lead-triagem' } } }),
       },
       orderBy: { createdAt: 'asc' },
-    }),
-  );
+    });
+  });
 
   const comCnpjValido = todas.filter(
     (c) => normalizado(c.cpfCnpj).replace(/\D/g, '').length === 14,
@@ -220,8 +240,10 @@ async function main() {
 
     if (APLICAR && (alterados.length > 0 || snapshotMudou)) {
       try {
+        // semTimeline: carga em lote não é ação humana (ver SemTimeline em
+        // company.service.ts).
         await tenantContext.run(ctx, (tx) =>
-          companies.update(tx, owner, company.id, dto),
+          companies.update(tx, owner, company.id, dto, { semTimeline: true }),
         );
         console.log('  ✓ gravado');
       } catch (err) {

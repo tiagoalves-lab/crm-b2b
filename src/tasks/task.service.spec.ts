@@ -516,3 +516,91 @@ describe('TaskService.remove — registro de exclusões', () => {
     expect(del).not.toHaveBeenCalled();
   });
 });
+
+// Membros da tarefa (2026-09-29): quem é incluído vê e trabalha a tarefa,
+// mas não exclui; o responsável nunca aparece duplicado na lista.
+describe('TaskService — membros da tarefa', () => {
+  const RESPONSAVEL = 'user-responsavel';
+  const MEMBRO = 'user-membro';
+  let service: TaskService;
+
+  beforeEach(() => {
+    service = new TaskService(
+      new PolicyService(),
+      new ActivityService(new PolicyService()),
+      { avisarTarefaAtribuida: jest.fn() } as unknown as NotificationService,
+    );
+  });
+
+  const existingTask = {
+    id: 'task-1',
+    workspaceId: WORKSPACE_ID,
+    assigneeUserId: RESPONSAVEL,
+    companyId: COMPANY_ID,
+    opportunityId: null,
+    status: 'pending',
+    title: 'Visitar cliente',
+    memberUserIds: [MEMBRO],
+    participantContactIds: [],
+  };
+  const representante = (userId: string) =>
+    membership({ role: 'sales_rep', userId });
+
+  it('membro abre a tarefa de outro responsável', async () => {
+    const tx = fakeTx({ existingTask });
+    await expect(
+      service.mustBeVisible(tx, representante(MEMBRO), 'task-1', 'read'),
+    ).resolves.toMatchObject({ id: 'task-1' });
+  });
+
+  it('membro conclui a tarefa', async () => {
+    const tx = fakeTx({ existingTask });
+    const updated = await service.update(tx, representante(MEMBRO), 'task-1', {
+      status: 'done',
+    });
+    expect(updated.status).toBe('done');
+  });
+
+  it('CRÍTICO: membro não exclui a tarefa', async () => {
+    const tx = fakeTx({ existingTask });
+    await expect(
+      service.mustBeVisible(tx, representante(MEMBRO), 'task-1', 'delete'),
+    ).rejects.toThrow('Tarefa não encontrada.');
+  });
+
+  it('CRÍTICO: quem não é membro nem responsável continua sem acesso', async () => {
+    const tx = fakeTx({ existingTask });
+    await expect(
+      service.mustBeVisible(tx, representante('user-estranho'), 'task-1', 'read'),
+    ).rejects.toThrow('Tarefa não encontrada.');
+  });
+
+  it('lista do representante inclui as tarefas em que ele é membro', async () => {
+    const tx = fakeTx();
+    await service.findAll(tx, representante(MEMBRO), {});
+    const where = (tx.task.findMany as jest.Mock).mock.calls[0][0].where;
+    expect(where.OR).toEqual([
+      { assigneeUserId: MEMBRO },
+      { memberUserIds: { hasSome: [MEMBRO] } },
+    ]);
+  });
+
+  it('tira repetidos e o próprio responsável da lista de membros', async () => {
+    const tx = fakeTx();
+    const task = await service.create(tx, membership(), {
+      title: 'Nova',
+      companyId: COMPANY_ID,
+      assigneeUserId: RESPONSAVEL,
+      memberUserIds: [MEMBRO, MEMBRO, RESPONSAVEL],
+    });
+    expect(task.memberUserIds).toEqual([MEMBRO]);
+  });
+
+  it('trocar o responsável para um membro o tira da lista', async () => {
+    const tx = fakeTx({ existingTask });
+    const updated = await service.update(tx, membership(), 'task-1', {
+      assigneeUserId: MEMBRO,
+    });
+    expect(updated.memberUserIds).toEqual([]);
+  });
+});

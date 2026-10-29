@@ -11,6 +11,7 @@ import type {
   PaginatedResult,
   SemTimeline,
 } from '../companies/company.service';
+import { CLIENTE_WHERE } from '../companies/cliente-regra';
 import { CompanyService } from '../companies/company.service';
 import { ContactService } from '../companies/contact.service';
 import type { CreateCompanyDto } from '../companies/dto/create-company.dto';
@@ -27,7 +28,7 @@ import type { UpdateLeadEtapaDto } from './dto/update-lead-etapa.dto';
 import type { UpdateLeadSegmentoDto } from './dto/update-lead-segmento.dto';
 import type { UpdateLeadTagsDto } from './dto/update-lead-tags.dto';
 import type { UpdateLeadTierDto } from './dto/update-lead-tier.dto';
-import { etapaAvancada } from './etapa-funil';
+import { etapaAvancada, marcaPassagem } from './etapa-funil';
 import { LeadScoringService } from './lead-scoring.service';
 import {
   indexarRepresentantes,
@@ -493,6 +494,45 @@ export class RawLeadService {
     };
   }
 
+  // Badge do menu "Leads convertidos" (2026-10-27): empresas de lead
+  // convertido que ainda não compraram — mesmo recorte da tela
+  // (web/app/dashboard/leads-convertidos): carteira do lead, empresa
+  // visível, não excluída, fora da triagem e sem compra (CLIENTE_WHERE).
+  // Conta EMPRESA, não lead: dois leads da mesma empresa são uma linha só.
+  async contarConvertidosSemCompra(
+    tx: TenantTx,
+    membership: MembershipContext,
+  ): Promise<number> {
+    if (!this.policy.canModule(membership, 'leads', 'ver')) {
+      throw new ForbiddenException('Sem permissão para ver leads.');
+    }
+    const [ownerFilter, companyFilter] = await Promise.all([
+      this.policy.rawLeadReadFilter(tx, membership),
+      this.policy.companyReadFilter(tx, membership),
+    ]);
+    const empresas = await tx.rawLead.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...ownerFilter,
+        status: 'aprovado',
+        promotedCompany: {
+          is: {
+            workspaceId: membership.workspaceId,
+            deletedAt: null,
+            AND: [
+              companyFilter,
+              { NOT: { tags: { has: 'lead-triagem' } } },
+              { NOT: CLIENTE_WHERE },
+            ],
+          },
+        },
+      },
+      select: { promotedCompanyId: true },
+      distinct: ['promotedCompanyId'],
+    });
+    return empresas.length;
+  }
+
   async findOne(
     tx: TenantTx,
     membership: MembershipContext,
@@ -564,7 +604,11 @@ export class RawLeadService {
       workspaceId: membership.workspaceId,
       actorUserId: membership.userId,
       type: 'field_update',
-      payload: { action: 'lead_approved', razaoSocial: lead.razaoSocial },
+      payload: {
+        action: 'lead_approved',
+        origem: 'prospeccao',
+        razaoSocial: lead.razaoSocial,
+      },
       companyId: updated.id,
     });
 
@@ -593,6 +637,176 @@ export class RawLeadService {
     });
   }
 
+  // Recuperar lead descartado (pedido do usuário, 2026-10-19) — desfaz
+  // discard(): o lead volta pra triagem na etapa em que parou (a etapa
+  // nunca foi apagada). A company-lead nunca saiu do lugar, então não há
+  // nada a restaurar nela. discardedAt volta a null: o lead está no funil
+  // de novo, e um descarte futuro é uma saída nova, com a data dela.
+  //
+  // Duas travas, porque enquanto o lead esteve descartado a empresa pode
+  // ter seguido outro caminho:
+  // - outro lead em triagem pro mesmo CNPJ/empresa (create() não olha os
+  //   descartados no dedupe) — recuperar duplicaria o cartão no quadro;
+  // - a empresa já não é lead-triagem (foi convertida por outro lead, ou
+  //   o lead caiu numa empresa que já estava na Carteira) — devolver à
+  //   triagem algo que já saiu dela bagunçaria a carteira.
+  async restore(
+    tx: TenantTx,
+    membership: MembershipContext,
+    id: string,
+  ): Promise<RawLead> {
+    const lead = await this.mustBeVisible(tx, membership, id, 'write');
+    if (lead.status !== 'descartado') {
+      throw new BadRequestException('Só lead descartado pode ser recuperado.');
+    }
+
+    // Lead sem CNPJ e sem empresa deixa o OR vazio — o Prisma trata como
+    // "nenhum", então não há com quem conflitar.
+    const outroEmTriagem = await tx.rawLead.findFirst({
+      where: {
+        workspaceId: membership.workspaceId,
+        id: { not: lead.id },
+        status: 'novo',
+        OR: [
+          ...(lead.cnpj ? [{ cnpj: lead.cnpj }] : []),
+          ...(lead.promotedCompanyId
+            ? [{ promotedCompanyId: lead.promotedCompanyId }]
+            : []),
+        ],
+      },
+      select: { id: true },
+    });
+    if (outroEmTriagem) {
+      throw new BadRequestException(
+        'Esta empresa já tem outro lead em andamento na Prospecção — trabalhe por ele.',
+      );
+    }
+
+    if (lead.promotedCompanyId) {
+      const company = await tx.company.findFirst({
+        where: {
+          id: lead.promotedCompanyId,
+          workspaceId: membership.workspaceId,
+        },
+        select: { tags: true, deletedAt: true },
+      });
+      if (
+        company &&
+        !company.deletedAt &&
+        !company.tags.includes('lead-triagem')
+      ) {
+        throw new BadRequestException(
+          'Esta empresa já foi convertida ou já é cliente — trabalhe pela ficha dela.',
+        );
+      }
+    }
+
+    return tx.rawLead.update({
+      where: { id: lead.id },
+      data: { status: 'novo', discardedAt: null },
+    });
+  }
+
+  // Desconverter lead (pedido do usuário, 2026-10-27) — desfaz approve():
+  // o lead volta pra triagem e a empresa volta a ser company-lead (tag
+  // lead-triagem), saindo de Leads convertidos.
+  //
+  // Trava principal, pedida pelo usuário: empresa com proposta vinculada
+  // (qualquer oportunidade não excluída, inclusive da carga histórica)
+  // mantém a conversão — a proposta só existe porque o lead foi
+  // convertido, e devolvê-lo à triagem deixaria o Pipeline apontando pra
+  // um prospect. Empresa que já comprou também não volta (é cliente,
+  // decisão 6.23), e outro lead convertido na mesma empresa impede, porque
+  // a tag da empresa é uma só pros dois.
+  //
+  // Volta pra etapa mais adiantada que o lead já tinha alcançado (as datas
+  // de passagem dizem qual), porque approve() sobrescreveu a etapa com
+  // Negociação. convertedAt volta a null: a conversão não se sustentou, e
+  // uma nova conversão é uma passagem nova, com a data dela.
+  async unconvert(
+    tx: TenantTx,
+    membership: MembershipContext,
+    id: string,
+  ): Promise<RawLead> {
+    const lead = await this.mustBeVisible(tx, membership, id, 'write');
+    if (lead.status !== 'aprovado') {
+      throw new BadRequestException('Só lead convertido pode ser desconvertido.');
+    }
+    if (!lead.promotedCompanyId) {
+      throw new BadRequestException('Lead sem empresa associada.');
+    }
+    const companyId = lead.promotedCompanyId;
+
+    const [company, propostas, compras, outroConvertido] = await Promise.all([
+      tx.company.findFirst({
+        where: { id: companyId, workspaceId: membership.workspaceId },
+        select: { id: true, tags: true },
+      }),
+      tx.opportunity.count({
+        where: { workspaceId: membership.workspaceId, companyId, deletedAt: null },
+      }),
+      tx.salesHistory.count({
+        where: { workspaceId: membership.workspaceId, companyId },
+      }),
+      tx.rawLead.findFirst({
+        where: {
+          workspaceId: membership.workspaceId,
+          id: { not: lead.id },
+          status: 'aprovado',
+          promotedCompanyId: companyId,
+        },
+        select: { id: true },
+      }),
+    ]);
+    if (!company) {
+      throw new NotFoundException('Empresa do lead não encontrada.');
+    }
+    if (propostas > 0) {
+      throw new BadRequestException(
+        `Esta empresa tem ${propostas} proposta(s) vinculada(s) no Pipeline — a conversão fica mantida.`,
+      );
+    }
+    if (compras > 0) {
+      throw new BadRequestException(
+        'Esta empresa já comprou (pedido no eGestor) — é cliente, a conversão fica mantida.',
+      );
+    }
+    if (outroConvertido) {
+      throw new BadRequestException(
+        'Esta empresa tem outro lead convertido — a conversão fica mantida.',
+      );
+    }
+
+    const etapa = lead.qualifiedAt
+      ? 'qualificado'
+      : lead.reuniaoAt
+        ? 'reuniao'
+        : lead.andamentoAt
+          ? 'andamento'
+          : 'entrada';
+
+    const updated = await tx.rawLead.update({
+      where: { id: lead.id },
+      data: { status: 'novo', etapa, convertedAt: null },
+    });
+    if (!company.tags.includes('lead-triagem')) {
+      await tx.company.update({
+        where: { id: company.id },
+        data: { tags: [...company.tags, 'lead-triagem'] },
+      });
+    }
+
+    await this.activities.emit(tx, {
+      workspaceId: membership.workspaceId,
+      actorUserId: membership.userId,
+      type: 'field_update',
+      payload: { action: 'lead_unconverted', razaoSocial: lead.razaoSocial },
+      companyId: company.id,
+    });
+
+    return updated;
+  }
+
   // Classificação manual (Quente/Morno/Frio) — pedido direto do usuário,
   // fora do §4.4 original. `tier: null` limpa a marcação e volta a usar o
   // score automático (ver comentário em findAll sobre como o filtro
@@ -604,6 +818,18 @@ export class RawLeadService {
     dto: UpdateLeadTierDto,
   ): Promise<RawLead> {
     const atual = await this.mustBeVisible(tx, membership, id, 'write');
+    // Informar o prazo É a qualificação (decisão 6.2), então o cartão
+    // sobe sozinho pra etapa Qualificado no quadro — sem isso o SDR
+    // classificaria e depois arrastaria, dando a mesma informação
+    // duas vezes. Limpar o prazo devolve o cartão pra Andamento (sem
+    // prazo não houve qualificação) e nunca mexe em quem já está em
+    // Negociação/Fechamento.
+    const etapa =
+      dto.tier === null
+        ? atual.etapa === 'qualificado'
+          ? 'andamento'
+          : atual.etapa
+        : etapaAvancada(atual.etapa, 'qualificado');
     return tx.rawLead.update({
       where: { id },
       // qualifiedAt (2026-09-21): a qualificação do SDR é o prazo de
@@ -615,18 +841,8 @@ export class RawLeadService {
         manualTier: dto.tier,
         qualifiedAt:
           dto.tier === null ? null : (atual.qualifiedAt ?? new Date()),
-        // Informar o prazo É a qualificação (decisão 6.2), então o cartão
-        // sobe sozinho pra etapa Qualificado no quadro — sem isso o SDR
-        // classificaria e depois arrastaria, dando a mesma informação
-        // duas vezes. Limpar o prazo devolve o cartão pra Andamento (sem
-        // prazo não houve qualificação) e nunca mexe em quem já está em
-        // Negociação/Fechamento.
-        etapa:
-          dto.tier === null
-            ? atual.etapa === 'qualificado'
-              ? 'andamento'
-              : atual.etapa
-            : etapaAvancada(atual.etapa, 'qualificado'),
+        etapa,
+        ...marcaPassagem(etapa, atual),
       },
     });
   }
@@ -664,6 +880,7 @@ export class RawLeadService {
       // passagem — que é o que o funil do Painel mede por período.
       data: {
         etapa: dto.etapa,
+        ...marcaPassagem(dto.etapa, atual),
         ...(dto.etapa === 'qualificado' && !atual.qualifiedAt
           ? { qualifiedAt: new Date() }
           : {}),
@@ -728,7 +945,21 @@ export class RawLeadService {
     id: string,
     dtoRaw: UpdateLeadCadastroDto,
   ): Promise<RawLead> {
-    const lead = await this.mustBeNovo(tx, membership, id);
+    // Lead descartado (2026-10-07): ainda pode reconsultar a Receita pelo
+    // mesmo CNPJ (botão "Buscar dados na Receita" da ficha), mas não troca
+    // o CNPJ. Lead aprovado troca (2026-10-26: CNPJ errado num aprovado não
+    // tinha como ser corrigido pela Prospecção — a ficha da empresa já
+    // deixava, e o espelho abaixo leva a troca pra company-lead).
+    const lead = await this.mustBeVisible(tx, membership, id, 'write');
+    if (
+      lead.status === 'descartado' &&
+      dtoRaw.cnpj !== undefined &&
+      (dtoRaw.cnpj ?? '').replace(/\D/g, '') !== (lead.cnpj ?? '').replace(/\D/g, '')
+    ) {
+      throw new BadRequestException(
+        'Lead descartado — o CNPJ não pode mais ser trocado.',
+      );
+    }
     const dto = this.upperCaseCadastroFields(dtoRaw);
 
     // undefined = não tocar; null = limpar; string = dígitos validados.
@@ -766,7 +997,9 @@ export class RawLeadService {
       const existingCompanyId = rows[0]?.id;
       if (existingCompanyId && existingCompanyId !== lead.promotedCompanyId) {
         throw new BadRequestException(
-          'Este CNPJ já está cadastrado em Empresas. Descarte este lead e trabalhe pela ficha da empresa existente.',
+          lead.status === 'novo'
+            ? 'Este CNPJ já está cadastrado em Empresas. Descarte este lead e trabalhe pela ficha da empresa existente.'
+            : 'Este CNPJ já está cadastrado em outra empresa do CRM.',
         );
       }
     }

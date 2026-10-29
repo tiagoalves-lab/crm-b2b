@@ -105,6 +105,12 @@ function descreve(activity: Activity, memberships: Membership[]): string {
       const base = `Situação: ${SITUACAO[de] ?? de} → ${SITUACAO[para] ?? para}`;
       return motivo ? `${base} (motivo: ${motivo})` : base;
     }
+    // Stand by (2026-10-22).
+    if (action === "standby_on") {
+      const data = texto(payload, "expectedCloseDate");
+      return data ? `Colocada em Stand by · retomada prevista para ${formatDateOnlyBR(data)}` : "Colocada em Stand by";
+    }
+    if (action === "standby_off") return "Negociação retomada (saiu do Stand by)";
     if (action === "item_added") {
       const valor = texto(payload, "to");
       const item = texto(payload, "item") ?? "item";
@@ -163,7 +169,9 @@ export default function HistoricoSection({
         </span>
         <span>
           {opportunity.status === "open"
-            ? "Em aberto"
+            ? opportunity.standbyAt
+              ? "Em Stand by"
+              : "Em aberto"
             : `${SITUACAO[opportunity.status] ?? opportunity.status} em `}
           {opportunity.status !== "open" && opportunity.closedAt ? (
             <b>{formatDateBR(opportunity.closedAt)}</b>

@@ -300,11 +300,28 @@ export class GlobalSearchService {
 
     if (this.policy.canModule(membership, 'tarefas', 'ver')) {
       // Task usa assigneeUserId como "dono" — mesmo remapeamento de
-      // TaskService#resolveAssigneeFilter.
+      // TaskService#resolveAssigneeFilter. Membro da tarefa (2026-09-29)
+      // também a encontra, igual à tela de Tarefas.
       const escopoResponsavel =
         scope.ownerUserId === undefined
           ? {}
-          : { assigneeUserId: scope.ownerUserId };
+          : {
+              AND: [
+                {
+                  OR: [
+                    { assigneeUserId: scope.ownerUserId },
+                    {
+                      memberUserIds: {
+                        hasSome:
+                          typeof scope.ownerUserId === 'string'
+                            ? [scope.ownerUserId]
+                            : scope.ownerUserId.in,
+                      },
+                    },
+                  ],
+                },
+              ],
+            };
       const tarefas = await tx.task.findMany({
         where: {
           workspaceId,

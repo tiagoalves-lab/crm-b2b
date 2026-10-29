@@ -1,12 +1,15 @@
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { getServerAccessToken } from "@/lib/api/auth";
 import { getMe } from "@/lib/api/me";
 import { getSidebarCounts } from "@/lib/api/counts";
 import type { MembershipRole } from "@/lib/api/types";
 import { signOut } from "../login/actions";
 import DashboardNav from "./dashboard-nav";
+import NavCollapseButton, { NAV_COLLAPSED_COOKIE } from "./nav-collapse-button";
 import Toast from "./_overlay/toast";
 import SubmitButton from "@/app/_components/submit-button";
+import { IS_BETA } from "@/lib/ambiente";
 
 const ROLE_LABELS: Record<MembershipRole, string> = {
   owner: "Owner",
@@ -34,9 +37,10 @@ export default async function DashboardLayout({
   // números. Agora é um COUNT por recurso, numa requisição só:
   // GET /counts (src/counts/ no backend, mesmos filtros das telas).
   const [me, counts] = await Promise.all([getMe(token), getSidebarCounts(token)]);
+  const navRecolhido = (await cookies()).get(NAV_COLLAPSED_COOKIE)?.value === "1";
 
   return (
-    <div className="app-shell">
+    <div className={navRecolhido ? "app-shell nav-collapsed" : "app-shell"}>
       <aside className="sidebar">
         <div className="workspace-switch">
           <img
@@ -47,6 +51,7 @@ export default async function DashboardLayout({
             height={24}
           />
           <span className="sidebar-tagline">CRM</span>
+          {IS_BETA && <span className="beta-badge">Beta</span>}
         </div>
 
         <DashboardNav counts={counts} role={me.membership.role} permissions={me.membership.permissions} />
@@ -66,6 +71,7 @@ export default async function DashboardLayout({
               </svg>
             </SubmitButton>
           </form>
+          <NavCollapseButton initial={navRecolhido} />
         </div>
       </aside>
 

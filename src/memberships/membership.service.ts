@@ -10,6 +10,7 @@ import {
   MODULE_ACTIONS,
   PERMISSION_MODULES,
   parsePermissionMatrix,
+  resolvePermission,
   type PermissionMatrix,
 } from '../policy/permission-catalog';
 import { PolicyService } from '../policy/policy.service';
@@ -81,6 +82,7 @@ export class MembershipService {
         'Gerente só pode cadastrar membros com papel Gerente ou Representante.',
       );
     }
+    exigirOwnerParaPromoverOwner(membership, role);
 
     // dto.permissions vem da subpágina de Permissões do modal de membro
     // (web/app/dashboard/membros) — sempre validado contra o catálogo
@@ -89,12 +91,14 @@ export class MembershipService {
     // um gerente nunca consegue, por esta tela, conceder a um subordinado
     // uma permissão que ele mesmo não tem — fecha o caminho óbvio de
     // escalonamento de privilégio de uma matriz editável por não-admin.
-    const permissions = dto.permissions
-      ? this.capPermissionsToActor(
-          membership,
-          parsePermissionMatrix(dto.permissions),
-        )
-      : undefined;
+    // Passa pelo cap mesmo sem matriz: admin sem o Console fiscal criando
+    // outro admin sem matriz deixaria o novo com o preset (acesso ligado).
+    const capped = this.capPermissionsToActor(
+      membership,
+      dto.permissions ? parsePermissionMatrix(dto.permissions) : {},
+    );
+    const permissions =
+      dto.permissions || Object.keys(capped).length > 0 ? capped : undefined;
 
     // Gerente não escolhe o managerId do novo membro — sempre o próprio
     // gerente que está cadastrando, pra não abrir brecha de alocar alguém
@@ -163,6 +167,9 @@ export class MembershipService {
     if (!existing) {
       throw new NotFoundException('Membro não encontrado.');
     }
+    if (dto.role !== undefined && dto.role !== existing.role) {
+      exigirOwnerParaPromoverOwner(membership, dto.role);
+    }
 
     if (dto.managerId) {
       if (dto.managerId === id) {
@@ -204,16 +211,23 @@ export class MembershipService {
       }
     }
 
-    // update() já é owner/admin-only (checagem no topo) — capPermissionsToActor
-    // é no-op nesse caso (canModule sempre true pra owner/admin), mas passa
-    // pelo mesmo caminho de validação/cap de create() por consistência e
-    // como defesa em profundidade caso este gate mude no futuro.
-    const permissions = dto.permissions
-      ? this.capPermissionsToActor(
-          membership,
-          parsePermissionMatrix(dto.permissions),
-        )
-      : undefined;
+    // update() é owner/admin-only (checagem no topo), mas o admin não tem
+    // bypass em tudo (MODULOS_SEM_BYPASS_ADMIN): admin sem o Console fiscal
+    // não liga nem desliga essa caixa em ninguém — fica como está no
+    // membro (capPermissionsToActor com `existing`). Troca de papel sem
+    // matriz nova também passa pelo cap: senão virar admin herdaria o
+    // preset do admin e ganharia o acesso por tabela.
+    const mudaPapel = dto.role !== undefined && dto.role !== existing.role;
+    const permissions =
+      dto.permissions || mudaPapel
+        ? this.capPermissionsToActor(
+            membership,
+            dto.permissions
+              ? parsePermissionMatrix(dto.permissions)
+              : ((existing.permissions as PermissionMatrix | null) ?? {}),
+            existing,
+          )
+        : undefined;
 
     const updated = await tx.membership.update({
       where: { id: existing.id },
@@ -234,31 +248,40 @@ export class MembershipService {
     return updated;
   }
 
-  // Um ator não-owner/admin (ex.: gerente cadastrando um subordinado) nunca
-  // consegue, por esta tela, conceder uma permissão que ele mesmo não tem —
-  // pra cada módulo×ação marcado true na matriz recebida, se o PRÓPRIO
-  // ator não passa em canModule() pra aquele módulo×ação, força false em
-  // vez de aceitar. owner/admin: canModule sempre true, então isto nunca
-  // reduz nada pra eles (na prática só se aplica no create() de um
-  // gerente — update() é owner/admin-only, ver acima).
+  // Um ator nunca consegue, por esta tela, mexer numa permissão que ele
+  // mesmo não tem (gerente cadastrando subordinado; admin sem o Console
+  // fiscal) — pra cada módulo×ação em que o PRÓPRIO ator não passa em
+  // canModule(): no cadastro (sem `alvo`) fica desligado; na edição fica
+  // exatamente o valor que o membro já tinha (nem liga nem desliga —
+  // senão salvar outro campo de quem tem o acesso apagaria o dele).
+  // owner: canModule sempre true, então isto nunca reduz nada pra ele.
   private capPermissionsToActor(
     actor: MembershipContext,
     matrix: PermissionMatrix,
+    alvo?: Pick<Membership, 'role' | 'permissions'>,
   ): PermissionMatrix {
     const capped: PermissionMatrix = {};
     for (const module of PERMISSION_MODULES) {
       const requested = matrix[module];
-      if (!requested) continue;
       const cappedActions: PermissionMatrix[typeof module] = {};
       for (const action of MODULE_ACTIONS[module]) {
-        const value = requested[action];
-        if (value === undefined) continue;
-        cappedActions[action] =
-          value && !this.policy.canModule(actor, module, action)
-            ? false
-            : value;
+        const value = requested?.[action];
+        if (this.policy.canModule(actor, module, action)) {
+          if (value !== undefined) cappedActions[action] = value;
+        } else if (alvo) {
+          cappedActions[action] = resolvePermission(
+            alvo.role,
+            alvo.permissions as PermissionMatrix | null,
+            module,
+            action,
+          );
+        } else {
+          cappedActions[action] = false;
+        }
       }
-      capped[module] = cappedActions;
+      if (requested || Object.keys(cappedActions).length > 0) {
+        capped[module] = cappedActions;
+      }
     }
     return capped;
   }
@@ -308,5 +331,17 @@ export class MembershipService {
     const removed = await tx.membership.delete({ where: { id: existing.id } });
     this.membershipCache?.invalidate(existing.userId);
     return removed;
+  }
+}
+
+// Só owner promove alguém a owner (2026-10-22): o owner é o único papel com
+// bypass total, inclusive no Console fiscal — um admin sem o console que
+// se promovesse a owner contornaria a caixa desligada.
+function exigirOwnerParaPromoverOwner(
+  actor: MembershipContext,
+  role: MembershipRole,
+): void {
+  if (role === 'owner' && actor.role !== 'owner') {
+    throw new ForbiddenException('Só o owner pode promover alguém a owner.');
   }
 }

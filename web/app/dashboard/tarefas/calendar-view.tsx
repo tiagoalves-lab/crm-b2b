@@ -43,15 +43,18 @@ export interface CalendarTask {
   vinculoLabel: string;
 }
 
-// Oportunidade do Pipeline no calendário: só as que estão em "Negociação e
-// Fechamento" (pedido do usuário, 2026-09-16 — as das etapas de proposta
-// ficam só no quadro), no dia da previsão de fechamento. Arrasta igual
-// tarefa: soltar em outro dia muda a previsão de fechamento (o prazo SLA
-// não mexe — ele é da proposta, não da negociação). `version` vai junto
-// porque a gravação usa concorrência otimista.
+// Oportunidade do Pipeline no calendário: só as que estão em Negociação ou
+// Fechamento (pedido do usuário, 2026-09-16 — as das etapas de proposta
+// ficam só no quadro) e as em Stand by (2026-10-22), no dia da previsão de
+// fechamento. Arrasta igual tarefa: soltar em outro dia muda a previsão de
+// fechamento (o prazo SLA não mexe — ele é da proposta, não da
+// negociação). `version` vai junto porque a gravação usa concorrência
+// otimista.
 export interface CalendarOpportunity {
   id: string;
   version: number;
+  // Em Stand by: o cartão diz "Stand by" no lugar de "Pipeline".
+  standby: boolean;
   closeDate: string;
   companyLabel: string;
   amountLabel: string;
@@ -119,12 +122,17 @@ function OpportunityCard({ opp, overdue }: { opp: CalendarOpportunity; overdue: 
       {...attributes}
       {...listeners}
       className={`calendar-task calendar-opp${isDragging ? " dragging" : ""}`}
-      title={`Pipeline · ${opp.companyLabel} · ${opp.amountLabel} · ${opp.ownerLabel}${overdue ? " · previsão vencida" : ""}`}
+      title={`${opp.standby ? "Stand by" : "Pipeline"} · ${opp.companyLabel} · ${opp.amountLabel} · ${opp.ownerLabel}${overdue ? " · previsão vencida" : ""}`}
     >
       <Link href={`/dashboard/pipeline/${opp.id}`}>
         <div className="calendar-task-title">{opp.companyLabel}</div>
         <div className="calendar-task-meta">
-          <span><span className="calendar-opp-tag">Pipeline</span> · {opp.amountLabel}</span>
+          <span>
+            <span className={opp.standby ? "calendar-opp-tag standby" : "calendar-opp-tag"}>
+              {opp.standby ? "Stand by" : "Pipeline"}
+            </span>{" "}
+            · {opp.amountLabel}
+          </span>
           <span>{opp.ownerLabel}</span>
         </div>
       </Link>
@@ -300,8 +308,8 @@ export default function CalendarView({
 
         {error && <div className="error-banner">{error}</div>}
         <div className="field-hint" style={{ marginBottom: 10 }}>
-          Arraste um card para outro dia: tarefa muda o prazo; oportunidade do Pipeline em Negociação e Fechamento
-          muda a previsão de fechamento.
+          Arraste um card para outro dia: tarefa muda o prazo; oportunidade do Pipeline (Negociação, Fechamento ou
+          Stand by) muda a previsão de fechamento.
         </div>
 
         <DndContext sensors={sensors} onDragEnd={(event) => void handleDragEnd(event)}>

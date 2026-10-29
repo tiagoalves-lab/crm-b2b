@@ -50,6 +50,8 @@ function coletaVazia() {
     fixadas: [],
     tarefas: [],
     totalTarefasPendentes: 0,
+    tarefasNoRecorte: 0,
+    tarefasRecorteAte: 'dom 28/09',
     tarefasAtrasadas: 0,
     userIds: [],
   };

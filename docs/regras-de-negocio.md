@@ -245,11 +245,14 @@ outras.
   cliente pediu. Um cartão gera **um** card, para sempre: cadastrar de
   novo devolve o mesmo.
 - Decisão → O **chat do cartão é espelhado** no chat do card, e o botão
-  **Sincronizar** traz o que foi conversado depois. O espelho só
-  acrescenta: mensagem já trazida não vem duas vezes, e nada do que foi
-  escrito no CRM é apagado ou alterado. A mensagem mostra o nome de quem
-  escreveu no Trello, marcada como vinda de fora — a pessoa não é usuária
-  do CRM, então não vira autor de verdade.
+  **Sincronizar** traz o que foi conversado depois. Mensagem já trazida
+  não vem duas vezes, e nada do que foi escrito no CRM é apagado ou
+  alterado. Mensagem **corrigida no Trello** tem o texto atualizado no
+  card, com a versão anterior guardada no histórico do comentário (5.24)
+  — a correção chega junto com a próxima mensagem nova do cartão ou no
+  Sincronizar. A mensagem mostra o nome de quem escreveu no Trello,
+  marcada como vinda de fora — a pessoa não é usuária do CRM, então não
+  vira autor de verdade.
 - Decisão → O **representante da oportunidade sai do quadro do Trello**:
   cada representante tem o quadro dele, então é o quadro que diz de quem
   é a cotação. Quadro que não corresponde a nenhum membro (ou que
@@ -358,23 +361,25 @@ outras.
 - Fonte → Pedido do usuário, 2026-09-04.
 
 **5.9**
-- Decisão → Anexo do card de oportunidade tem **publicação**. Arquivo
-  enviado por **administrador ou proprietário** entra reservado: só esses
-  dois papéis enxergam, e um botão no anexo o **publica** para gerente e
-  representante. Arquivo enviado por **gerente ou representante** já
-  entra publicado. Publicar **não tem volta** — para tirar da vista,
-  exclui-se o anexo e envia-se outro.
-- Fonte → Pedido do usuário, 2026-09-15.
+- Decisão → Todo anexo do card de oportunidade **já entra publicado**,
+  visível para todos que enxergam a oportunidade — seja enviado por
+  alguém pela tela, seja o PDF da proposta que chega do app de cotações.
+  A reserva (anexo visível só para administrador e proprietário até ser
+  publicado) está **desativada por enquanto**; os poucos anexos que
+  ficaram reservados de antes seguem com o botão **Publicar** para
+  administrador e proprietário.
+- Fonte → Pedido do usuário, 2026-10-16.
 
 **5.10**
 - Decisão → O calendário de Tarefas mostra, além das tarefas, as
-  oportunidades do Pipeline **em Negociação e Fechamento**, no dia da
-  **previsão de fechamento**. As das etapas de proposta ficam só no
-  quadro; sem previsão, ganha ou perdida não aparece. O cartão diz
-  **Pipeline** (não "Proposta", que é tipo de tarefa) e **arrasta igual
+  oportunidades do Pipeline **em Negociação ou Fechamento** e todas as
+  **em Stand by** (qualquer etapa), no dia da **previsão de fechamento**.
+  As das etapas de proposta ficam só no quadro; sem previsão, ganha ou
+  perdida não aparece. O cartão diz **Pipeline** (não "Proposta", que é
+  tipo de tarefa) — ou **Stand by**, quando for o caso — e **arrasta igual
   tarefa**: soltar em outro dia muda a previsão de fechamento. Tarefa e
   oportunidade têm o **mesmo visual**, azul claro — atraso não muda a cor.
-- Fonte → Pedido do usuário, 2026-09-16.
+- Fonte → Pedido do usuário, 2026-09-16; Stand by, 2026-10-22.
 
 **5.11**
 - Decisão → O **SLA da proposta é automático** e mede quanto tempo o time
@@ -382,12 +387,13 @@ outras.
   saiu das telas e é preenchido pelo sistema.
   - Enquanto o card está em **Solicitação, Elaboração ou Aprovação de
     Propostas**, o SLA está pendente e conta **até hoje**.
-  - Ao mover o card para **Negociação e Fechamento**, o SLA **encerra** na
-    data do movimento. Card cadastrado direto em Negociação nasce
-    encerrado. Marcar como ganha, perdida ou reabrir **não mexe no SLA**:
-    ele mede a conclusão da proposta, não o aceite ou a recusa do cliente.
-  - Ao **voltar** um card de Negociação para uma etapa de proposta, abre
-    uma janela para escolher o tratamento:
+  - Ao mover o card para **Negociação** (ou direto para Fechamento), o
+    SLA **encerra** na data do movimento. Card cadastrado direto em
+    Negociação nasce encerrado. Marcar como ganha, perdida, Stand by ou
+    reabrir **não mexe no SLA**: ele mede a conclusão da proposta, não o
+    aceite ou a recusa do cliente.
+  - Ao **voltar** um card de Negociação ou Fechamento para uma etapa de
+    proposta, abre uma janela para escolher o tratamento:
     - **Erro na elaboração da proposta** — não reinicia: a contagem segue
       desde o início até o novo encerramento.
     - **Solicitação de alteração pelo cliente** — reinicia: grava a
@@ -445,12 +451,12 @@ outras.
 
 **5.15**
 - Decisão → Em **Últimas atividades** (Painel), do Pipeline só aparecem:
-  **oportunidade criada**, **movida para Negociação e Fechamento**,
-  **volta de Negociação** para uma etapa de proposta (aparece como
+  **oportunidade criada**, **movida para Negociação** (saída das etapas
+  de proposta), **volta** para uma etapa de proposta (aparece como
   "Solicitada alteração") e **marcada como fechada ou perdida** (com o
   motivo). Edição de campos, itens, troca entre etapas de proposta,
-  exclusão e reabertura não aparecem ali — continuam no histórico do
-  próprio card. Os demais módulos (tarefas, registros de contato,
+  passagem de Negociação para Fechamento, Stand by, exclusão e reabertura
+  não aparecem ali — continuam no histórico do próprio card. Os demais módulos (tarefas, registros de contato,
   empresas, prospecção) não mudam.
 - Fonte → Pedido do usuário, 2026-09-17.
 
@@ -464,8 +470,10 @@ outras.
   começaram todas como não lidas. Quem entra na lista: o **representante**
   vê só as anotações dos cards dele; o **gerente**, as dos cards dele e da
   equipe (a mesma regra dos cards que ele abre); **administrador e
-  proprietário** veem todas.
-- Fonte → Pedido do usuário, 2026-09-17.
+  proprietário** veem todas. O ícone do histórico na tela Pipeline leva
+  um **selo vermelho com o número de não lidas**, como o sino do Trello
+  (acima de 99 mostra "99+"); sem nada por ler, o selo some.
+- Fonte → Pedido do usuário, 2026-09-17; selo, 2026-10-21.
 
 **5.17**
 - Decisão → O cadastro de membros tem a marcação **Vendedor**. Só membro
@@ -532,10 +540,13 @@ outras.
   usuário, data, tipo e descrição, filtrado por período, tipo de
   anotação, usuário e empresa. Quando a mesma empresa tem vários
   registros do mesmo tipo dentro do período, eles entram **mesclados numa
-  linha só** (dá para desligar no filtro). Cada pessoa só enxerga no
-  relatório o que já enxergaria na Timeline da ficha — relatório não
-  mostra o que a ficha esconde.
-- Fonte → Pedido do usuário, 2026-09-23.
+  linha só** (dá para desligar no filtro). As linhas da mesma empresa
+  ficam juntas, com a célula da empresa mesclada sobre elas. A coluna
+  **Funil** mostra a etapa atual da empresa na Prospecção e o dia em que
+  ela entrou em cada etapa. Cada pessoa só enxerga no relatório o que já
+  enxergaria na Timeline da ficha — relatório não mostra o que a ficha
+  esconde.
+- Fonte → Pedido do usuário, 2026-09-23 e 2026-10-27.
 
 **5.22**
 - Decisão → Segundo relatório: **Tarefas concluídas** — data da
@@ -544,6 +555,103 @@ outras.
   empresa. O período se refere à **data da conclusão**, não ao prazo, e
   tarefa reaberta deixa de contar como concluída.
 - Fonte → Pedido do usuário, 2026-09-23.
+
+**5.23**
+- Decisão → O card de oportunidade tem **três colunas**, como o cartão
+  do Trello: lista de itens à esquerda, dados do card no meio e os
+  **comentários numa coluna própria à direita**. Cada coluna rola
+  sozinha — a conversa longa não empurra os dados do card, e a caixa de
+  escrever fica sempre no topo da coluna. A conversa aparece da
+  mensagem **mais nova para a mais antiga**; a mensagem do Trello entra
+  com a data em que foi escrita lá.
+- Fonte → Pedido do usuário, 2026-10-16.
+
+**5.24**
+- Decisão → Quem escreveu um comentário no card pode **editá-lo** (para
+  corrigir erro de digitação). Só o autor edita, e só o que foi escrito
+  no CRM — mensagem do Trello se corrige no Trello. Toda edição fica no
+  **histórico do comentário**: o comentário editado mostra "(editado)" e,
+  no clique, cada versão anterior com data e quem editou. Ninguém altera
+  nem apaga esse histórico; se o comentário for removido, o histórico vai
+  junto para o Registro de exclusões (5.12).
+- Fonte → Pedido do usuário, 2026-10-16.
+
+**5.25**
+- Decisão → O PDF da proposta que chega do app de cotações entra no card
+  com o **mesmo nome do "Salvar como PDF"** do app ("Proposta 3057-26
+  Ver. 3.0 MÁQUINA CLIENTE LTDA"), sem código no fim. Reenviar a **mesma
+  proposta na mesma versão** substitui o PDF anterior dela no card;
+  versões diferentes (3.0 e 3.1) ficam as duas. Anexo enviado por
+  alguém pela tela nunca é substituído. No card, quem enviou aparece como
+  **App de cotações**. Mensagem corrigida no Trello chega corrigida no
+  card na hora.
+- Fonte → Pedido do usuário, 2026-10-16.
+
+**5.26**
+- Decisão → O quadro do Pipeline tem **seis listas**: Solicitação,
+  Elaboração e Aprovação de Propostas, **Propostas aprovadas**,
+  **Negociação** e **Fechamento**. A antiga "Negociação e Fechamento"
+  passou a se chamar Negociação, com os cards que já estavam nela;
+  Fechamento e Propostas aprovadas entraram vazias.
+  - Propostas aprovadas **já não é etapa de proposta**: o card que chega
+    nela encerra o SLA, igual a quem entra em Negociação.
+  - **Marcar Fechada / Marcar Perdida** só aparece no card que está em
+    **Fechamento** (a última lista).
+- Fonte → Pedido do usuário, 2026-10-22; Propostas aprovadas em
+  2026-10-28.
+
+**5.27**
+- Decisão → O card de oportunidade tem, em **Mais ações**, a opção
+  **Colocar em Stand by**: o cliente avaliou e vai retomar num momento
+  futuro.
+  - É **obrigatório informar a nova previsão de fechamento**, de hoje em
+    diante — é a data da retomada.
+  - A oportunidade continua **em aberto**, mas **sai do quadro** e do
+    "Valor em aberto"; volta a ser lembrada pelo **calendário de
+    Tarefas**, na nova data (5.10).
+  - No topo do Pipeline, antes de "Ganhas / encerradas", o card **Stand
+    by** mostra **quantas** estão em espera e a **próxima retomada** (a
+    menor previsão). O ícone do card abre a **lista de todas**, da
+    retomada mais próxima para a mais distante; clicar numa linha abre a
+    oportunidade.
+  - No card em Stand by, Mais ações troca a opção por **Retomar
+    negociação**, que devolve o card ao quadro na lista em que estava.
+    Marcar como fechada ou perdida também tira do Stand by.
+  - Entrar e sair do Stand by fica no **histórico do card**, com data e
+    autor.
+- Fonte → Pedido do usuário, 2026-10-22.
+
+**5.28**
+- Decisão → Os **relatórios financeiros** da tela Relatórios têm
+  permissão própria, **Relatórios financeiros**, que nasce **desligada
+  para todos**, Admin incluído. Só o **Owner** vê sempre, sem depender da
+  caixa; os demais são liberados membro a membro na tela de Permissões, e
+  só quem já tem o acesso consegue liberá-lo para outro. Os relatórios que
+  já existem (Anotações, Tarefas concluídas, Contatos) continuam abertos a
+  todos.
+  - Administração › Membros › **Matriz de permissões** mostra todos os
+    membros lado a lado com o que cada um pode fazer (só Owner e Admin
+    veem a tela; mudar continua sendo na ficha do membro).
+- Fonte → Pedido do usuário, 2026-10-26.
+
+**5.29**
+- Decisão → Relatório **SLA de Oportunidades**: um **histograma** de
+  quantas propostas levaram cada número de dias úteis de SLA (de 0 ao
+  maior, inclusive os dias sem nenhuma proposta), com a mediana marcada,
+  cartões de resumo (total, mediana e média, em até quantos dias saem 80%
+  das propostas, a mais lenta, quantas estão em andamento) e, embaixo, a
+  lista das oportunidades da **mais lenta para a mais rápida**.
+  - O SLA é o mesmo do selo do card (5.11): dias úteis, sem descontar
+    feriados, e o card ainda em proposta conta até hoje.
+  - Filtros: período pela **data de abertura** da oportunidade (padrão:
+    este ano) e responsável. Cada pessoa vê só as oportunidades que já
+    enxerga no Pipeline.
+  - A carga histórica de cotações de 2025 fica de fora: ela não passou
+    pelas etapas de proposta no CRM.
+  - É o primeiro relatório com gráfico; a regra 5.20 (indicador fica no
+    Painel) cede aqui porque o pedido foi este gráfico na tela de
+    Relatórios.
+- Fonte → Pedido do usuário, 2026-10-28.
 
 ---
 
@@ -610,10 +718,12 @@ outras.
 
 **6.6**
 - Decisão → **Prospecção é a casa do lead; Empresas é a casa do cliente.**
-  - A tela **Prospecção** tem quatro abas: **Prospects** (ainda não
-    qualificados — as etapas Entrada, Andamento e Reunião), **Leads
-    qualificados** (as faixas Curto/Médio/Longo viram **sub-filtro** desta
-    aba), **Leads convertidos** e **Descartados**.
+  - A tela **Prospecção** (Funil de vendas) tem três abas: **Prospects**
+    (ainda não qualificados — as etapas Entrada, Andamento e Reunião),
+    **Leads qualificados** (as faixas Curto/Médio/Longo viram
+    **sub-filtro** desta aba) e **Descartados**. **Lead convertido não
+    aparece nela** — nem na lista nem no quadro: tem menu próprio, **Leads
+    convertidos**.
   - **Leads convertidos** é a lista dos **leads do CRM que saíram da
     triagem**, com quantas propostas cada um tem em negociação, ganhas e
     perdidas, o valor em negociação e o último movimento. Conta só proposta
@@ -632,7 +742,8 @@ outras.
     hora — é a proposta que coloca a empresa em Leads convertidos.
   - **Recuperação judicial** deixou de ser coluna na Prospecção e virou uma
     **bandeira** ao lado do nome da empresa.
-- Fonte → Pedido do usuário, 2026-09-18.
+- Fonte → Pedido do usuário, 2026-09-18; lead convertido fora da
+  Prospecção em 2026-10-29.
 
 **6.7**
 - Decisão → O **Painel** mostra, em **metade da página cada**, o **Funil de
@@ -649,9 +760,13 @@ outras.
   zerada não é desenhada), a **taxa de passagem** entre etapas, os
   **pedidos fechados** no fim e, embaixo, aproveitamento, perdas e valor
   perdido.
-  Andamento e Reunião mostram **só o estoque**: não têm data de passagem
-  própria, e número de movimento inventado ali seria pior que a ausência.
-- Fonte → Usuário, 2026-09-23, ao reestruturar as etapas do funil.
+  Cada etapa conta o **próprio** movimento: "avançou" é quem saiu dela
+  para qualquer etapa seguinte no período (quem pulou a etapa não avançou
+  dela), e "saiu" é o descarte feito **naquela** etapa — o lead descartado
+  guarda a etapa em que parou.
+- Fonte → Usuário, 2026-09-23, ao reestruturar as etapas do funil;
+  2026-10-21: "em 1 mês 1347 entraram e 585 saíram. O que aconteceu com
+  o restante do funil?".
 
 **6.9**
 - Decisão → O funil conta **só o ciclo comercial corrente**. Oportunidade
@@ -757,14 +872,21 @@ outras.
 
 **6.19**
 - Decisão → As passagens de faixa passam a ter **data gravada** no lead:
-  `qualifiedAt` (recebeu prazo), `convertedAt` (saiu da triagem) e
-  `discardedAt` (saiu do funil). Trocar Curto por Médio não requalifica —
-  vale a primeira data; limpar a classificação limpa a data, porque sem
-  prazo não houve qualificação.
+  `andamentoAt` e `reuniaoAt` (entrou em Andamento/Reunião), `qualifiedAt`
+  (recebeu prazo), `convertedAt` (saiu da triagem) e `discardedAt` (saiu
+  do funil). Vale a **primeira** entrada na faixa: puxar o cartão de volta
+  e avançar de novo não reescreve a data, e trocar Curto por Médio não
+  requalifica; limpar a classificação limpa a data, porque sem prazo não
+  houve qualificação.
   O passado fica **sem data de propósito** — inventar data falsearia a
   série. Só foi recuperado o que era rastreável: as conversões desde
-  2026-08-20, quando a conversão passou a gerar registro na Timeline.
-  Aparece como uma linha só embaixo do funil, fora do movimento.
+  2026-08-20 (registro da conversão na Timeline), a entrada em Andamento
+  pelo primeiro contato registrado na Timeline e a entrada em Reunião pela
+  primeira reunião registrada ou tarefa de reunião criada.
+  Lead sem data na faixa em que está conta a passagem só quando ele
+  inteiro é do período (entrou depois de criado, então a passagem também
+  é do período); lead antigo sem data não gera movimento. Conversão sem
+  data aparece como uma linha só embaixo do funil, fora do movimento.
 - Fonte → Decorrência de 6.17: sem data de passagem não existe funil por
   período.
 
@@ -783,8 +905,10 @@ outras.
   quem já está qualificado); quem puxa para trás é a pessoa, arrastando no
   quadro. **Descartado não é etapa** — é ter saído do funil, tem aba
   própria, e o lead guarda a etapa em que parou.
-  **Negociação/Fechamento não se alcança arrastando**: entra por
-  "Converter lead", que exige CNPJ e cria a empresa.
+  **Negociação/Fechamento não é coluna do quadro**: o lead chega nela por
+  "Converter lead" (que exige CNPJ e cria a empresa) e, ao converter, sai
+  da Prospecção e vai para o menu **Leads convertidos**. A etapa continua
+  existindo para o funil do Painel e a coluna Funil da Busca geral.
 - Fonte → Usuário, 2026-09-23: "preciso reestruturar as etapas do funil".
 
 **6.21**
@@ -792,11 +916,12 @@ outras.
   por um par de ícones no canto da barra (lista e quadro), e a escolha
   **fica gravada no navegador** de quem usa:
   - **Lista** — a tabela de sempre, com as abas e as ações em lote.
-  - **Quadro (Kanban)** — uma coluna por etapa do funil, cartão arrastável
-    entre colunas. Cada coluna desenha 30 cartões por vez, com "Mostrar
+  - **Quadro (Kanban)** — uma coluna por etapa da triagem (Entrada,
+    Andamento, Reunião e **Qualificado**, a última, onde se decide a
+    conversão), cartão arrastável entre colunas. Cada coluna desenha 30 cartões por vez, com "Mostrar
     mais": a fila de entrada tem milhares de leads.
 - Fonte → Usuário, 2026-09-23, apontando a tela de Tickets do Auvo como
-  referência.
+  referência; coluna Negociação/Fechamento retirada em 2026-10-29.
 
 **6.22**
 - Decisão → **Reunião tem data e hora.** Ao registrar uma reunião na
@@ -830,6 +955,11 @@ outras.
   - O item de menu **Empresas** passou a se chamar **Carteira de clientes**.
   - A promoção de contatos do eGestor não tira mais da Prospecção quem
     ainda não comprou.
+  - Empresa que ganha oportunidade **sem ter passado pela Prospecção**
+    (cadastrada direto no card ou vinda do app de cotações) entra sozinha
+    em **Leads convertidos**, na etapa Negociação/Fechamento, com o dono
+    da oportunidade como representante — senão não aparecia nem na
+    Carteira nem no Funil de vendas.
 - Fonte → Usuário, 2026-09-18, ao achar a CRDC FERRAMENTARIA listada como
   empresa e como prospect na mesma busca: "se tem pedido e nota fiscal é
   cliente".
@@ -850,6 +980,85 @@ outras.
     quadro** ao mesmo tempo.
 - Fonte → Usuário, 2026-09-24: "vamos melhorar aqueles filtros de tags;
   crie um ícone que abra um modal para filtrar, inclusive mais de um".
+
+**6.25**
+- Decisão → **Lead descartado pode ser recuperado.** A ficha do lead
+  descartado mostra o botão **Recuperar lead**, no lugar onde fica o
+  "Converter lead". Recuperar devolve o lead para a Prospecção **na etapa
+  em que ele parou**, com tudo o que já tinha, e fecha a ficha. Vale a
+  mesma regra de quem pode descartar: quem enxerga e trabalha o lead.
+  O CRM **não deixa recuperar** quando, enquanto o lead esteve
+  descartado, a empresa seguiu outro caminho:
+  - já existe **outro lead em andamento** para a mesma empresa — trabalha-se
+    por ele;
+  - a empresa **já foi convertida** (por outro lead) **ou já é cliente** —
+    trabalha-se pela ficha dela.
+- Fonte → Pedido do usuário, 2026-10-19: "como faço para recuperar um lead
+  descartado?".
+
+**6.26**
+- Decisão → O menu **Leads convertidos**, logo abaixo do Funil de vendas,
+  lista os leads convertidos que **ainda não compraram** (régua de
+  cliente da decisão 6.23), uma linha por empresa, no visual da Carteira
+  de clientes. Colunas: empresa, cidade, representante, **data de
+  conversão**, **número de propostas**, **data da última proposta** e
+  **último contato** da Timeline. Propostas contam só o ciclo corrente
+  (decisão 6.14). O número ao lado do menu é o total dessa lista. Quem
+  compra sai dali e passa para a Carteira de clientes.
+- Fonte → Pedido do usuário, 2026-10-27: "crie um menu abaixo de funil de
+  vendas 'Leads Convertidos'. será uma visão igual ao da carteira de
+  clientes".
+
+**6.27**
+- Decisão → **Lead convertido pode ser desconvertido**, pelo botão
+  **Desconverter lead** na ficha do lead e na linha de Leads convertidos,
+  com confirmação. Em Leads convertidos o ícone **só aparece** para a
+  empresa sem nenhuma proposta vinculada. O lead volta para a Prospecção na etapa
+  mais adiantada que já tinha alcançado antes de converter, e a data de
+  conversão é apagada (converter de novo é uma conversão nova).
+  O CRM **mantém a conversão** quando:
+  - a empresa tem **qualquer proposta vinculada** no Pipeline, inclusive
+    cotação da carga histórica;
+  - a empresa **já comprou** (é cliente, decisão 6.23).
+- Fonte → Pedido do usuário, 2026-10-27: "precisa ter um recurso para
+  desconverter lead, porém valide se a conta possui proposta vinculada;
+  neste caso mantém o bloqueio".
+
+**6.28**
+- Decisão → A **conversão do lead aparece na Timeline** da ficha (empresa
+  e lead), com **quem converteu e data/hora**, marcada "Conversão" — a
+  única exceção à regra de a Timeline mostrar só o que uma pessoa
+  registrou. Vale para os três caminhos: botão Aprovar, oportunidade
+  aberta para empresa sem lead (autor = quem abriu) e app de cotações
+  (autor "Sistema", porque o app não diz quem está cotando). Desconverter
+  (6.27) também aparece. A conversão **não conta** como interação nem
+  como último contato. A passagem para cliente por compra vinda do
+  eGestor fica de fora (é em lote, sem pessoa por trás).
+  Conversões antigas sem registro foram preenchidas com a data da
+  conversão; o autor só onde dava para saber (quem abriu a oportunidade
+  no mesmo minuto), o resto aparece como "Sistema".
+- Fonte → Pedido do usuário, 2026-10-28: "interessante constar nas
+  atividades o log da conversão (data/hora e qual usuário)".
+
+**6.29**
+- Decisão → **Todo registro na Timeline pode marcar o retorno.** Abaixo do
+  texto, "Retomar contato" oferece **Sem retorno** (padrão), **Em 7
+  dias**, **Em 30 dias**, **Em 3 meses** e **Escolher data**. Com uma data
+  marcada, o Registrar cria junto uma tarefa **Follow-up** ("Retomar
+  contato com…") para **quem registrou**, só com o dia, com o próprio
+  texto como descrição e o contato e a empresa vinculados.
+  - Data que cai em sábado ou domingo passa para a segunda.
+  - Se o **texto menciona uma data futura** ("em janeiro 2027", "semana
+    que vem", "daqui a 15 dias", "15/01", "na sexta"), a tela sugere o
+    lembrete para aquele dia; mês sem dia = primeiro dia útil do mês. Se
+    a pessoa clicar em Registrar sem marcar retorno, o CRM **pergunta
+    uma vez**: "Criar lembrete e registrar" ou "Registrar sem lembrete".
+  - Data já passada ou de até dois meses atrás ("visitei em 10/09",
+    "comprou em setembro") é relato, não retorno: não gera sugestão.
+  - Reunião com data e hora (6.22) já vira tarefa e não mostra o campo.
+- Fonte → Usuário, 2026-10-28, ao ver um registro "contatar novamente em
+  janeiro 2027" sem tarefa: "o frontend precisa ser intuitivo e ter
+  recursos para mitigar esse tipo de situação".
 
 
 

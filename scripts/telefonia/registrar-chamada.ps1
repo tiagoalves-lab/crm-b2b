@@ -73,4 +73,17 @@ try {
   Escrever-Log ("{0} {1} -> FALHOU: {2}" -f $Evento, $Telefone, $_.Exception.Message)
 }
 
+# Fim da ligação: manda já a gravação que o MicroSIP acabou de fechar (e o
+# que tiver ficado de antes). Esperando até 30 s pelo arquivo — o aviso de
+# fim de chamada pode chegar um instante antes de o MicroSIP soltá-lo. O
+# Agendador de Tarefas roda o mesmo script a cada 5 minutos, então uma
+# falha aqui não perde nada.
+if ($Evento -eq 'encerrada') {
+  try {
+    & (Join-Path $raiz 'enviar-gravacoes.ps1') -EsperaSegundos 30
+  } catch {
+    Escrever-Log ("gravacoes -> FALHOU: {0}" -f $_.Exception.Message)
+  }
+}
+
 exit 0

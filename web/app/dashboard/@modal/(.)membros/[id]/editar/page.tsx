@@ -26,7 +26,7 @@ export default async function EditarMembroModal({
       ) : !member ? (
         <div className="error-banner">Membro não encontrado.</div>
       ) : (
-        <MemberEditForm member={member} members={members} />
+        <MemberEditForm member={member} members={members} actor={me.membership} />
       )}
     </OverlayModal>
   );

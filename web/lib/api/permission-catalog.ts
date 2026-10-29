@@ -38,6 +38,9 @@ export const PERMISSION_MODULES = [
   "treinamento",
   // Telefonia (2026-09-23) — espelho do backend. "Criar" é ligar pelo CRM.
   "telefonia",
+  // Console fiscal (2026-10-20) — espelho do backend. "Editar" (2026-10-22) é ligar retorno à remessa.
+  "fiscal",
+  "relatorios_financeiros",
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 
@@ -59,6 +62,8 @@ export const MODULE_LABELS: Record<PermissionModule, string> = {
   membros: "Membros",
   treinamento: "Treinamento",
   telefonia: "Telefonia",
+  fiscal: "Console fiscal",
+  relatorios_financeiros: "Relatórios financeiros",
 };
 
 // Agrupamento visual — sub-itens de "Empresas" (abas da ficha) aparecem
@@ -79,6 +84,8 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   membros: null,
   treinamento: null,
   telefonia: null,
+  fiscal: null,
+  relatorios_financeiros: null,
 };
 
 // Nota curta por módulo pra deixar claro, na hora, quando um checkbox não
@@ -93,6 +100,10 @@ export const MODULE_HINTS: Partial<Record<PermissionModule, string>> = {
     "Cobre as três abas de faturamento da ficha: Vendas, ABC de Produtos e Serviços. Vem DESLIGADO para representante — o histórico de compra do cliente é informação de gestão.",
   telefonia:
     "\"Criar\" é poder ligar pelo CRM; \"Ver\" é enxergar o histórico de chamadas. A ligação sai pelo programa de telefone instalado no computador (MicroSIP).",
+  fiscal:
+    "\"Ver\" libera o item Console fiscal no menu lateral: notas emitidas, impostos e remessas. \"Editar\" é poder ligar a nota de retorno à remessa no Controle de remessas. Vale também para Admin: vem LIGADO para Admin e DESLIGADO para os demais — faturamento e imposto são informação de gestão. Só o Owner vê sempre.",
+  relatorios_financeiros:
+    "Libera os relatórios financeiros na tela Relatórios. Vem DESLIGADO para todos, Admin incluído — só o Owner vê sempre, e só quem já tem este acesso consegue liberá-lo para outro membro.",
   treinamento:
     "Libera o item Treinamento no menu lateral, com os slides de uso do CRM. Vem DESLIGADO para todos — marque membro a membro.",
 };
@@ -123,6 +134,8 @@ export const MODULE_ACTIONS: Record<PermissionModule, readonly PermissionAction[
   membros: ["ver", "criar"],
   treinamento: ["ver"],
   telefonia: ["ver", "criar"],
+  fiscal: ["ver", "editar"],
+  relatorios_financeiros: ["ver"],
 };
 
 const allTrue: Partial<Record<PermissionAction, boolean>> = {
@@ -169,6 +182,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
     telefonia: telefoniaCompleta,
+    fiscal: { ver: true, editar: true },
+    relatorios_financeiros: { ver: true },
   },
   admin: {
     empresas_visao_geral: viewOnly,
@@ -185,6 +200,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
     telefonia: telefoniaCompleta,
+    fiscal: { ver: true, editar: true },
+    relatorios_financeiros: { ver: false },
   },
   manager: {
     empresas_visao_geral: viewOnly,
@@ -201,6 +218,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: { ver: true, criar: true },
     treinamento: { ver: false },
     telefonia: telefoniaCompleta,
+    fiscal: { ver: false },
+    relatorios_financeiros: { ver: false },
   },
   sales_rep: {
     empresas_visao_geral: viewOnly,
@@ -220,6 +239,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: { ver: true, criar: false },
     treinamento: { ver: false },
     telefonia: telefoniaCompleta,
+    fiscal: { ver: false },
+    relatorios_financeiros: { ver: false },
   },
   readonly: {
     empresas_visao_geral: viewOnly,
@@ -236,6 +257,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: viewOnly,
     treinamento: { ver: false },
     telefonia: viewOnly,
+    fiscal: { ver: false },
+    relatorios_financeiros: { ver: false },
   },
 };
 
@@ -251,9 +274,23 @@ export function effectivePermissions(
   return merged;
 }
 
+// Espelho do backend: módulos em que o admin segue a matriz, sem bypass
+// (2026-10-22, "alguns admins não podem ter acesso ao console"). Só o
+// owner passa direto.
+export const MODULOS_SEM_BYPASS_ADMIN: ReadonlySet<PermissionModule> = new Set<PermissionModule>([
+  "fiscal",
+  "relatorios_financeiros",
+]);
+
+// Papel que passa direto (ignora a caixa) naquele módulo.
+export function temBypass(role: MembershipRole, module: PermissionModule): boolean {
+  return role === "owner" || (role === "admin" && !MODULOS_SEM_BYPASS_ADMIN.has(module));
+}
+
 // Espelho de PolicyService.canModule() no backend — owner/admin sempre
 // true (bypass, nunca consultam a matriz, mesmo que ela tenha sido salva
-// com algo em false), o resto cai pra effectivePermissions(). Usado fora
+// com algo em false), exceto o admin nos MODULOS_SEM_BYPASS_ADMIN; o
+// resto cai pra effectivePermissions(). Usado fora
 // da subpágina de Permissões (ex.: mostrar/esconder Editar/Remover na aba
 // Contatos da ficha de Empresa/Lead) pra decidir se um BOTÃO aparece — a
 // checagem que de fato importa continua sendo a do backend em cada
@@ -264,6 +301,6 @@ export function hasPermission(
   module: PermissionModule,
   action: PermissionAction,
 ): boolean {
-  if (role === "owner" || role === "admin") return true;
+  if (temBypass(role, module)) return true;
   return effectivePermissions(role, matrix)[module]?.[action] ?? false;
 }

@@ -52,6 +52,21 @@ export function setMentionDone(
   );
 }
 
+// Editar o texto (2026-10-16) — só o autor; o backend guarda a versão
+// anterior e devolve o comentário com o histórico de edição.
+export function updateComment(
+  token: string,
+  opportunityId: string,
+  commentId: string,
+  body: string,
+): Promise<OpportunityComment> {
+  return apiFetch<OpportunityComment>(`/opportunities/${opportunityId}/comments/${commentId}`, {
+    method: "PATCH",
+    token,
+    body: { body },
+  });
+}
+
 export function deleteComment(
   token: string,
   opportunityId: string,
@@ -110,14 +125,18 @@ export function markAllCommentsRead(token: string): Promise<{ marcadas: number }
   });
 }
 
-// Quantas anotações estão fixadas (2026-09-14) — a barra da tela
-// Pipeline mostra o número ao lado do ícone de histórico. Nunca derruba
-// a tela: se a chamada falhar, devolve null e o aviso simplesmente não
-// aparece.
-export async function contarComentariosFixados(token: string): Promise<number | null> {
+// Fixadas (2026-09-14) e não lidas por quem pediu (2026-10-21) — a barra
+// da tela Pipeline mostra os dois junto do ícone de histórico. Nunca
+// derruba a tela: se a chamada falhar, devolve null e os avisos
+// simplesmente não aparecem.
+export async function contarAnotacoes(
+  token: string,
+): Promise<{ fixados: number; naoLidas: number } | null> {
   try {
-    const { items } = await listCommentFeed(token, { apenasFixados: true });
-    return items.length;
+    return await apiFetch<{ fixados: number; naoLidas: number }>(
+      `/opportunity-comments/contagem`,
+      { token },
+    );
   } catch {
     return null;
   }

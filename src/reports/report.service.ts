@@ -5,10 +5,15 @@ import { SupabaseUserService } from '../memberships/supabase-user.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import {
   dataExtensoBR,
+  diaBR,
+  diaComSemanaCurto,
   diaCurtoBR,
+  diaDoPrazo,
   diaSemanaBR,
+  diasEntre,
+  domingoDaSemana,
   horarioBR,
-  diferencaEmDias,
+  somarDias,
   FUSO_PADRAO,
 } from './report-datas';
 import { diasDeSla } from '../opportunities/opportunity-sla';
@@ -27,7 +32,9 @@ import type {
 // páginas (e o rodapé de cada seção avisa quantos ficaram de fora).
 const MAX_LINHAS_PIPELINE = 40;
 const MAX_FIXADAS = 8;
-const MAX_TAREFAS = 15;
+// Recorte W0/W+1 desde 2026-10-22 — o teto só segura um acúmulo grande de
+// atrasadas.
+const MAX_TAREFAS = 40;
 
 // Mesma ordem de prioridade de companyDisplayName() no frontend
 // (web/lib/api/companies.ts): fantasia > razão social > nome pra contato.
@@ -146,12 +153,35 @@ export class ReportService {
     }));
 
     // ── Tarefas pendentes ───────────────────────────────────────────
-    const tarefas: TarefaPendente[] = tarefasRaw
+    // Recorte W0/W+1 (pedido do usuário, 2026-10-22): atrasadas, desta
+    // semana e da próxima, semana de segunda a domingo. Sem prazo ou com
+    // prazo depois do domingo da próxima semana fica de fora da lista.
+    const hoje = diaBR(agora, tz);
+    const fimDaSemana = domingoDaSemana(hoje);
+    const fimDaProxima = somarDias(fimDaSemana, 7);
+
+    const noRecorte = tarefasRaw
+      .flatMap((t) => {
+        if (!t.dueAt) return [];
+        const dia = diaDoPrazo(t.dueAt, t.dueHasTime, tz);
+        const grupo: TarefaPendente['grupo'] | null =
+          dia < hoje
+            ? 'atrasada'
+            : dia <= fimDaSemana
+              ? 'semana'
+              : dia <= fimDaProxima
+                ? 'proxima-semana'
+                : null;
+        return grupo ? [{ t, dia, grupo }] : [];
+      })
+      // Pelo DIA, não pelo instante: prazo só-data (meia-noite UTC) e
+      // reunião com hora não se ordenam direito entre si pelo dueAt cru.
+      .sort((a, b) => a.dia.localeCompare(b.dia));
+
+    const tarefas: TarefaPendente[] = noRecorte
       .slice(0, MAX_TAREFAS)
-      .map((t) => {
-        const dias = t.dueAt ? diferencaEmDias(t.dueAt, agora, tz) : null;
-        const grupo: TarefaPendente['grupo'] =
-          dias === null ? 'proxima' : dias > 0 ? 'atrasada' : dias === 0 ? 'hoje' : 'proxima';
+      .map(({ t, dia, grupo }) => {
+        const atraso = diasEntre(dia, hoje);
         return {
           titulo: t.title,
           empresa: t.company
@@ -162,18 +192,16 @@ export class ReportService {
           responsavel: t.assigneeUserId,
           grupo,
           quando:
-            dias === null
-              ? 'sem prazo'
-              : dias > 0
-                ? `${dias} ${dias === 1 ? 'dia' : 'dias'}`
-                : dias === 0
-                  ? 'hoje'
-                  : diaCurtoBR(t.dueAt as Date, tz),
+            atraso > 0
+              ? `${atraso} ${atraso === 1 ? 'dia' : 'dias'}`
+              : atraso === 0
+                ? 'hoje'
+                : diaComSemanaCurto(dia),
         };
       });
 
-    const tarefasAtrasadas = tarefasRaw.filter(
-      (t) => t.dueAt !== null && diferencaEmDias(t.dueAt, agora, tz) > 0,
+    const tarefasAtrasadas = noRecorte.filter(
+      (item) => item.grupo === 'atrasada',
     ).length;
 
     // Ids que precisam virar nome — resolvidos fora da transação por quem
@@ -198,6 +226,8 @@ export class ReportService {
       fixadas,
       tarefas,
       totalTarefasPendentes: tarefasRaw.length,
+      tarefasNoRecorte: noRecorte.length,
+      tarefasRecorteAte: diaComSemanaCurto(fimDaProxima),
       tarefasAtrasadas,
       userIds,
     };

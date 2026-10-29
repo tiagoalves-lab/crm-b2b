@@ -1,8 +1,10 @@
 import { getMe } from "@/lib/api/me";
 import { getRawLead } from "@/lib/api/raw-leads";
-import { apenasInteracoes, listActivities } from "@/lib/api/activities";
+import { listActivities, timelineDaFicha } from "@/lib/api/activities";
 import { listTasks } from "@/lib/api/tasks";
 import { listContacts } from "@/lib/api/contacts";
+import { getCompany } from "@/lib/api/companies";
+import type { Company } from "@/lib/api/types";
 import { getCompanyTeam, type CompanyTeam } from "@/lib/api/company-team";
 import { listMemberships } from "@/lib/api/memberships";
 import { ApiError } from "@/lib/api/client";
@@ -27,21 +29,27 @@ export async function loadLeadFicha(token: string, leadId: string) {
   // empresa por trás (não deveria acontecer no fluxo normal, mas a ficha
   // não pode quebrar por isso).
   let team: CompanyTeam | null = null;
+  // Empresa por trás do lead — a aba "Dados cadastrais" mostra o mesmo
+  // cartão da Receita da ficha da empresa (2026-10-28).
+  let company: Company | null = null;
   let accessRestricted = false;
 
   if (companyId) {
     try {
-      const [act, tsk, cts, eq] = await Promise.all([
+      const [act, tsk, cts, eq, emp] = await Promise.all([
         listActivities(token, { companyId }),
         listTasks(token, { companyId }),
         listContacts(token, companyId),
         getCompanyTeam(token, companyId),
+        getCompany(token, companyId),
       ]);
-      // Só interação registrada por gente — ver apenasInteracoes.
-      activities = apenasInteracoes(act.items);
+      // Interação registrada por gente + a conversão do lead — ver
+      // timelineDaFicha.
+      activities = timelineDaFicha(act.items);
       tasks = tsk.items;
       contacts = cts;
       team = eq;
+      company = emp;
     } catch (error) {
       // A empresa por trás do lead ainda não tem responsável atribuído —
       // manager/sales_rep não enxergam histórico/tarefas/contatos dela
@@ -57,7 +65,7 @@ export async function loadLeadFicha(token: string, leadId: string) {
     }
   }
 
-  return { me, lead, companyId, activities, tasks, contacts, team, accessRestricted, memberships };
+  return { me, lead, companyId, company, activities, tasks, contacts, team, accessRestricted, memberships };
 }
 
 export type LeadFicha = Awaited<ReturnType<typeof loadLeadFicha>>;

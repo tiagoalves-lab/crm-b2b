@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PolicyModule } from '../policy/policy.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { AnotacoesRelatorioService } from './anotacoes-relatorio.service';
+import { ContatosRelatorioService } from './contatos-relatorio.service';
+import { SlaOportunidadesRelatorioService } from './sla-oportunidades-relatorio.service';
 import { RelatorioController } from './relatorio.controller';
 import { TarefasConcluidasRelatorioService } from './tarefas-concluidas-relatorio.service';
 
@@ -10,6 +12,11 @@ import { TarefasConcluidasRelatorioService } from './tarefas-concluidas-relatori
 @Module({
   imports: [TenancyModule, PolicyModule],
   controllers: [RelatorioController],
-  providers: [AnotacoesRelatorioService, TarefasConcluidasRelatorioService],
+  providers: [
+    AnotacoesRelatorioService,
+    TarefasConcluidasRelatorioService,
+    ContatosRelatorioService,
+    SlaOportunidadesRelatorioService,
+  ],
 })
 export class RelatorioModule {}

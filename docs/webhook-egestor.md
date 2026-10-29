@@ -16,16 +16,22 @@ CRM sempre que um registro é criado/editado/excluído.
   Financeiro** — e, no retorno real da API (conferido 2026-08-31),
   também `nfe` e `nfce`, que a doc oficial não lista. No cadastro, cada
   módulo é ligado/desligado individualmente (booleano). O CRM processa
-  **`contatos`** (desde 2026-08-12) e **`vendas`** (desde 2026-08-20).
-  Qualquer outro módulo é registrado e encerrado como
-  `modulo_nao_suportado`, sem efeito.
-  - **Estado real das duas contas (2026-08-31)**: só `contatos` e
-    `vendas` ligados; `produtos`, `usuarios`, `financeiro`, `nfe` e
-    `nfce` desligados. Antes disso os cinco primeiros estavam ligados e
-    geraram 150 eventos `modulo_nao_suportado` (de 369 no total) entre
-    12/08 e 31/08 — lixo puro na tabela de eventos. O `POST` que
-    desligou devolveu o **mesmo** `securityToken` das duas contas, como
-    a doc previa: o webhook não precisou ser reconfigurado.
+  **`contatos`** (desde 2026-08-12), **`vendas`** (desde 2026-08-20) e
+  **`nfe`** (desde 2026-10-21, gravado pelo console fiscal — ver
+  `docs/console-fiscal.md`, decisão 5.2). Qualquer outro módulo é
+  registrado e encerrado como `modulo_nao_suportado`, sem efeito.
+  - **Estado real das duas contas (conferido em 2026-10-21)**:
+    `contatos`, `vendas`, `nfe` e `nfce` ligados; `produtos`,
+    `usuarios` e `financeiro` desligados. `nfe`/`nfce` estavam
+    ligados sem o CRM aceitar esses módulos: o payload era recusado na
+    validação (HTTP 400, antes de chegar a ser registrado) e o eGestor
+    desistia depois das tentativas. As notas desse período entraram pela
+    carga inicial do console fiscal; `nfce` (modelo 65, a Gama não
+    emite) fica registrado como `modulo_nao_suportado`.
+  - **NF-e recebida não tem módulo de webhook**: o `nfe` cobre só as
+    notas que a conta emite. Nota recebida e ciência dada depois chegam
+    ao CRM pela conferência de hora em hora (`docs/console-fiscal.md`,
+    decisão 5.5).
   - Venda é espelho de **mão única** (eGestor → CRM): o CRM nunca lança
     venda de volta (regra 4.2 das regras de negócio), então nenhum
     evento de venda pode ser eco da própria escrita — a checagem de eco

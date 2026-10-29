@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { hasPermission } from "@/lib/api/permission-catalog";
+import { ehConversao, textoDaConversao } from "@/lib/api/activities";
 import type { Activity, Membership } from "@/lib/api/types";
 import { effectiveTier, TIER_LABEL } from "@/lib/api/raw-leads";
 import { formatDateTimeBR, formatPrazoBR } from "@/lib/format-date";
@@ -12,6 +13,7 @@ import EquipeEditor from "../equipe-editor";
 import LeadCnpjEditor from "../lead-cnpj-editor";
 import LeadSegmentoEditor from "../lead-segmento-editor";
 import LeadTagsEditor from "../lead-tags-editor";
+import CartaoReceita from "../../empresas/_ficha/cartao-receita";
 import { formatCnpj } from "../cnpj-lookup-fields";
 
 const SUBTIPO_LABEL: Record<string, string> = {
@@ -60,6 +62,19 @@ function ActivityItem({
   currentUserName?: string | null;
   memberships: Membership[];
 }) {
+  // Conversão do lead (2026-10-28) — mesma linha de empresas/_ficha/ficha-body.tsx.
+  if (ehConversao(activity)) {
+    return (
+      <div className="timeline-item type-gray">
+        <div className="timeline-item-head">
+          <span className="pill pill-gray">Conversão</span>
+          <span>{memberLabel(activity.actorUserId, currentUserId, currentUserName, memberships)}</span>
+          <span>{formatDateTimeBR(activity.occurredAt)}</span>
+        </div>
+        <div className="timeline-item-body">{textoDaConversao(activity)}</div>
+      </div>
+    );
+  }
   const payload = activity.payload as { texto?: string; subtipo?: string; contatoNome?: string };
   const subtipo =
     payload.subtipo ?? (activity.type === "call" ? "ligacao" : activity.type === "email" ? "email" : "nota");
@@ -85,7 +100,7 @@ function ActivityItem({
 // da ficha (leads/[id]/page.tsx e @drawer/(.)leads/[id]/page.tsx), visível
 // não importa qual aba esteja aberta.
 export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string }) {
-  const { me, lead, companyId, activities, tasks, contacts, team, accessRestricted, memberships } = data;
+  const { me, lead, companyId, company, activities, tasks, contacts, team, accessRestricted, memberships } = data;
   const currentAba = currentAbaOf(aba);
   const tier = effectiveTier(lead);
   // Mesmo critério de empresas/_ficha/ficha-body.tsx: vem da matriz
@@ -94,11 +109,14 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
   const canEditContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "editar");
   const canRemoveContacts = hasPermission(me.membership.role, me.membership.permissions, "contatos", "excluir");
   const podeLigar = hasPermission(me.membership.role, me.membership.permissions, "telefonia", "criar");
-  // CNPJ editável só enquanto o lead está em triagem (aprovado/descartado
-  // não muda mais) e pra quem pode editar leads — o backend confere de
-  // novo (PATCH /raw-leads/:id/cadastro, mustBeNovo + PolicyService).
-  const canEditCadastro =
-    lead.status === "novo" && hasPermission(me.membership.role, me.membership.permissions, "leads", "editar");
+  // CNPJ editável em triagem e em lead aprovado (2026-10-26: corrigir CNPJ
+  // errado depois de aprovar); descartado não muda mais. Só pra quem pode
+  // editar leads — o backend confere de novo (PATCH /raw-leads/:id/cadastro).
+  const podeEditarLeads = hasPermission(me.membership.role, me.membership.permissions, "leads", "editar");
+  const canEditCadastro = lead.status !== "descartado" && podeEditarLeads;
+  // Reconsultar a Receita pelo CNPJ já salvo vale em qualquer status
+  // (2026-10-07) — o backend só barra a troca de CNPJ fora da triagem.
+  const canBuscarReceita = podeEditarLeads && Boolean(lead.cnpj);
 
   if (currentAba === "timeline") {
     return (
@@ -210,46 +228,70 @@ export default function FichaBody({ data, aba }: { data: LeadFicha; aba?: string
     );
   }
 
-  // dados
+  // dados — mesmo cartão da Receita da ficha da empresa (2026-10-28: a
+  // lista simples daqui foi trocada a pedido do usuário). Sem acesso à
+  // empresa por trás do lead, cai nos campos que o próprio lead guarda.
   return (
     <>
-      <dl className="kv">
-        <dt>CNPJ</dt>
-        <dd>{canEditCadastro ? <LeadCnpjEditor leadId={lead.id} cnpj={lead.cnpj} /> : formatCnpj(lead.cnpj) || "—"}</dd>
-        <dt>CNAE</dt>
-        <dd>
-          {lead.cnaePrincipal ?? "—"} — {lead.cnaeDescricao ?? "—"}
-        </dd>
-        <dt>Local</dt>
-        <dd>
-          {lead.municipio ?? "—"}
-          {lead.uf ? `/${lead.uf}` : ""}
-        </dd>
-        <dt>Porte</dt>
-        <dd>{lead.porte ?? "—"}</dd>
-        <dt>Segmento</dt>
-        <dd>
-          <LeadSegmentoEditor leadId={lead.id} segmento={lead.segmento} />
-        </dd>
-        <dt>Situação</dt>
-        <dd>{lead.situacao ?? "—"}</dd>
-        <dt>Recuperação judicial</dt>
-        <dd>
-          {lead.emRecuperacaoJudicial ? (
-            <span className="pill pill-red" title="Indicativo da Receita Federal, removido da razão social">
-              ⚠ Em recuperação
-            </span>
-          ) : (
-            "Não"
-          )}
-        </dd>
-        <dt>Classificação</dt>
-        <dd>{tier ? <span className={`tier-tag tier-${tier}`}>{TIER_LABEL[tier]}</span> : "Sem classificação"}</dd>
-        <dt>Tags</dt>
-        <dd>
-          <LeadTagsEditor leadId={lead.id} tags={lead.tags} />
-        </dd>
-      </dl>
+      {canEditCadastro || canBuscarReceita ? (
+        <LeadCnpjEditor leadId={lead.id} cnpj={lead.cnpj} podeAlterar={canEditCadastro} />
+      ) : null}
+
+      {company ? (
+        <CartaoReceita company={company} back={`/dashboard/leads/${lead.id}?aba=dados`} />
+      ) : (
+        <div className="cad-grid">
+          <div className="cad-cell">
+            <div className="cad-k">CNPJ</div>
+            <div className="cad-v mono">{formatCnpj(lead.cnpj) || "—"}</div>
+          </div>
+          <div className="cad-cell">
+            <div className="cad-k">Situação cadastral</div>
+            <div className="cad-v">{lead.situacao ?? "—"}</div>
+          </div>
+          <div className="cad-cell full">
+            <div className="cad-k">CNAE principal</div>
+            <div className="cad-v mono">
+              {lead.cnaePrincipal ?? "—"} — {lead.cnaeDescricao ?? "—"}
+            </div>
+          </div>
+          <div className="cad-cell">
+            <div className="cad-k">Local</div>
+            <div className="cad-v">
+              {lead.municipio ?? "—"}
+              {lead.uf ? `/${lead.uf}` : ""}
+            </div>
+          </div>
+          <div className="cad-cell">
+            <div className="cad-k">Porte</div>
+            <div className="cad-v">{lead.porte ?? "—"}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="drawer-section-title" style={{ marginTop: 24 }}>
+        Prospecção
+      </div>
+      <div className="cad-grid">
+        <div className="cad-cell full">
+          <div className="cad-k">Segmento</div>
+          <div className="cad-v">
+            <LeadSegmentoEditor leadId={lead.id} segmento={lead.segmento} />
+          </div>
+        </div>
+        <div className="cad-cell">
+          <div className="cad-k">Classificação</div>
+          <div className="cad-v">
+            {tier ? <span className={`tier-tag tier-${tier}`}>{TIER_LABEL[tier]}</span> : "Sem classificação"}
+          </div>
+        </div>
+        <div className="cad-cell">
+          <div className="cad-k">Tags</div>
+          <div className="cad-v">
+            <LeadTagsEditor leadId={lead.id} tags={lead.tags} />
+          </div>
+        </div>
+      </div>
     </>
   );
 }

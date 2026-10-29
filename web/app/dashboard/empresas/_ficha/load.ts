@@ -1,6 +1,6 @@
 import { getMe } from "@/lib/api/me";
 import { getCompany } from "@/lib/api/companies";
-import { apenasInteracoes, listActivities } from "@/lib/api/activities";
+import { apenasInteracoes, listActivities, timelineDaFicha } from "@/lib/api/activities";
 import { listTasks } from "@/lib/api/tasks";
 import { listOpportunities } from "@/lib/api/opportunities";
 import { listSalesHistory, listSalesHistoryItems } from "@/lib/api/sales-history";
@@ -66,14 +66,17 @@ export async function loadFicha(token: string, companyId: string) {
     vazioSe403(getCompanyTeam(token, companyId), null),
   ]);
 
-  // A Timeline, o contador da aba e o "Interações" da visão geral saem
-  // todos daqui — filtrar num ponto só mantém os três coerentes.
+  // "Interações" e "Última atividade" da visão geral saem daqui; a aba
+  // Timeline (e o contador dela) usa `timeline`, que soma a conversão do
+  // lead — ver timelineDaFicha.
   const activities = apenasInteracoes(todasAsActivities);
+  const timeline = timelineDaFicha(todasAsActivities);
 
   return {
     me,
     company,
     activities,
+    timeline,
     tasks,
     opportunities,
     salesHistory,
@@ -101,7 +104,7 @@ export function contagensDaFicha(data: FichaData) {
     ).size;
 
   return {
-    timeline: data.activities.length,
+    timeline: data.timeline.length,
     tarefas: data.tasks.length,
     negocios: data.opportunities.length,
     contatos: data.contacts.length,

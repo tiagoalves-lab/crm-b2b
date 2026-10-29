@@ -7,6 +7,7 @@ import {
 import type {
   Opportunity,
   OpportunityComment,
+  OpportunityCommentEdit,
   OpportunityItem,
   OpportunityStatus,
   Prisma,
@@ -17,6 +18,7 @@ import { assertActiveMembership } from '../common/assert-active-membership';
 import { OptimisticConcurrencyException } from '../common/exceptions/optimistic-concurrency.exception';
 import type { PaginatedResult } from '../companies/company.service';
 import { PolicyService } from '../policy/policy.service';
+import { garantirLeadConvertido } from '../raw-leads/lead-convertido-automatico';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateOpportunityDto } from './dto/create-opportunity.dto';
@@ -29,7 +31,10 @@ import {
 } from './opportunity-sla';
 import { uniqueItemNames } from './opportunity-tags';
 import { COMPANY_REF_SELECT, type CompanyRef } from '../companies/company-ref';
-import { nomeDaEmpresa, registrarExclusao } from '../deletion-log/registrar-exclusao';
+import {
+  nomeDaEmpresa,
+  registrarExclusao,
+} from '../deletion-log/registrar-exclusao';
 
 // open -> won/lost (fechamento); won/lost -> open (reabertura explícita,
 // limpa lostReason/closedAt). Bloqueia won<->lost direto — precisa reabrir
@@ -83,8 +88,12 @@ const ALLOWED_TRANSITIONS: Record<OpportunityStatus, OpportunityStatus[]> = {
 // lista lateral de itens (OpportunityItemService, 2026-09-04) — embutidos
 // em findOne, mesmo padrão de TaskWithDetails. Anexos ficam de fora
 // (endpoint próprio), igual Task.
+//
+// Cada comentário traz junto as versões anteriores do texto (edição com
+// histórico, 2026-10-16) — poucas linhas por card, e a ficha mostra o
+// histórico no clique sem outra ida ao servidor.
 export type OpportunityWithDetails = Opportunity & {
-  comments: OpportunityComment[];
+  comments: Array<OpportunityComment & { edits: OpportunityCommentEdit[] }>;
   items: OpportunityItem[];
 };
 
@@ -156,6 +165,16 @@ export class OpportunityService {
       payload: { action: 'created' },
       opportunityId: opportunity.id,
     });
+
+    // Empresa que nunca passou pela Prospecção ganha o lead convertido que
+    // falta — senão some da Carteira e do Funil (G8 Brindes, 2026-09-28).
+    await garantirLeadConvertido(
+      tx,
+      membership.workspaceId,
+      dto.companyId,
+      ownerUserId,
+      { actorUserId: membership.userId, origem: 'oportunidade' },
+    );
 
     return opportunity;
   }
@@ -318,7 +337,10 @@ export class OpportunityService {
     return tx.opportunity.findUniqueOrThrow({
       where: { id },
       include: {
-        comments: { orderBy: { createdAt: 'asc' } },
+        comments: {
+          orderBy: { createdAt: 'asc' },
+          include: { edits: { orderBy: { editedAt: 'asc' } } },
+        },
         items: { orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
       },
     });
@@ -401,6 +423,7 @@ export class OpportunityService {
       toStage,
       tratamento: dto.slaTratamento,
     });
+    const standbyAt = this.proximoStandby(existing, dto, nextStatus);
 
     const result = await tx.opportunity.updateMany({
       where: { id: existing.id, version: existing.version },
@@ -420,6 +443,7 @@ export class OpportunityService {
         status: nextStatus,
         lostReason: nextLostReason,
         closedAt,
+        standbyAt,
         version: { increment: 1 },
       },
     });
@@ -476,6 +500,22 @@ export class OpportunityService {
         opportunityId: updated.id,
       });
     }
+    // Entrou ou saiu do Stand by por pedido (2026-10-22). Sair junto com o
+    // encerramento não gera linha própria: o status_changed já conta.
+    if (dto.standby !== undefined && standbyAt !== undefined) {
+      await this.activities.emit(tx, {
+        workspaceId: membership.workspaceId,
+        actorUserId: membership.userId,
+        type: 'field_update',
+        payload: dto.standby
+          ? {
+              action: 'standby_on',
+              expectedCloseDate: valorParaHistorico(updated.expectedCloseDate),
+            }
+          : { action: 'standby_off' },
+        opportunityId: updated.id,
+      });
+    }
     // Edição do card (2026-09-14): registra o que mudou, de que valor
     // pra qual. Antes ia só a LISTA de nomes de campo tocados — o
     // histórico dizia "editou valor" sem dizer de quanto pra quanto, e
@@ -515,8 +555,7 @@ export class OpportunityService {
     await registrarExclusao(tx, membership, {
       entidade: 'oportunidade',
       registroId: existing.id,
-      titulo:
-        (await nomeDaEmpresa(tx, existing.companyId)) ?? 'Oportunidade',
+      titulo: (await nomeDaEmpresa(tx, existing.companyId)) ?? 'Oportunidade',
       contexto: null,
       snapshot: { ...existing, itens },
     });
@@ -617,6 +656,49 @@ export class OpportunityService {
     // 2026-09-16): ele mede a conclusão da PROPOSTA, não o aceite ou a
     // recusa do cliente.
     return {};
+  }
+
+  // Próximo valor de `standbyAt` (pedido do usuário, 2026-10-22).
+  // undefined = não mexe.
+  // - Entrar: só oportunidade aberta, e com a nova previsão de fechamento
+  //   no mesmo pedido, de hoje em diante — é a data em que ela reaparece no
+  //   calendário pra ser retomada.
+  // - Sair: "Retomar negociação" no card; o card volta pra etapa onde estava.
+  // - Encerrar (ganha/perdida) tira do Stand by junto.
+  private proximoStandby(
+    existing: Opportunity,
+    dto: UpdateOpportunityDto,
+    nextStatus: OpportunityStatus,
+  ): Date | null | undefined {
+    if (dto.standby === true) {
+      if (existing.status !== 'open' || nextStatus !== 'open') {
+        throw new BadRequestException(
+          'Só oportunidade em aberto pode ser colocada em stand by.',
+        );
+      }
+      if (existing.standbyAt) {
+        throw new BadRequestException('A oportunidade já está em stand by.');
+      }
+      if (!dto.expectedCloseDate) {
+        throw new BadRequestException(
+          'Para colocar em stand by, informe a nova previsão de fechamento.',
+        );
+      }
+      if (new Date(dto.expectedCloseDate) < hojeComoData()) {
+        throw new BadRequestException(
+          'A nova previsão de fechamento não pode ser uma data passada.',
+        );
+      }
+      return new Date();
+    }
+    if (dto.standby === false) {
+      if (!existing.standbyAt) {
+        throw new BadRequestException('A oportunidade não está em stand by.');
+      }
+      return null;
+    }
+    if (nextStatus !== 'open' && existing.standbyAt) return null;
+    return undefined;
   }
 
   private assertValidTransition(

@@ -73,6 +73,8 @@ export interface UpdateTaskInput {
   contactId?: string;
   // Substitui a lista inteira de pessoas envolvidas (vazia = limpa).
   participantContactIds?: string[];
+  // Membros da tarefa (2026-09-29) — substitui a lista inteira (vazia = limpa).
+  memberUserIds?: string[];
   status?: TaskStatus;
   assigneeUserId?: string;
   // Substitui a lista inteira de carimbos (mesma regra de CreateTaskInput).

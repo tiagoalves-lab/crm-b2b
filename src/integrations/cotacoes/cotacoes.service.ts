@@ -8,8 +8,16 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma, type Company, type OpportunityStatus } from '@prisma/client';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
+import { montarAtualizacaoCartaoCnpj } from '../../companies/cartao-cnpj';
+import { CompanyService } from '../../companies/company.service';
 import { SupabaseUserService } from '../../memberships/supabase-user.service';
+import { ETAPA_LABEL } from '../../raw-leads/etapa-funil';
+import {
+  garantirLeadConvertido,
+  registrarConversao,
+} from '../../raw-leads/lead-convertido-automatico';
 import { HtmlPdfService } from '../../pdf/html-pdf.service';
+import { OpportunityItemService } from '../../opportunities/opportunity-item.service';
 import { OpportunityService } from '../../opportunities/opportunity.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SupabaseStorageService } from '../../storage/supabase-storage.service';
@@ -18,8 +26,14 @@ import {
   type TenantTx,
 } from '../../tenancy/tenant-context.service';
 import type { MembershipContext } from '../../tenancy/tenant-membership.guard';
+import { OptimisticConcurrencyException } from '../../common/exceptions/optimistic-concurrency.exception';
+import {
+  AvancarEstagioDto,
+  type EtapaCotacoes,
+} from './dto/avancar-estagio.dto';
 import { BuscarCompaniesQueryDto } from './dto/buscar-companies-query.dto';
 import { FilaQueryDto } from './dto/fila-query.dto';
+import { ItensValorDto } from './dto/itens-valor.dto';
 import { ListCompaniesQueryDto } from './dto/list-companies-query.dto';
 import { TrelloComentarioDto } from './dto/trello-comentario.dto';
 import { TrelloComentariosDto } from './dto/trello-comentarios.dto';
@@ -38,6 +52,11 @@ const SYSTEM_ACTOR_USER_ID = '00000000-0000-4000-8000-000000000000';
 
 const PAGE_SIZE_PADRAO = 200;
 
+// Resultado do Cartão CNPJ no cadastro vindo do app de cotações — vai na
+// resposta pro app avisar quando a Receita não respondeu.
+export type StatusReceitaCotacoes =
+  'preenchido' | 'ja_tinha' | 'sem_cnpj' | 'erro';
+
 // Busca ao vivo do app de cotações: o usuário escolhe uma empresa numa
 // lista curta, não pagina resultado. Mínimos existem pra uma tecla solta
 // não varrer a base inteira; o CNPJ aceita menos porque 4 dígitos já
@@ -45,6 +64,7 @@ const PAGE_SIZE_PADRAO = 200;
 const BUSCA_LIMITE_PADRAO = 20;
 const BUSCA_TERMO_MIN = 3;
 const BUSCA_CNPJ_MIN = 4;
+const CNPJ_DIGITOS = 14;
 
 // Folga da marca d'água devolvida ao app de cotações: uma company alterada
 // enquanto a varredura paginada roda pode ter updated_at menor que o fim da
@@ -58,6 +78,22 @@ const MARCA_DAGUA_FOLGA_MS = 5 * 60 * 1000;
 // UUID cravado, que é criado pelo seed e não tem chave estável) — se
 // alguém renomear o estágio, cai no primeiro do funil em vez de quebrar.
 const ESTAGIO_INICIAL_NOME = 'Solicitação de Propostas';
+
+// Etapa pedida pelo app de cotações → nome do estágio no funil (rota
+// `estagio`, 2026-10-08). Mesmo critério do inicial: por nome.
+const ESTAGIO_POR_ETAPA: Record<EtapaCotacoes, string> = {
+  aprovacao: 'Aprovação de Propostas',
+  aprovadas: 'Propostas aprovadas',
+};
+
+// Etapa que só move card que está num estágio específico (2026-10-28). O PDF
+// entregue leva o card de Aprovação de Propostas para Propostas aprovadas — e
+// só de lá: card ainda em Solicitação/Elaboração tem outra máquina em cotação
+// (o app só o leva a Aprovação quando todas chegam lá), então pular para
+// "aprovadas" esconderia essa pendência.
+const ORIGEM_EXIGIDA: Partial<Record<EtapaCotacoes, string>> = {
+  aprovadas: 'Aprovação de Propostas',
+};
 
 // Uma oportunidade vinda do Trello nasce sem valor: o preço só existe
 // depois que alguém cota. `amount` é NOT NULL, então nasce zerada.
@@ -82,6 +118,10 @@ export interface TrelloStatusItem {
   estagio: string | null;
   status: OpportunityStatus;
   itens: number;
+  // Os itens do card, na ordem do card (2026-10-07): a coluna Itens da tela
+  // do Trello mostra o que está no CRM, não o checklist do cartão — depois
+  // de cadastrada, a lista é editada no card e o checklist fica velho.
+  itens_lista: { id: string; nome: string }[];
   comentarios: number;
   sincronizado_em: string | null;
 }
@@ -101,6 +141,13 @@ export interface CompanyParaCotacoes {
   indicador_ie: string | null;
   inscricao_estadual: string | null;
   atualizado_em: string;
+}
+
+// Empresa ainda na triagem da Prospecção, achada pelo CNPJ exato na busca
+// ao vivo. `etapa` é o nome da coluna do funil, já pronto pra mostrar.
+export interface ProspectParaCotacoes extends CompanyParaCotacoes {
+  etapa: string | null;
+  descartado: boolean;
 }
 
 @Injectable()
@@ -124,6 +171,13 @@ export class CotacoesService {
     // anexos (mesmo bucket das tarefas, prefixo de oportunidade).
     private readonly pdf: HtmlPdfService,
     private readonly storage: SupabaseStorageService,
+    // Cartão CNPJ da Receita (lookup + update da ficha) — o mesmo serviço
+    // do botão "Buscar dados" da ficha da empresa.
+    private readonly companies: CompanyService,
+    // Valor dos itens do card vindo do envio da proposta (2026-10-08): pelo
+    // serviço de verdade, que soma os itens no valor da oportunidade e
+    // registra a mudança no histórico do card.
+    private readonly opportunityItems: OpportunityItemService,
   ) {}
 
   // Controle substituto do login nas rotas @Public() deste módulo (decisão
@@ -223,21 +277,29 @@ export class CotacoesService {
   // próximo tick fazia a tela dizer "não existe" e convidar a recadastrar
   // pelo CNPJ quem já estava aqui. Mesmo recorte de elegibilidade da
   // varredura, para que as duas fontes nunca discordem sobre quem existe.
-  async buscarCompanies(
-    query: BuscarCompaniesQueryDto,
-  ): Promise<{ itens: CompanyParaCotacoes[] }> {
+  //
+  // `prospeccao` (2026-10-22): CNPJ completo que não casou com nenhum
+  // cliente, mas está parado na triagem da Prospecção. O cartão do Trello
+  // chega com o CNPJ de quem o SDR ainda não aprovou, e a tela dizia
+  // "nenhum cliente encontrado" — vai à parte (nunca misturado em `itens`)
+  // pra o app oferecer "aprovar e usar" sem sair do orçamento. Só por CNPJ
+  // exato: por nome traria os 1.500 prospects que o recorte acima evita.
+  async buscarCompanies(query: BuscarCompaniesQueryDto): Promise<{
+    itens: CompanyParaCotacoes[];
+    prospeccao: ProspectParaCotacoes[];
+  }> {
     const termo = (query.q ?? '').trim();
     const limite = query.tamanho ?? BUSCA_LIMITE_PADRAO;
     // Termo curto demais devolveria meia base por uma tecla solta.
-    if (termo.length < BUSCA_TERMO_MIN) return { itens: [] };
+    if (termo.length < BUSCA_TERMO_MIN) return { itens: [], prospeccao: [] };
 
     const digitos = termo.replace(/\D/g, '');
     const workspaceId = await this.workspaceId();
 
-    const rows = await this.tenantContext.run(
+    const { rows, prospects } = await this.tenantContext.run(
       this.ctxSistema(workspaceId),
-      (tx) =>
-        tx.company.findMany({
+      async (tx) => {
+        const rows = await tx.company.findMany({
           where: {
             workspaceId,
             deletedAt: null,
@@ -262,10 +324,44 @@ export class CotacoesService {
           },
           orderBy: [{ razaoSocial: 'asc' }],
           take: limite,
-        }),
+        });
+
+        const procurarNaProspeccao =
+          digitos.length === CNPJ_DIGITOS &&
+          !rows.some((c) => c.cpfCnpj === digitos);
+        const prospects = procurarNaProspeccao
+          ? await tx.company.findMany({
+              where: {
+                workspaceId,
+                deletedAt: null,
+                cpfCnpj: { contains: digitos },
+                NOT: this.elegivelParaCotacoes,
+              },
+              include: {
+                originLeads: {
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                  select: { etapa: true, status: true },
+                },
+              },
+              take: 1,
+            })
+          : [];
+        return { rows, prospects };
+      },
     );
 
-    return { itens: rows.map((c) => this.paraCotacoes(c)) };
+    return {
+      itens: rows.map((c) => this.paraCotacoes(c)),
+      prospeccao: prospects.map((c) => {
+        const lead = c.originLeads[0];
+        return {
+          ...this.paraCotacoes(c),
+          etapa: lead ? ETAPA_LABEL[lead.etapa] : null,
+          descartado: lead?.status === 'descartado',
+        };
+      }),
+    };
   }
 
   // Cadastro vindo do app de cotações (regra 3.10 das regras de negócio):
@@ -276,10 +372,14 @@ export class CotacoesService {
   async upsertCliente(dto: UpsertClienteDto): Promise<{
     company: CompanyParaCotacoes;
     ja_existia: boolean;
+    receita: StatusReceitaCotacoes;
   }> {
     const workspaceId = await this.workspaceId();
 
-    return this.tenantContext.run(this.ctxSistema(workspaceId), async (tx) => {
+    const gravado = await this.tenantContext.run<{
+      company: Company;
+      ja_existia: boolean;
+    }>(this.ctxSistema(workspaceId), async (tx) => {
       // Edição de cliente já vinculado: atualiza a company apontada.
       if (dto.crm_company_id) {
         const atual = await tx.company.findFirst({
@@ -307,7 +407,7 @@ export class CotacoesService {
             ) as Prisma.InputJsonValue,
           },
         });
-        return { company: this.paraCotacoes(salvo), ja_existia: true };
+        return { company: salvo, ja_existia: true };
       }
 
       // Mesma function SECURITY DEFINER que o CompanyService usa pra
@@ -323,10 +423,7 @@ export class CotacoesService {
           where: { id: existenteId, workspaceId },
         });
         if (existente && !existente.deletedAt) {
-          return {
-            company: this.paraCotacoes(existente),
-            ja_existia: true,
-          };
+          return { company: existente, ja_existia: true };
         }
       }
 
@@ -350,8 +447,148 @@ export class CotacoesService {
           dtCad: new Date(),
         },
       });
-      return { company: this.paraCotacoes(criada), ja_existia: false };
+      return { company: criada, ja_existia: false };
     });
+
+    // Cliente que entra (ou é editado) pelo app de cotações está sendo
+    // cotado — não é mais prospect. Os dois passos abaixo deixam a ficha
+    // dele igual à de quem passou pela Prospecção (2026-10-02, pedido do
+    // usuário comparando METALURGICA VISA com LISA REGINA): lead
+    // qualificado/convertido e aba "Dados cadastrais" com o Cartão CNPJ.
+    // Nenhum dos dois derruba o salvar: o cadastro já foi gravado.
+    try {
+      await this.tenantContext.run(this.ctxSistema(workspaceId), (tx) =>
+        this.qualificarLead(tx, workspaceId, gravado.company.id),
+      );
+    } catch (err) {
+      console.error('[cotacoes] qualificar lead falhou', err);
+    }
+    const receita = await this.preencherCartaoCnpj(
+      workspaceId,
+      gravado.company.id,
+      dto.receita_consultada === true,
+    );
+
+    // Relê: a Receita pode ter atualizado razão social/endereço, e o
+    // espelho do app precisa sair igual ao CRM.
+    const final =
+      receita === 'preenchido'
+        ? await this.tenantContext.run(this.ctxSistema(workspaceId), (tx) =>
+            tx.company.findFirst({
+              where: { id: gravado.company.id, workspaceId },
+            }),
+          )
+        : null;
+
+    return {
+      company: this.paraCotacoes(final ?? gravado.company),
+      ja_existia: gravado.ja_existia,
+      receita,
+    };
+  }
+
+  // Lead em triagem (ou descartado) que está sendo cotado vira lead
+  // convertido — mesmo efeito do "Aprovar" da Prospecção
+  // (RawLeadService#approve): status aprovado, etapa Negociação/Fechamento
+  // e sai a tag "lead-triagem". Empresa sem lead nenhum (cadastrada direto
+  // pelo app) ganha o lead convertido que falta, pela mesma regra do card
+  // de oportunidade (garantirLeadConvertido — não cria lead pra quem já
+  // comprou). Lead já aprovado não é tocado.
+  private async qualificarLead(
+    tx: TenantTx,
+    workspaceId: string,
+    companyId: string,
+  ): Promise<void> {
+    const lead = await tx.rawLead.findFirst({
+      where: { workspaceId, promotedCompanyId: companyId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!lead) {
+      const owner = await this.resolverOwner(tx, workspaceId, null);
+      await garantirLeadConvertido(tx, workspaceId, companyId, owner.userId, {
+        actorUserId: null,
+        origem: 'cotacoes',
+      });
+      return;
+    }
+    if (lead.status === 'aprovado') return;
+
+    await tx.rawLead.update({
+      where: { id: lead.id },
+      data: {
+        status: 'aprovado',
+        etapa: 'negociacao',
+        convertedAt: lead.convertedAt ?? new Date(),
+      },
+    });
+    const company = await tx.company.findFirst({
+      where: { id: companyId, workspaceId },
+      select: { tags: true },
+    });
+    if (company?.tags.includes('lead-triagem')) {
+      await tx.company.update({
+        where: { id: companyId },
+        data: { tags: company.tags.filter((t) => t !== 'lead-triagem') },
+      });
+    }
+    // O app chama com token de integração, sem saber quem está cotando —
+    // a conversão entra na Timeline como "Sistema".
+    await registrarConversao(tx, {
+      workspaceId,
+      companyId,
+      actorUserId: null,
+      origem: 'cotacoes',
+      razaoSocial: lead.razaoSocial,
+    });
+  }
+
+  // Ficha "Dados cadastrais" (Cartão CNPJ da Receita) — mesma consulta e
+  // mesma regra de merge do botão "Buscar dados" da ficha e do eGestor
+  // (../../companies/cartao-cnpj.ts). Sem `forcar`, só preenche quando a
+  // ficha falta. Rede fora de transação (mesmo motivo do
+  // EgestorCartaoCnpjService): a BrasilAPI pode levar segundos.
+  private async preencherCartaoCnpj(
+    workspaceId: string,
+    companyId: string,
+    forcar: boolean,
+  ): Promise<StatusReceitaCotacoes> {
+    try {
+      const ctx = this.ctxSistema(workspaceId);
+      const company = await this.tenantContext.run(ctx, (tx) =>
+        tx.company.findFirst({
+          where: { id: companyId, workspaceId, deletedAt: null },
+        }),
+      );
+      if (!company) return 'erro';
+      const cf = (company.customFields ?? {}) as Record<string, unknown>;
+      if (!forcar && cf.cnpj_lookup) return 'ja_tinha';
+      const digits = (company.cpfCnpj ?? '').replace(/\D/g, '');
+      if (digits.length !== 14) return 'sem_cnpj';
+
+      const lookup = await this.companies.lookupCnpj(digits);
+      const atualizacao = montarAtualizacaoCartaoCnpj(
+        company,
+        lookup,
+        new Date(),
+      );
+      const membership: MembershipContext = {
+        id: SYSTEM_ACTOR_USER_ID,
+        userId: SYSTEM_ACTOR_USER_ID,
+        workspaceId,
+        role: 'owner',
+        status: 'active',
+      };
+      await this.tenantContext.run(ctx, (tx) =>
+        this.companies.update(tx, membership, company.id, atualizacao.dto, {
+          semTimeline: true,
+        }),
+      );
+      return 'preenchido';
+    } catch (err) {
+      console.error('[cotacoes] Cartão CNPJ falhou', err);
+      return 'erro';
+    }
   }
 
   // ============================================================
@@ -397,6 +634,10 @@ export class CotacoesService {
             stage: { select: { name: true } },
             company: { select: { razaoSocial: true, fantasia: true } },
             _count: { select: { comments: true, items: true } },
+            items: {
+              select: { id: true, name: true },
+              orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+            },
           },
         }),
     );
@@ -409,6 +650,10 @@ export class CotacoesService {
         estagio: row.stage?.name ?? null,
         status: row.status,
         itens: row._count.items,
+        itens_lista: (row.items ?? []).map((it) => ({
+          id: it.id,
+          nome: it.name,
+        })),
         comentarios: row._count.comments,
         sincronizado_em: row.trelloSyncEm?.toISOString() ?? null,
       })),
@@ -453,7 +698,7 @@ export class CotacoesService {
             existente.description,
             dto.descricao,
           );
-          const novos = await this.espelharComentarios(
+          const { novos } = await this.espelharComentarios(
             tx,
             existente.id,
             dto.comentarios,
@@ -510,7 +755,7 @@ export class CotacoesService {
           throw erro;
         }
 
-        const novos = await this.espelharComentarios(
+        const { novos } = await this.espelharComentarios(
           tx,
           oportunidade.id,
           dto.comentarios,
@@ -528,13 +773,219 @@ export class CotacoesService {
     );
   }
 
+  // ============================================================
+  // Valor dos itens do card (2026-10-08)
+  // ============================================================
+  // "Enviar proposta ao CRM" no app de cotações: cada máquina do orçamento
+  // sabe a qual item do card ela responde (crm_item_id), e o preço dela na
+  // versão escolhida como principal vira o valor do item. Pelo
+  // OpportunityItemService: a soma dos itens vira o valor da oportunidade e
+  // cada troca aparece no histórico do card. Item que não é deste card →
+  // 404 (nada é gravado: tudo numa transação). Valor igual ao gravado não
+  // gera evento no histórico.
+  async itensValor(dto: ItensValorDto): Promise<{
+    opportunity_id: string;
+    atualizados: number;
+    valor_oportunidade: string | null;
+  }> {
+    const workspaceId = await this.workspaceId();
+    const membership: MembershipContext = {
+      id: SYSTEM_ACTOR_USER_ID,
+      userId: SYSTEM_ACTOR_USER_ID,
+      workspaceId,
+      role: 'owner',
+      status: 'active',
+    };
+
+    return this.tenantContext.run(
+      this.ctxSistema(workspaceId),
+      async (tx) => {
+        const opp = await tx.opportunity.findFirst({
+          where: { id: dto.opportunity_id, workspaceId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!opp) throw new NotFoundException('Oportunidade não encontrada.');
+
+        const atuais = await tx.opportunityItem.findMany({
+          where: { opportunityId: opp.id },
+          select: { id: true, amount: true },
+        });
+        const porId = new Map(atuais.map((i) => [i.id, i]));
+
+        let atualizados = 0;
+        for (const item of dto.itens) {
+          const atual = porId.get(item.item_id);
+          if (!atual) {
+            throw new NotFoundException('Item não encontrado neste card.');
+          }
+          if (atual.amount !== null && Number(atual.amount) === item.amount) {
+            continue;
+          }
+          await this.opportunityItems.update(
+            tx,
+            membership,
+            opp.id,
+            item.item_id,
+            {
+              amount: item.amount,
+            },
+          );
+          atualizados++;
+        }
+
+        const final = await tx.opportunity.findUniqueOrThrow({
+          where: { id: opp.id },
+          select: { amount: true },
+        });
+        return {
+          opportunity_id: opp.id,
+          atualizados,
+          valor_oportunidade:
+            final.amount === null ? null : String(final.amount),
+        };
+      },
+      { timeoutMs: VINCULO_TIMEOUT_MS },
+    );
+  }
+
+  // ============================================================
+  // Situação do orçamento → estágio do card (2026-10-08)
+  // ============================================================
+  // O app de cotações chama ao vincular um orçamento ao card e ao trocar a
+  // situação de um orçamento já vinculado; quem decide QUANDO pedir é o app
+  // (lá estão os orçamentos e a situação de cada um). Aqui ficam só as
+  // regras do funil:
+  //  • só AVANÇA — card já no estágio pedido ou adiante (alguém arrastou pra
+  //    Negociação) fica onde está; o app nunca puxa card pra trás;
+  //  • só oportunidade ABERTA — ganhar/perder é decisão de gente;
+  //  • move pelo OpportunityService.update, não por update direto: é ele
+  //    que valida o estágio, cuida do SLA e grava o `stage_change` no
+  //    histórico do card (ator = usuário-sistema da integração);
+  //  • estágio resolvido por NOME no funil do card, nunca por UUID.
+  async avancarEstagio(dto: AvancarEstagioDto): Promise<{
+    opportunity_id: string;
+    movido: boolean;
+    estagio: string | null;
+    de: string | null;
+    motivo:
+      | 'movido'
+      | 'ja_no_estagio'
+      | 'ja_adiante'
+      | 'fechada'
+      | 'estagio_inexistente'
+      | 'fora_da_origem';
+  }> {
+    const workspaceId = await this.workspaceId();
+    const alvoNome = ESTAGIO_POR_ETAPA[dto.etapa];
+    const origemNome = ORIGEM_EXIGIDA[dto.etapa];
+    const membership: MembershipContext = {
+      id: SYSTEM_ACTOR_USER_ID,
+      userId: SYSTEM_ACTOR_USER_ID,
+      workspaceId,
+      role: 'owner',
+      status: 'active',
+    };
+
+    // Uma segunda tentativa só para a corrida do lock otimista (alguém
+    // salvou o card entre a leitura da `version` e o update).
+    for (let tentativa = 0; ; tentativa++) {
+      try {
+        return await this.tenantContext.run(
+          this.ctxSistema(workspaceId),
+          async (tx) => {
+            const opp = await tx.opportunity.findFirst({
+              where: { id: dto.opportunity_id, workspaceId, deletedAt: null },
+              include: { stage: true },
+            });
+            if (!opp)
+              throw new NotFoundException('Oportunidade não encontrada.');
+
+            const base = {
+              opportunity_id: opp.id,
+              de: opp.stage?.name ?? null,
+            };
+            if (opp.status !== 'open') {
+              return {
+                ...base,
+                movido: false,
+                estagio: base.de,
+                motivo: 'fechada' as const,
+              };
+            }
+
+            const alvo = await tx.stage.findFirst({
+              where: {
+                pipelineId: opp.pipelineId,
+                name: { equals: alvoNome, mode: 'insensitive' },
+              },
+            });
+            if (!alvo) {
+              return {
+                ...base,
+                movido: false,
+                estagio: base.de,
+                motivo: 'estagio_inexistente' as const,
+              };
+            }
+            if (opp.stageId === alvo.id) {
+              return {
+                ...base,
+                movido: false,
+                estagio: alvo.name,
+                motivo: 'ja_no_estagio' as const,
+              };
+            }
+            if (opp.stage && opp.stage.order > alvo.order) {
+              return {
+                ...base,
+                movido: false,
+                estagio: base.de,
+                motivo: 'ja_adiante' as const,
+              };
+            }
+            if (
+              origemNome &&
+              (opp.stage?.name ?? '').trim().toLowerCase() !==
+                origemNome.toLowerCase()
+            ) {
+              return {
+                ...base,
+                movido: false,
+                estagio: base.de,
+                motivo: 'fora_da_origem' as const,
+              };
+            }
+
+            await this.opportunities.update(tx, membership, opp.id, {
+              version: opp.version,
+              stageId: alvo.id,
+            });
+            return {
+              ...base,
+              movido: true,
+              estagio: alvo.name,
+              motivo: 'movido' as const,
+            };
+          },
+        );
+      } catch (erro) {
+        if (erro instanceof OptimisticConcurrencyException && tentativa === 0)
+          continue;
+        throw erro;
+      }
+    }
+  }
+
   // "Sincronizar": traz pro chat do card o que foi conversado no cartão
-  // depois do cadastro. Só acrescenta mensagem nova — nada do que existe
-  // no card é sobrescrito ou apagado, então apertar de novo é sempre
-  // seguro. Cartão sem oportunidade → 404 (a tela oferece "Cadastrar").
+  // depois do cadastro. Acrescenta mensagem nova e atualiza o texto de
+  // mensagem do Trello corrigida lá (com a versão anterior no histórico
+  // de edição) — o que foi escrito no CRM nunca é tocado e nada é
+  // apagado, então apertar de novo é sempre seguro. Cartão sem
+  // oportunidade → 404 (a tela oferece "Cadastrar").
   async trelloSincronizarComentarios(dto: TrelloComentariosDto): Promise<{
     opportunity_id: string;
     novos: number;
+    editados: number;
     recebidos: number;
   }> {
     const workspaceId = await this.workspaceId();
@@ -560,7 +1011,7 @@ export class CotacoesService {
           dto.descricao,
         );
 
-        const novos = await this.espelharComentarios(
+        const { novos, editados } = await this.espelharComentarios(
           tx,
           oportunidade.id,
           dto.comentarios,
@@ -573,6 +1024,7 @@ export class CotacoesService {
         return {
           opportunity_id: oportunidade.id,
           novos,
+          editados,
           recebidos: dto.comentarios.length,
         };
       },
@@ -612,7 +1064,17 @@ export class CotacoesService {
   }> {
     const workspaceId = await this.workspaceId();
     const codigo = dto.codigo_verificacao.toUpperCase();
-    const fileName = nomeArquivoProposta(dto.nome_arquivo, codigo);
+    const fileName = nomeArquivoProposta(dto.nome_arquivo);
+    // A pasta do orçamento no caminho é o que permite achar o PDF anterior da
+    // MESMA versão do orçamento e trocá-lo (decisão do Tiago, 2026-09-28: o card
+    // fica só com o envio mais recente de cada versão). Cada versão (3.0, 3.1)
+    // é um orçamento próprio do outro lado, então pasta = número + versão.
+    const pastaOrcamento = `${workspaceId}/opportunities/${dto.opportunity_id}/orc-${dto.orcamento_id}/`;
+    // O código de verificação vira subpasta (2026-10-16): saiu do nome do
+    // arquivo pra ele ficar igual ao do "Salvar como PDF", mas continua sendo
+    // a chave da idempotência. E o arquivo no Storage leva o nome da proposta,
+    // não um uuid — "Abrir em nova aba" e salvar sugere o nome certo.
+    const pastaCodigo = `${pastaOrcamento}${codigo}/`;
 
     const jaGravado = await this.tenantContext.run(
       this.ctxSistema(workspaceId),
@@ -626,9 +1088,21 @@ export class CotacoesService {
           // existe em outro workspace (seção 8 do plano).
           throw new NotFoundException('Oportunidade não encontrada.');
         }
+        // Envio anterior deste mesmo código: pela subpasta, ou pelo nome no
+        // formato antigo ("… (CODIGO).pdf"), de antes de 2026-10-16.
         const existente = await tx.opportunityAttachment.findFirst({
-          where: { opportunityId: oportunidade.id, fileName },
-          select: { id: true, storagePath: true, sizeBytes: true },
+          where: {
+            opportunityId: oportunidade.id,
+            uploadedBy: SYSTEM_ACTOR_USER_ID,
+            OR: [
+              { storagePath: { startsWith: pastaCodigo } },
+              {
+                storagePath: { startsWith: pastaOrcamento },
+                fileName: { endsWith: `(${codigo}).pdf` },
+              },
+            ],
+          },
+          select: { id: true, fileName: true, storagePath: true, sizeBytes: true },
         });
         return existente;
       },
@@ -638,7 +1112,7 @@ export class CotacoesService {
       return {
         opportunity_id: dto.opportunity_id,
         attachment_id: jaGravado.id,
-        file_name: fileName,
+        file_name: jaGravado.fileName,
         storage_path: jaGravado.storagePath,
         pdf_sha256: '',
         bytes: Number(jaGravado.sizeBytes ?? 0),
@@ -657,7 +1131,10 @@ export class CotacoesService {
 
     const pdf = await this.pdf.renderPdf(dto.html);
     const pdfSha256 = createHash('sha256').update(pdf).digest('hex');
-    const storagePath = `${workspaceId}/opportunities/${dto.opportunity_id}/${randomUUID()}-${fileName}`;
+    // uuid como pasta, não no nome: o arquivo segue com o nome da proposta e
+    // um reenvio do mesmo código que tenha morrido entre o upload e o insert
+    // não esbarra no objeto que ficou no Storage.
+    const storagePath = `${pastaCodigo}${randomUUID()}/${nomeArquivoStorage(fileName)}`;
     await this.storage.upload(storagePath, pdf, 'application/pdf');
 
     const attachment = await this.tenantContext.run(
@@ -671,10 +1148,41 @@ export class CotacoesService {
             mimeType: 'application/pdf',
             sizeBytes: pdf.length,
             uploadedBy: SYSTEM_ACTOR_USER_ID,
+            publishedAt: new Date(),
           },
           select: { id: true },
         }),
     );
+
+    // Reenvio da mesma versão: o anexo anterior sai do card. Só os da
+    // integração (uploadedBy = usuário-sistema) e só os desta versão do
+    // orçamento — anexo que alguém subiu à mão nunca é tocado. O PDF novo já
+    // está gravado: se a limpeza falhar, o pior caso são dois PDFs no card.
+    const anteriores = await this.tenantContext.run(
+      this.ctxSistema(workspaceId),
+      async (tx) => {
+        const rows = await tx.opportunityAttachment.findMany({
+          where: {
+            opportunityId: dto.opportunity_id,
+            uploadedBy: SYSTEM_ACTOR_USER_ID,
+            storagePath: { startsWith: pastaOrcamento },
+            id: { not: attachment.id },
+          },
+          select: { id: true, storagePath: true },
+        });
+        if (rows.length) {
+          await tx.opportunityAttachment.deleteMany({
+            where: { id: { in: rows.map((r) => r.id) } },
+          });
+        }
+        return rows;
+      },
+    );
+    for (const antigo of anteriores) {
+      await this.storage.remove(antigo.storagePath).catch((erro: unknown) => {
+        console.error('[cotacoes] PDF anterior ficou no storage', erro);
+      });
+    }
 
     return {
       opportunity_id: dto.opportunity_id,
@@ -749,7 +1257,13 @@ export class CotacoesService {
             trelloCardUrl: true,
             ownerUserId: true,
             company: {
-              select: { id: true, razaoSocial: true, fantasia: true, cpfCnpj: true, uf: true },
+              select: {
+                id: true,
+                razaoSocial: true,
+                fantasia: true,
+                cpfCnpj: true,
+                uf: true,
+              },
             },
             stage: { select: { id: true, name: true, order: true } },
             items: {
@@ -815,24 +1329,53 @@ export class CotacoesService {
   // idempotência é `external_ref` (id da action no Trello): o que já foi
   // espelhado não entra de novo, e comentário escrito por gente no CRM
   // (external_ref nulo) nunca é tocado.
+  //
+  // Mensagem já espelhada cujo texto mudou no Trello (corrigida lá depois)
+  // ganha o texto novo aqui (2026-10-16) — com a versão anterior guardada
+  // no histórico de edição do comentário, mesmo registro da edição feita
+  // pela tela, e o usuário de sistema como quem editou.
   private async espelharComentarios(
     tx: TenantTx,
     opportunityId: string,
     comentarios: TrelloComentarioDto[] | undefined,
-  ): Promise<number> {
+  ): Promise<{ novos: number; editados: number }> {
     const lista = normalizarComentarios(comentarios);
-    if (lista.length === 0) return 0;
+    if (lista.length === 0) return { novos: 0, editados: 0 };
 
     const jaEspelhados = await tx.opportunityComment.findMany({
       where: { opportunityId, externalRef: { in: lista.map((c) => c.ref) } },
-      select: { externalRef: true },
+      select: { id: true, externalRef: true, body: true },
     });
-    const conhecidos = new Set(
-      jaEspelhados.map((c) => c.externalRef).filter((r): r is string => !!r),
+    const porRef = new Map(
+      jaEspelhados.flatMap((c) =>
+        c.externalRef ? [[c.externalRef, c] as const] : [],
+      ),
     );
 
-    const novos = lista.filter((c) => !conhecidos.has(c.ref));
-    if (novos.length === 0) return 0;
+    let editados = 0;
+    for (const c of lista) {
+      const atual = porRef.get(c.ref);
+      if (!atual || atual.body === c.body) continue;
+      const agora = new Date();
+      await tx.opportunityCommentEdit.create({
+        data: {
+          commentId: atual.id,
+          opportunityId,
+          bodyBefore: atual.body,
+          bodyAfter: c.body,
+          editedByUserId: SYSTEM_ACTOR_USER_ID,
+          editedAt: agora,
+        },
+      });
+      await tx.opportunityComment.update({
+        where: { id: atual.id },
+        data: { body: c.body, editedAt: agora },
+      });
+      editados += 1;
+    }
+
+    const novos = lista.filter((c) => !porRef.has(c.ref));
+    if (novos.length === 0) return { novos: 0, editados };
 
     // skipDuplicates além do filtro acima: entre a leitura e a escrita,
     // outra sincronização pode ter gravado a mesma mensagem.
@@ -851,7 +1394,7 @@ export class CotacoesService {
       })),
       skipDuplicates: true,
     });
-    return resultado.count;
+    return { novos: resultado.count, editados };
   }
 
   // Descrição do cartão numa oportunidade que já existe: só preenche o
@@ -1110,22 +1653,34 @@ export class CotacoesService {
   }
 }
 
-// Nome do arquivo do anexo. O app de cotações já monta o nome no padrão dos
-// PDFs antigos da Gama ("Proposta 3011-26 Ver. 1.0 CLIENTE LTDA"); aqui só se
-// acrescenta o código de verificação e se tira o que o Storage/Windows não
-// aceitam. As regras de saneamento são as mesmas do buildStoragePath do
-// OpportunityAttachmentService (path traversal e caractere fora do conjunto
-// seguro) — quem mexer numa, olhe a outra.
-export function nomeArquivoProposta(base: string, codigo: string): string {
+// Nome do anexo como aparece no card. Igual ao que o "Salvar como PDF" do app
+// de cotações sugere (pedido do Tiago, 2026-10-16 — antes ia com o código de
+// verificação no fim): o app já manda pronto ("Proposta 3057-26 Ver. 3.0
+// MAQUINA CLIENTE LTDA"), aqui só sai o que o Windows não aceita em nome de
+// arquivo, com a mesma troca por "-" que o app faz. Acento fica — isto é só o
+// texto gravado no banco; a chave no Storage é a de nomeArquivoStorage.
+export function nomeArquivoProposta(base: string): string {
   const limpo = base
     .replace(/\.pdf$/i, '')
-    .replace(/[^a-zA-Z0-9 ._-]/g, '_')
-    .replace(/\.{2,}/g, '_')
+    .replace(/[\\/:*?"<>|\x00-\x1f]+/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 150);
-  const nome = limpo.length > 0 ? limpo : 'Proposta';
-  return `${nome} (${codigo}).pdf`;
+    .slice(0, 180)
+    .replace(/[.\s]+$/, '');
+  return `${limpo.length > 0 ? limpo : 'Proposta'}.pdf`;
+}
+
+// O mesmo nome como chave no Storage, que só aceita ASCII: acento vira a letra
+// sem acento e o resto fora do conjunto seguro vira "_". As regras de
+// saneamento são as mesmas do buildStoragePath do OpportunityAttachmentService
+// (path traversal e caractere fora do conjunto seguro) — quem mexer numa,
+// olhe a outra.
+export function nomeArquivoStorage(fileName: string): string {
+  return fileName
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9 ._()-]/g, '_')
+    .replace(/\.{2,}/g, '_');
 }
 
 // Uma solicitação do funil como a Fila de cotação do app precisa vê-la: o

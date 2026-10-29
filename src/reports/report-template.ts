@@ -39,7 +39,7 @@ const COR = {
 
 // Uma cor por etapa, na ordem do quadro — as MESMAS do quadro do Pipeline
 // (web/app/dashboard/pipeline/stage-colors.ts: lilás, azul, verde,
-// laranja). Pedido do usuário (2026-09-15): e-mail e CRM tinham legendas
+// laranja, coral). Pedido do usuário (2026-09-15): e-mail e CRM tinham legendas
 // diferentes pra mesma etapa. `forte` é a cor exata do quadro (barra da
 // linha, número, contorno do prazo); `texto` é a mesma cor rebaixada só
 // o necessário pra ler nome de etapa em 11,5px sobre fundo branco (o verde
@@ -50,7 +50,11 @@ const CORES_ETAPA = [
   { forte: '#9b7fe0', texto: '#6f4fc0', suave: '#f1ecfb' },
   { forte: '#4a9fe0', texto: '#1f77b8', suave: '#eaf4fc' },
   { forte: '#5dcaa5', texto: '#2a8b6b', suave: '#e9f6f1' },
+  // Propostas aprovadas (2026-10-28), entre Aprovação e Negociação.
+  { forte: '#7cb342', texto: '#4f7a22', suave: '#eef6e5' },
   { forte: '#f2a71b', texto: '#a9740a', suave: '#fdf3e0' },
+  // Fechamento (2026-10-22), última etapa do quadro.
+  { forte: '#e5735f', texto: '#b4462f', suave: '#fcece8' },
 ];
 
 // Largura do corpo do e-mail (pedido do usuário, 2026-09-15: "orientação
@@ -245,41 +249,65 @@ function grupoTarefas(
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 8px;">${linhas}</table>`;
 }
 
+// Recorte W0/W+1 (pedido do usuário, 2026-10-22): atrasadas, desta semana
+// e da próxima. O que fica de fora (sem prazo ou mais adiante) não some em
+// silêncio — vira uma linha de aviso no fim.
 function secaoTarefas(dados: DadosReportDiario): string {
-  if (dados.tarefas.length === 0) {
+  if (dados.totalTarefasPendentes === 0) {
     return secao(
       cabecalhoSecao('Tarefas pendentes', 'nenhuma') +
         vazio('Nenhuma tarefa pendente.'),
     );
   }
 
-  const restantes = dados.totalTarefasPendentes - dados.tarefas.length;
-  const corte =
-    restantes > 0
-      ? `<div style="font-family: ${FONTE}; font-size: 12px; color: ${COR.fraco}; margin-top: 10px;">e mais ${restantes} ${restantes === 1 ? 'tarefa pendente' : 'tarefas pendentes'}.</div>`
-      : '';
+  const nota = (texto: string) =>
+    `<div style="font-family: ${FONTE}; font-size: 12px; color: ${COR.fraco}; margin-top: 10px;">${esc(texto)}</div>`;
+
+  const cortadas = dados.tarefasNoRecorte - dados.tarefas.length;
+  const foraDoRecorte = dados.totalTarefasPendentes - dados.tarefasNoRecorte;
+  const rodape =
+    (cortadas > 0
+      ? nota(`e mais ${cortadas} ${cortadas === 1 ? 'tarefa' : 'tarefas'} neste período, no CRM.`)
+      : '') +
+    (foraDoRecorte > 0
+      ? nota(
+          `${foraDoRecorte} ${foraDoRecorte === 1 ? 'outra pendente tem' : 'outras pendentes têm'} prazo depois de ${dados.tarefasRecorteAte} ou estão sem prazo.`,
+        )
+      : '');
+
+  // Nada de "no total" aqui: tradução automática leu o "no" como inglês e
+  // o e-mail de 2026-10-22 chegou com "68 sem total".
+  const cabecalho = cabecalhoSecao(
+    'Tarefas pendentes',
+    `${dados.tarefasNoRecorte} de ${dados.totalTarefasPendentes} pendentes`,
+  );
+
+  if (dados.tarefas.length === 0) {
+    return secao(
+      cabecalho +
+        vazio('Nenhuma tarefa atrasada nem com prazo nesta semana ou na próxima.') +
+        rodape,
+    );
+  }
 
   return secao(
-    cabecalhoSecao(
-      'Tarefas pendentes',
-      `${dados.totalTarefasPendentes} no total`,
-    ) +
+    cabecalho +
       grupoTarefas(
         'Atrasadas',
         COR.alerta,
         dados.tarefas.filter((t) => t.grupo === 'atrasada'),
       ) +
       grupoTarefas(
-        'Para hoje',
+        'Esta semana',
         '#186c3c',
-        dados.tarefas.filter((t) => t.grupo === 'hoje'),
+        dados.tarefas.filter((t) => t.grupo === 'semana'),
       ) +
       grupoTarefas(
-        'Próximos dias',
+        'Próxima semana',
         COR.secundario,
-        dados.tarefas.filter((t) => t.grupo === 'proxima'),
+        dados.tarefas.filter((t) => t.grupo === 'proxima-semana'),
       ) +
-      corte,
+      rodape,
   );
 }
 

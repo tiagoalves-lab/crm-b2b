@@ -7,12 +7,18 @@
 // Lista simples, sem agrupamento por tema (pedido do usuário no mesmo
 // dia): são poucos relatórios, e o título de grupo só tirava espaço.
 // Nada de painel/dashboard aqui — indicador é assunto do menu Painel.
+import type { PermissionModule } from "@/lib/api/permission-catalog";
+
 export interface RelatorioDef {
   // Vai na URL (?r=...).
   id: string;
   label: string;
   titulo: string;
   descricao: string;
+  // Caixa da matriz que libera o relatório (só "ver"). Ausente = qualquer
+  // membro abre. Relatório financeiro leva "relatorios_financeiros" — e o
+  // endpoint dele checa a mesma caixa no backend.
+  permission?: PermissionModule;
 }
 
 export const RELATORIOS: RelatorioDef[] = [
@@ -29,6 +35,20 @@ export const RELATORIOS: RelatorioDef[] = [
     titulo: "Tarefas concluídas",
     descricao:
       "Tarefas marcadas como concluídas no período, da última concluída para a mais antiga.",
+  },
+  {
+    id: "contatos",
+    label: "Contatos",
+    titulo: "Contatos",
+    descricao:
+      "Agenda de contatos das empresas — nome, cargo, telefone, e-mail e se é tomador de decisão. Dá para exportar em CSV.",
+  },
+  {
+    id: "sla-oportunidades",
+    label: "SLA de Oportunidades",
+    titulo: "SLA de Oportunidades",
+    descricao:
+      "Quantos dias úteis cada proposta levou para sair das etapas de proposta, em histograma, com a lista das oportunidades da mais lenta para a mais rápida.",
   },
 ];
 

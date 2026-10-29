@@ -13,6 +13,15 @@ export const ROLE_OPTIONS: MembershipRole[] = [
   "sales_rep",
 ];
 
+// Só owner promove a owner (2026-10-22, mesma regra do backend em
+// MembershipService): owner é o único papel que vê o Console fiscal sem
+// depender da caixa. `atual` mantém Owner na lista quando o membro editado
+// já é owner, pra o select não ficar sem opção.
+export function roleOptionsFor(actorRole: MembershipRole, atual?: MembershipRole): MembershipRole[] {
+  if (actorRole === "owner" || atual === "owner") return ROLE_OPTIONS;
+  return ROLE_OPTIONS.filter((r) => r !== "owner");
+}
+
 // Gerente cadastrando um membro só pode escolher um destes dois — owner/
 // admin continuam exclusivos de quem já é owner/admin (mesma restrição
 // aplicada no backend, MembershipService#create — espelhada aqui só pra

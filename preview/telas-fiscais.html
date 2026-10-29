@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Console fiscal — prévia</title>
+<!-- Mesmo CSS do CRM (web/app/globals.css), lido direto do projeto: abrir
+     pelo Live Server com a pasta crm-b2b como raiz. Dados INVENTADOS — nada
+     de empresa ou valor real neste arquivo. -->
+<link rel="stylesheet" href="../web/app/globals.css">
+<style>
+  .previa-aviso {
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    font-size: 13px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .previa-aviso b { color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="workspace-switch">
+      <img src="../web/public/logo-gama.svg" alt="Gama Brasil" class="sidebar-logo" width="97" height="24">
+      <span class="sidebar-tagline">CRM</span>
+      <span class="beta-badge">Beta</span>
+    </div>
+    <nav class="primary-nav" aria-label="Navegação principal" id="nav"></nav>
+    <div class="sidebar-footer">
+      <div class="avatar">EX</div>
+      <div class="who-wrap">
+        <div class="who">Usuário de exemplo</div>
+        <div class="who-sub">Proprietário</div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="page-title">Console fiscal</div>
+        <div class="page-sub">Notas emitidas e recebidas pela Gama (Matriz e Filial), vindas do eGestor</div>
+      </div>
+      <button class="btn" type="button" title="Na prévia este botão não faz nada">Atualizar notas</button>
+    </div>
+
+    <div class="content">
+      <div class="previa-aviso">
+        <b>Prévia com dados de exemplo.</b> Empresas, números e valores são inventados, só pra avaliar o
+        visual e os filtros. Os números reais estão em crm-gama-beta.vercel.app.
+      </div>
+      <p class="t-sub" style="margin-bottom: 12px" id="ultima"></p>
+
+      <div class="rel-layout">
+        <aside class="panel rel-menu">
+          <div class="panel-head">
+            <div class="panel-title">Console fiscal</div>
+          </div>
+          <div class="panel-body" id="menu"></div>
+        </aside>
+
+        <section class="rel-conteudo">
+          <div class="rel-cabecalho">
+            <h2 id="titulo"></h2>
+            <p id="descricao"></p>
+          </div>
+          <div id="tela"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Moldura (menu lateral do CRM) ----------
+
+const ICONES = {
+  painel: '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
+  leads: '<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
+  pipeline: '<path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4"/>',
+  tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',
+  empresas: '<path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/>',
+  relatorios: '<path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/>',
+  fiscal: '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
+  admin: '<circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+};
+const NAV = [
+  ['Comercial', 'Painel', 'painel'],
+  ['Comercial', 'Funil de vendas', 'leads'],
+  ['Comercial', 'Oportunidades', 'pipeline'],
+  ['Comercial', 'Tarefas', 'tarefas'],
+  ['Comercial', 'Carteira de clientes', 'empresas'],
+  ['Análise', 'Relatórios', 'relatorios'],
+  ['Análise', 'Console fiscal', 'fiscal', true],
+  ['Administração', 'Administração', 'admin'],
+];
+let grupo = '';
+document.getElementById('nav').innerHTML = NAV.map(([g, rotulo, icone, ativo]) => {
+  const cabeca = g !== grupo ? `<span class="nav-label">${g}</span>` : '';
+  grupo = g;
+  return `<div>${cabeca}<a href="#" class="nav-item"${ativo ? ' aria-current="page"' : ''}>
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICONES[icone]}</svg>${rotulo}</a></div>`;
+}).join('');
+
+// ---------- Datas (mesma regra do CRM: dia "AAAA-MM-DD", sem fuso) ----------
+
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function somaDias(dia, dias) {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+function diasEntre(de, ate) {
+  return Math.round((new Date(`${ate}T12:00:00Z`) - new Date(`${de}T12:00:00Z`)) / 86400000);
+}
+const HOJE = hojeISO();
+const INICIO_MES = `${HOJE.slice(0, 7)}-01`;
+const FIM_MES_ANTERIOR = somaDias(INICIO_MES, -1);
+const INICIO_MES_ANTERIOR = `${FIM_MES_ANTERIOR.slice(0, 7)}-01`;
+
+const PERIODOS = [
+  ['7', 'Últimos 7 dias'],
+  ['30', 'Últimos 30 dias'],
+  ['90', 'Últimos 90 dias'],
+  ['mes', 'Este mês'],
+  ['mes-anterior', 'Mês passado'],
+  ['ano', 'Este ano'],
+  ['personalizado', 'Personalizado'],
+];
+function faixaDoPeriodo(periodo, inicio, fim) {
+  switch (periodo) {
+    case '7': case '30': case '90':
+      return { inicio: somaDias(HOJE, -(Number(periodo) - 1)), fim: HOJE };
+    case 'mes': return { inicio: INICIO_MES, fim: HOJE };
+    case 'mes-anterior': return { inicio: INICIO_MES_ANTERIOR, fim: FIM_MES_ANTERIOR };
+    case 'ano': return { inicio: `${HOJE.slice(0, 4)}-01-01`, fim: HOJE };
+    case 'tudo': return { inicio: '2025-01-01', fim: HOJE };
+    default: {
+      const p = faixaDoPeriodo('30');
+      const i = /^\d{4}-\d{2}-\d{2}$/.test(inicio || '') ? inicio : p.inicio;
+      const f = /^\d{4}-\d{2}-\d{2}$/.test(fim || '') ? fim : p.fim;
+      return i <= f ? { inicio: i, fim: f } : { inicio: f, fim: i };
+    }
+  }
+}
+
+// ---------- Formatação (igual ao formato.tsx do CRM) ----------
+
+const brl = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
+const porExtenso = (f) => `${dataBR(f.inicio)} a ${dataBR(f.fim)}`;
+const estab = (e) => (e === 'matriz' ? 'Matriz' : 'Filial');
+const NUM = 'style="text-align:right;white-space:nowrap"';
+const ROTULO_SITUACAO = { autorizada: 'Autorizada', cancelada: 'Cancelada', cancelamento_pendente: 'Cancelamento pendente' };
+const situacaoPill = (s) =>
+  `<span class="${s === 'autorizada' ? 'pill pill-green' : s === 'cancelada' ? 'pill pill-red' : 'pill pill-gray'}">${ROTULO_SITUACAO[s] || s}</span>`;
+const opcoes = (lista, atual) => lista.map(([v, r]) => `<option value="${v}"${v === atual ? ' selected' : ''}>${r}</option>`).join('');
+
+// ---------- Dados inventados ----------
+// Notas no mês passado (a tela abre nele) e algumas neste mês.
+
+const mp = (dia) => somaDias(INICIO_MES_ANTERIOR, dia - 1);
+const em = (dia) => somaDias(INICIO_MES, Math.min(dia, diasEntre(INICIO_MES, HOJE) + 1) - 1);
+
+function nfe(numero, estabelecimento, destinatario, data, total, aliqIcms, ipi, extra = {}) {
+  return {
+    numero, estabelecimento, tipo: 'produto', destinatario, data, total,
+    icms: +(total * aliqIcms).toFixed(2), ipi, iss: null,
+    pis: +(total * 0.0165).toFixed(2), cofins: +(total * 0.076).toFixed(2),
+    situacao: 'autorizada', cfopMisto: false, ...extra,
+  };
+}
+function nfse(numero, estabelecimento, destinatario, data, total, iss, extra = {}) {
+  return {
+    numero, estabelecimento, tipo: 'servico', destinatario, data, total,
+    icms: null, ipi: null, iss, pis: +(total * 0.0165).toFixed(2), cofins: +(total * 0.076).toFixed(2),
+    situacao: 'autorizada', cfopMisto: false, ...extra,
+  };
+}
+
+const NOTAS = [
+  nfe(1151, 'matriz', 'Usinagem Exemplo Alfa Ltda', mp(2), 48500, 0.12, 2425),
+  nfe(1152, 'matriz', 'Metalúrgica Exemplo Beta S.A.', mp(3), 186900, 0.12, 0),
+  nfse(212, 'matriz', 'Ferramentaria Exemplo Gama Ltda', mp(4), 6800, 340),
+  nfe(1153, 'matriz', 'Caldeiraria Exemplo Delta Ltda', mp(8), 22350, 0.18, 1117.5, { cfopMisto: true }),
+  nfe(1154, 'matriz', 'Indústria Exemplo Épsilon Ltda', mp(9), 97400, 0.12, 0, { situacao: 'cancelada' }),
+  nfe(388, 'filial', 'Tornearia Exemplo Zeta Ltda', mp(10), 15890, 0.12, 794.5),
+  nfse(213, 'matriz', 'Usinagem Exemplo Alfa Ltda', mp(11), 3200, 0),
+  nfe(1155, 'matriz', 'Estamparia Exemplo Eta Ltda', mp(14), 264000, 0.12, 0),
+  nfe(389, 'filial', 'Automação Exemplo Teta Ltda', mp(15), 9870, 0.18, 0),
+  nfse(214, 'matriz', 'Metalúrgica Exemplo Beta S.A.', mp(16), 12500, 625),
+  nfe(1156, 'matriz', 'Fundição Exemplo Iota Ltda', mp(18), 73250, 0.12, 3662.5),
+  nfe(390, 'filial', 'Usinagem Exemplo Alfa Ltda', mp(21), 4380, 0.18, 219),
+  nfe(1157, 'matriz', 'Ferramentaria Exemplo Gama Ltda', mp(23), 131700, 0.12, 0),
+  nfse(215, 'matriz', 'Caldeiraria Exemplo Delta Ltda', mp(24), 5400, 270, { situacao: 'cancelada' }),
+  nfe(1158, 'matriz', 'Mecânica Exemplo Kapa Ltda', mp(25), 58900, 0.12, 2945),
+  nfe(391, 'filial', 'Indústria Exemplo Épsilon Ltda', mp(28), 21600, 0.12, 0),
+  nfe(1159, 'matriz', 'Usinagem Exemplo Alfa Ltda', em(2), 39900, 0.12, 1995),
+  nfse(216, 'matriz', 'Tornearia Exemplo Zeta Ltda', em(5), 7600, 380),
+  nfe(1160, 'matriz', 'Metalúrgica Exemplo Beta S.A.', em(9), 152300, 0.12, 0),
+  nfe(392, 'filial', 'Estamparia Exemplo Eta Ltda', em(12), 11240, 0.18, 562),
+];
+
+const ha = (dias) => somaDias(HOJE, -dias);
+const REMESSAS = [
+  { numero: 1101, estabelecimento: 'matriz', lado: 'enviada', contraparte: 'Usinagem Exemplo Alfa Ltda', data: ha(14), cfops: ['5.912'], natureza: 'Remessa para demonstração', valor: 285000, retorno: 'aberta', retornos: [] },
+  { numero: 1123, estabelecimento: 'matriz', lado: 'enviada', contraparte: 'Assistência Exemplo Lambda Ltda', data: ha(41), cfops: ['5.915'], natureza: 'Remessa para conserto', valor: 18400, retorno: 'aberta', retornos: [] },
+  { numero: 1088, estabelecimento: 'matriz', lado: 'enviada', contraparte: 'Feira Exemplo Mu Eventos', data: ha(96), cfops: ['6.914'], natureza: 'Remessa para exposição ou feira', valor: 412000, retorno: 'parcial', valorRetornado: 268000, retornos: [{ numero: 'R-77', data: ha(70), vinculo: 'chave' }] },
+  { numero: 1064, estabelecimento: 'matriz', lado: 'enviada', contraparte: 'Metalúrgica Exemplo Beta S.A.', data: ha(130), cfops: ['5.912'], natureza: 'Remessa para demonstração', valor: 196500, retorno: 'provavel', retornos: [{ numero: 'R-61', data: ha(101), vinculo: 'contraparte' }] },
+  { numero: 377, estabelecimento: 'filial', lado: 'enviada', contraparte: 'Tornearia Exemplo Zeta Ltda', data: ha(205), cfops: ['5.915'], natureza: 'Remessa para conserto', valor: 7350, retorno: 'aberta', retornos: [] },
+  { numero: 1032, estabelecimento: 'matriz', lado: 'enviada', contraparte: 'Caldeiraria Exemplo Delta Ltda', data: ha(180), cfops: ['5.912'], natureza: 'Remessa para demonstração', valor: 154000, retorno: 'retornada', retornos: [{ numero: 'R-52', data: ha(150), vinculo: 'chave' }] },
+  { numero: 998, estabelecimento: 'matriz', lado: 'enviada', contraparte: 'Assistência Exemplo Lambda Ltda', data: ha(260), cfops: ['5.915'], natureza: 'Remessa para conserto', valor: 9600, retorno: 'retornada', retornos: [{ numero: 'R-40', data: ha(238), vinculo: 'chave' }] },
+  { numero: 'E-5521', estabelecimento: 'matriz', lado: 'recebida', contraparte: 'Fabricante Exemplo Nu Ltda', data: ha(23), cfops: ['5.915'], natureza: 'Remessa para conserto', valor: 32800, retorno: 'aberta', retornos: [] },
+  { numero: 'E-4410', estabelecimento: 'matriz', lado: 'recebida', contraparte: 'Indústria Exemplo Épsilon Ltda', data: ha(64), cfops: ['5.949'], natureza: 'Remessa para industrialização', valor: 58200, retorno: 'parcial', valorRetornado: 41000, retornos: [{ numero: 1149, data: ha(30), vinculo: 'chave' }] },
+  { numero: 'E-3307', estabelecimento: 'filial', lado: 'recebida', contraparte: 'Fundição Exemplo Iota Ltda', data: ha(112), cfops: ['6.915'], natureza: 'Remessa para conserto', valor: 14900, retorno: 'aberta', retornos: [] },
+  { numero: 'E-2950', estabelecimento: 'matriz', lado: 'recebida', contraparte: 'Fabricante Exemplo Nu Ltda', data: ha(150), cfops: ['5.915'], natureza: 'Remessa para conserto', valor: 21700, retorno: 'retornada', retornos: [{ numero: 1110, data: ha(121), vinculo: 'chave' }] },
+];
+
+// ---------- Tela 1: Resumo de notas emitidas ----------
+
+const TIPO_ROTULO = { produto: 'Produto', servico: 'Serviço' };
+const VALEM = ['autorizada', 'cancelamento_pendente'];
+
+function telaReceita(f) {
+  const faixa = faixaDoPeriodo(f.periodo, f.inicio, f.fim);
+  const situacoes = f.situacao ? [f.situacao] : ['autorizada', 'cancelamento_pendente', 'cancelada'];
+  const linhas = NOTAS.filter((n) =>
+    n.data >= faixa.inicio && n.data <= faixa.fim &&
+    (!f.estabelecimento || n.estabelecimento === f.estabelecimento) &&
+    (!f.tipo || n.tipo === f.tipo) &&
+    situacoes.includes(n.situacao),
+  ).sort((a, b) => (a.data === b.data ? String(a.numero).localeCompare(String(b.numero)) : a.data.localeCompare(b.data)));
+
+  // Total por tipo e geral; cancelada não entra. ICMS/IPI/ISS somem ("—")
+  // quando nenhuma nota do grupo tem o imposto.
+  const soma = (lista, campo) => (lista.some((n) => n[campo] !== null) ? lista.reduce((s, n) => s + (n[campo] || 0), 0) : null);
+  const grupoTotal = (rotulo, lista) => ({
+    rotulo, notas: lista.length, total: soma(lista, 'total') ?? 0,
+    icms: soma(lista, 'icms'), ipi: soma(lista, 'ipi'), iss: soma(lista, 'iss'), pis: soma(lista, 'pis') ?? 0, cofins: soma(lista, 'cofins') ?? 0,
+  });
+  const contamNoTotal = f.situacao === 'cancelada' ? ['cancelada'] : VALEM;
+  const validas = linhas.filter((n) => contamNoTotal.includes(n.situacao));
+  const totais = [];
+  if (!f.tipo) {
+    for (const [tipo, rotulo] of [['produto', 'Produtos'], ['servico', 'Serviços']]) {
+      const l = validas.filter((n) => n.tipo === tipo);
+      if (l.length) totais.push(grupoTotal(rotulo, l));
+    }
+  }
+  if (validas.length) totais.push(grupoTotal('Total', validas));
+
+  const corpo = linhas.length === 0
+    ? `<tr><td colspan="12" class="t-sub" style="text-align:center">Nenhuma nota de receita com esses filtros.</td></tr>`
+    : linhas.map((n) => `<tr>
+        <td>${n.numero}</td><td>${estab(n.estabelecimento)}</td><td>${TIPO_ROTULO[n.tipo]}</td>
+        <td>${n.destinatario} ${n.cfopMisto ? '<span class="pill pill-amber" title="A nota tem item de receita e item de outro CFOP — o total da nota passa da receita">CFOP misto</span>' : ''}</td>
+        <td style="white-space:nowrap">${dataBR(n.data)}</td><td>${situacaoPill(n.situacao)}</td>
+        <td ${NUM}>${brl(n.total)}</td><td ${NUM}>${brl(n.icms)}</td><td ${NUM}>${brl(n.ipi)}</td>
+        <td ${NUM}>${brl(n.iss)}</td><td ${NUM}>${brl(n.pis)}</td><td ${NUM}>${brl(n.cofins)}</td></tr>`).join('');
+  const rodape = totais.length
+    ? `<tfoot>${totais.map((t) => `<tr><td colspan="6">${t.rotulo} · ${t.notas} nota(s)</td>
+        <td ${NUM}>${brl(t.total)}</td><td ${NUM}>${brl(t.icms)}</td><td ${NUM}>${brl(t.ipi)}</td>
+        <td ${NUM}>${brl(t.iss)}</td><td ${NUM}>${brl(t.pis)}</td><td ${NUM}>${brl(t.cofins)}</td></tr>`).join('')}</tfoot>`
+    : '';
+
+  return `
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">Filtros</div></div>
+      <div class="panel-body">
+        <form class="rel-filtros" data-tela="receita">
+          <div class="field"><label for="periodo">Data rápida</label>
+            <select id="periodo" name="periodo">${opcoes(PERIODOS, f.periodo)}</select></div>
+          <div class="field"><label for="inicio">Data inicial</label>
+            <input id="inicio" type="date" name="inicio" value="${faixa.inicio}">
+            <div class="field-hint">Vale quando a data rápida é "Personalizado".</div></div>
+          <div class="field"><label for="fim">Data final</label>
+            <input id="fim" type="date" name="fim" value="${faixa.fim}"></div>
+          <div class="field"><label for="estabelecimento">Estabelecimento</label>
+            <select id="estabelecimento" name="estabelecimento">${opcoes([['', 'Matriz e Filial'], ['matriz', 'Matriz'], ['filial', 'Filial']], f.estabelecimento)}</select></div>
+          <div class="field"><label for="tipo">Tipo</label>
+            <select id="tipo" name="tipo">${opcoes([['', 'Produto e serviço'], ['produto', 'Produto (NF-e)'], ['servico', 'Serviço (NFS-e)']], f.tipo)}</select></div>
+          <div class="field"><label for="situacao">Situação</label>
+            <select id="situacao" name="situacao">${opcoes([['', 'Autorizadas e canceladas'], ['autorizada', 'Autorizadas'], ['cancelada', 'Canceladas']], f.situacao)}</select></div>
+          <div class="rel-filtros-acoes"><button type="submit" class="btn btn-primary">Gerar relatório</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel rel-resultado">
+      <div class="panel-head">
+        <div class="panel-title">Resumo de notas emitidas</div>
+        <div class="sub">${porExtenso(faixa)} · ${linhas.length} nota(s)</div>
+      </div>
+      <div class="panel-body">
+        <div class="fiscal-tabela">
+          <table class="data-table">
+            <thead><tr>
+              <th>Nº nota</th><th>Estab.</th><th>Tipo</th><th>Destinatário</th><th>Data emissão</th><th>Situação</th>
+              <th ${NUM}>Total</th><th ${NUM}>ICMS</th><th ${NUM}>IPI</th><th ${NUM}>ISS</th><th ${NUM}>PIS</th><th ${NUM}>COFINS</th>
+            </tr></thead>
+            <tbody>${corpo}</tbody>${rodape}
+          </table>
+        </div>
+        ${f.situacao === '' ? '<p class="field-hint" style="margin-top:10px">Notas canceladas aparecem na lista, mas não entram nos totais.</p>' : ''}
+      </div>
+    </div>`;
+}
+
+// ---------- Tela 2: Controle de remessas ----------
+
+const LADO_ROTULO = { enviada: 'Enviada', recebida: 'Recebida' };
+const SITUACAO_RETORNO = {
+  aberta: ['Em aberto', 'pill pill-red', 'Nenhuma nota de retorno encontrada'],
+  parcial: ['Parcial', 'pill pill-amber', 'O retorno cita esta remessa, mas não cobre o valor todo'],
+  provavel: ['Provável', 'pill pill-blue', 'Há retorno da mesma empresa, posterior à remessa, mas que não cita esta nota — confira'],
+  retornada: ['Retornada', 'pill pill-green', 'O retorno cita esta remessa e cobre o valor'],
+};
+const ORDEM = ['aberta', 'parcial', 'provavel', 'retornada'];
+const pillRetorno = (s) => `<span class="${SITUACAO_RETORNO[s][1]}" title="${SITUACAO_RETORNO[s][2]}">${SITUACAO_RETORNO[s][0]}</span>`;
+
+function telaRemessas(f) {
+  const faixa = faixaDoPeriodo(f.periodo, f.inicio, f.fim);
+  const noFiltro = REMESSAS.filter((r) =>
+    r.data >= faixa.inicio && r.data <= faixa.fim &&
+    (!f.estabelecimento || r.estabelecimento === f.estabelecimento) &&
+    (!f.lado || r.lado === f.lado));
+  // O quadro resume o período inteiro; a lista obedece também ao filtro de retorno.
+  const linhas = noFiltro.filter((r) =>
+    f.retorno === 'todas' || (f.retorno === 'retornada' ? r.retorno === 'retornada' : r.retorno !== 'retornada'),
+  ).sort((a, b) => ORDEM.indexOf(a.retorno) - ORDEM.indexOf(b.retorno) || a.data.localeCompare(b.data));
+
+  const celula = (lado, retorno) => {
+    const l = noFiltro.filter((r) => r.lado === lado && r.retorno === retorno);
+    return l.length ? { n: l.length, valor: l.reduce((s, r) => s + r.valor, 0) } : null;
+  };
+  const quadro = ORDEM.map((ret) => {
+    const e = celula('enviada', ret);
+    const r = celula('recebida', ret);
+    return `<tr><td>${pillRetorno(ret)}</td>
+      <td ${NUM}>${e ? e.n : 0}</td><td ${NUM}>${e ? brl(e.valor) : '—'}</td>
+      <td ${NUM}>${r ? r.n : 0}</td><td ${NUM}>${r ? brl(r.valor) : '—'}</td></tr>`;
+  }).join('');
+
+  const corpo = linhas.length === 0
+    ? `<tr><td colspan="10" class="t-sub" style="text-align:center">Nenhuma remessa com esses filtros.</td></tr>`
+    : linhas.map((r) => {
+        const aberta = r.retorno !== 'retornada';
+        const dias = aberta ? diasEntre(r.data, HOJE) : null;
+        const notasRetorno = r.retornos.length === 0 ? '—' : r.retornos.map((x) =>
+          `<div style="white-space:nowrap">nº ${x.numero} de ${dataBR(x.data)}${x.vinculo === 'contraparte' ? '<span class="t-sub"> · não cita a remessa</span>' : ''}</div>`).join('');
+        return `<tr>
+          <td>${r.numero}</td><td>${estab(r.estabelecimento)}</td><td>${LADO_ROTULO[r.lado]}</td><td>${r.contraparte}</td>
+          <td style="white-space:nowrap">${dataBR(r.data)}</td><td title="${r.natureza}">${r.cfops.join(', ')}</td>
+          <td ${NUM}>${brl(r.valor)}</td>
+          <td>${pillRetorno(r.retorno)}${r.retorno === 'parcial' ? `<div class="t-sub">voltou ${brl(r.valorRetornado)}</div>` : ''}</td>
+          <td>${notasRetorno}</td><td ${NUM}>${dias ?? '—'}</td></tr>`;
+      }).join('');
+
+  return `
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">Filtros</div></div>
+      <div class="panel-body">
+        <form class="rel-filtros" data-tela="remessas">
+          <div class="field"><label for="periodo">Data rápida</label>
+            <select id="periodo" name="periodo">${opcoes([['tudo', 'Desde o início (jan/2025)'], ...PERIODOS], f.periodo)}</select></div>
+          <div class="field"><label for="inicio">Data inicial</label>
+            <input id="inicio" type="date" name="inicio" value="${faixa.inicio}">
+            <div class="field-hint">Data da remessa. Vale quando a data rápida é "Personalizado".</div></div>
+          <div class="field"><label for="fim">Data final</label>
+            <input id="fim" type="date" name="fim" value="${faixa.fim}"></div>
+          <div class="field"><label for="estabelecimento">Estabelecimento</label>
+            <select id="estabelecimento" name="estabelecimento">${opcoes([['', 'Matriz e Filial'], ['matriz', 'Matriz'], ['filial', 'Filial']], f.estabelecimento)}</select></div>
+          <div class="field"><label for="lado">Remessa</label>
+            <select id="lado" name="lado">${opcoes([['', 'Enviadas e recebidas'], ['enviada', 'Enviadas pela Gama (têm que voltar)'], ['recebida', 'Recebidas de terceiros (a Gama devolve)']], f.lado)}</select></div>
+          <div class="field"><label for="retorno">Retorno</label>
+            <select id="retorno" name="retorno">${opcoes([['pendente', 'Pendentes (em aberto, parcial ou provável)'], ['retornada', 'Retornadas'], ['todas', 'Todas']], f.retorno)}</select></div>
+          <div class="rel-filtros-acoes"><button type="submit" class="btn btn-primary">Gerar relatório</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel rel-resultado">
+      <div class="panel-head">
+        <div class="panel-title">Situação do retorno</div>
+        <div class="sub">${porExtenso(faixa)}</div>
+      </div>
+      <div class="panel-body">
+        <div class="fiscal-tabela">
+          <table class="data-table">
+            <thead><tr><th>Retorno</th><th ${NUM}>Enviadas pela Gama</th><th ${NUM}>Valor</th><th ${NUM}>Recebidas de terceiros</th><th ${NUM}>Valor</th></tr></thead>
+            <tbody>${quadro}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel rel-resultado">
+      <div class="panel-head">
+        <div class="panel-title">Remessas</div>
+        <div class="sub">${linhas.length} remessa(s)</div>
+      </div>
+      <div class="panel-body">
+        <div class="fiscal-tabela">
+          <table class="data-table">
+            <thead><tr>
+              <th>Nº nota</th><th>Estab.</th><th>Remessa</th><th>Empresa</th><th>Data</th><th>CFOP</th>
+              <th ${NUM}>Valor</th><th>Retorno</th><th>Nota de retorno</th><th ${NUM}>Dias em aberto</th>
+            </tr></thead>
+            <tbody>${corpo}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ---------- Navegação entre as telas (como o ?r= do CRM) ----------
+
+const TELAS = {
+  receita: {
+    rotulo: 'Resumo de notas emitidas',
+    descricao: 'NF-e com CFOP de receita e NFS-e — a base do PIS e da COFINS. Nota de remessa, transferência e retorno fica de fora.',
+    padrao: { periodo: 'mes-anterior', inicio: '', fim: '', estabelecimento: '', tipo: '', situacao: '' },
+    render: telaReceita,
+  },
+  remessas: {
+    rotulo: 'Controle de remessas',
+    descricao: 'Remessas que exigem retorno — as que a Gama mandou e têm que voltar, e as que a Gama recebeu e tem que devolver — com a nota de retorno de cada uma.',
+    padrao: { periodo: 'tudo', inicio: '', fim: '', estabelecimento: '', lado: '', retorno: 'pendente' },
+    render: telaRemessas,
+  },
+};
+const filtros = { receita: { ...TELAS.receita.padrao }, remessas: { ...TELAS.remessas.padrao } };
+
+function mostrar() {
+  const id = TELAS[location.hash.slice(1)] ? location.hash.slice(1) : 'receita';
+  const tela = TELAS[id];
+  document.getElementById('menu').innerHTML = Object.entries(TELAS).map(([k, t]) =>
+    `<a href="#${k}" class="${k === id ? 'rel-menu-item ativo' : 'rel-menu-item'}">${t.rotulo}</a>`).join('');
+  document.getElementById('titulo').textContent = tela.rotulo;
+  document.getElementById('descricao').textContent = tela.descricao;
+  document.getElementById('tela').innerHTML = tela.render(filtros[id]);
+  document.querySelector('#tela form').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    filtros[id] = Object.fromEntries(new FormData(ev.target).entries());
+    mostrar();
+  });
+}
+
+document.getElementById('ultima').textContent =
+  `Última atualização: ${dataBR(HOJE)} 07:00 (exemplo)`;
+window.addEventListener('hashchange', mostrar);
+mostrar();
+</script>
+</body>
+</html>

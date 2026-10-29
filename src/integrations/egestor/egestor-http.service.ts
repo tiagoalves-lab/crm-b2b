@@ -13,14 +13,22 @@ interface PaginatedResponse<T> {
 // Wrapper de GET autenticado contra a API do eGestor — paginação genérica
 // (itera `page` até passar de `last_page`) + throttle simples pra respeitar
 // o rate limit confirmado (60 req/min, ver docs/api-egestor-contatos.md).
-// Sem cache/retry sofisticado nesta primeira versão — cada chamada falha
-// alto (lança) se a resposta não for 2xx, quem chama decide o que fazer.
+// Sem cache. Única repetição automática: resposta 429 (ver enviar()) —
+// qualquer outro não-2xx falha alto (lança), quem chama decide o que fazer.
 @Injectable()
 export class EgestorHttpService {
   // ~54 req/min de folga sobre o limite de 60 — 1100ms entre requisições
   // é simples e suficiente pro volume atual (nunca precisamos de mais de
   // ~45 páginas por conta).
   private static readonly MIN_INTERVAL_MS = 1100;
+  // Espera antes de repetir uma chamada recusada com 429 ("Too Many
+  // Attempts"), quando o eGestor não manda Retry-After. O limite de 60/min
+  // é da CONTA: o backend em produção (webhooks) e uma carga rodando por
+  // script dividem a mesma cota, e o throttle de um não enxerga o outro —
+  // foi o que derrubou 211 chamadas na primeira carga do console fiscal
+  // (2026-10-20). A janela do limite é de um minuto, então a última espera
+  // já cobre uma janela inteira.
+  private static readonly ESPERAS_429_MS = [15_000, 30_000, 60_000, 60_000];
   private lastRequestAt = 0;
 
   async getAllPages<T>(
@@ -37,7 +45,6 @@ export class EgestorHttpService {
     let lastPage = 1;
 
     do {
-      await this.throttle();
       const json = await this.getPage<T>(accessToken, path, {
         ...params,
         page: String(page),
@@ -53,6 +60,25 @@ export class EgestorHttpService {
     return all;
   }
 
+  // GET que devolve texto em vez de JSON — o XML da NF-e
+  // (`GET /v1/nfe/{codigo}/xml`, console fiscal). Mesmo throttle dos
+  // outros métodos: a carga inicial baixa centenas de XML em sequência.
+  async getText(accessToken: string, path: string): Promise<string> {
+    const res = await this.enviar(`${API_BASE}${path}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const body = await res.text();
+    if (!res.ok) {
+      throw new InternalServerErrorException(
+        `Falha ao chamar eGestor GET ${path}. HTTP ${res.status}: ${body.slice(0, 300)}`,
+      );
+    }
+
+    return body;
+  }
+
   // GET de recurso único (não paginado) — ex. `GET /v1/contatos/{codigo}`,
   // usado pra buscar o registro completo e atual antes de um `PUT` de
   // correção (ver EgestorContatoCorrectionService): nunca confiar só no
@@ -60,8 +86,7 @@ export class EgestorHttpService {
   // um full update, sob risco de apagar campo que a Gama nunca sincronizou
   // (ver docs/api-egestor-contatos.md, "Perguntas em aberto" #7).
   async getOne<T>(accessToken: string, path: string): Promise<T> {
-    await this.throttle();
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await this.enviar(`${API_BASE}${path}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -89,8 +114,7 @@ export class EgestorHttpService {
     path: string,
     payload: Record<string, unknown>,
   ): Promise<T> {
-    await this.throttle();
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await this.enviar(`${API_BASE}${path}`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -119,8 +143,7 @@ export class EgestorHttpService {
     path: string,
     payload: Record<string, unknown>,
   ): Promise<T> {
-    await this.throttle();
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await this.enviar(`${API_BASE}${path}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -150,7 +173,7 @@ export class EgestorHttpService {
       url.searchParams.set(key, value);
     }
 
-    const res = await fetch(url, {
+    const res = await this.enviar(url, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -167,6 +190,25 @@ export class EgestorHttpService {
     }
 
     return body as PaginatedResponse<T>;
+  }
+
+  // Throttle + repetição em 429. Toda chamada ao eGestor passa por aqui.
+  // Repetir é seguro mesmo em POST/PUT: 429 quer dizer que o eGestor
+  // recusou a chamada antes de processar.
+  private async enviar(url: string | URL, init: RequestInit): Promise<Response> {
+    for (let tentativa = 0; ; tentativa++) {
+      await this.throttle();
+      const res = await fetch(url, init);
+      if (res.status !== 429 || tentativa >= EgestorHttpService.ESPERAS_429_MS.length) {
+        return res;
+      }
+      const retryAfter = Number(res.headers?.get?.('retry-after'));
+      const espera =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter * 1000
+          : EgestorHttpService.ESPERAS_429_MS[tentativa];
+      await new Promise((resolve) => setTimeout(resolve, espera));
+    }
   }
 
   private async throttle(): Promise<void> {

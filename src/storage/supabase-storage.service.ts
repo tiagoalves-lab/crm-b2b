@@ -3,6 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export const TASK_ATTACHMENTS_BUCKET = 'task-attachments';
+// Áudio das ligações (migration 20261026180000_telefonia_gravacoes). Bucket
+// à parte, sem nenhuma URL de download gerada pra ele: o áudio não aparece
+// em tela nenhuma (docs/telefonia-crm.md, decisão 1.8).
+export const GRAVACOES_BUCKET = 'gravacoes';
 
 // Cliente com a service role key — bypassa RLS/policy de Storage de
 // propósito. A fronteira de segurança não é o Storage, é o backend: quem
@@ -56,9 +60,10 @@ export class SupabaseStorageService {
     path: string,
     bytes: Buffer,
     contentType: string,
+    bucket: string = TASK_ATTACHMENTS_BUCKET,
   ): Promise<void> {
     const { error } = await this.getClient()
-      .storage.from(TASK_ATTACHMENTS_BUCKET)
+      .storage.from(bucket)
       .upload(path, bytes, { contentType, upsert: false });
     if (error) {
       throw new InternalServerErrorException(
@@ -82,9 +87,26 @@ export class SupabaseStorageService {
     return data.signedUrl;
   }
 
-  async remove(path: string): Promise<void> {
+  // Leitura feita PELO backend, sem URL nenhuma: hoje só a transcrição das
+  // gravações (TranscricaoService), que manda o áudio ao Groq.
+  async download(path: string, bucket: string): Promise<Buffer> {
+    const { data, error } = await this.getClient()
+      .storage.from(bucket)
+      .download(path);
+    if (error || !data) {
+      throw new InternalServerErrorException(
+        `Erro ao ler arquivo do storage: ${error?.message ?? 'desconhecido'}`,
+      );
+    }
+    return Buffer.from(await data.arrayBuffer());
+  }
+
+  async remove(
+    path: string,
+    bucket: string = TASK_ATTACHMENTS_BUCKET,
+  ): Promise<void> {
     const { error } = await this.getClient()
-      .storage.from(TASK_ATTACHMENTS_BUCKET)
+      .storage.from(bucket)
       .remove([path]);
     if (error) {
       throw new InternalServerErrorException(

@@ -129,7 +129,12 @@ describe('TarefasConcluidasRelatorioService', () => {
 
     expect(taskFindMany.mock.calls[0][0].where.AND).toEqual(
       expect.arrayContaining([
-        { assigneeUserId: REP },
+        {
+          OR: [
+            { assigneeUserId: REP },
+            { memberUserIds: { hasSome: [REP] } },
+          ],
+        },
         { assigneeUserId: OUTRO },
       ]),
     );

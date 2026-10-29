@@ -11,6 +11,7 @@ export interface SidebarCounts {
   pipeline: number;
   tarefas: number;
   empresas: number;
+  convertidos: number;
 }
 
 // Contadores dos badges da barra lateral, numa chamada só.
@@ -44,7 +45,7 @@ export class CountsService {
     tx: TenantTx,
     membership: MembershipContext,
   ): Promise<SidebarCounts> {
-    const [leads, pipeline, tarefas, empresas] = await Promise.all([
+    const [leads, pipeline, tarefas, empresas, convertidos] = await Promise.all([
       this.zeroIfForbidden(
         this.rawLeads
           .findAll(tx, membership, { status: 'novo', pageSize: 1 })
@@ -68,9 +69,13 @@ export class CountsService {
           .findAll(tx, membership, { pageSize: 1 })
           .then((r) => r.total),
       ),
+      // Leads convertidos que ainda não compraram (2026-10-27).
+      this.zeroIfForbidden(
+        this.rawLeads.contarConvertidosSemCompra(tx, membership),
+      ),
     ]);
 
-    return { leads, pipeline, tarefas, empresas };
+    return { leads, pipeline, tarefas, empresas, convertidos };
   }
 
   // Um membro sem permissão num módulo não deve derrubar a barra lateral

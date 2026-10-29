@@ -13,6 +13,7 @@ import { listCompanyContactsAction } from "../../tarefas/actions";
 import TipoContatoFields from "../../tarefas/tipo-contato-fields";
 import { ItemsPanel, TagPicker } from "../_detail/item-tags";
 import { enviarAnexosOportunidade } from "../_detail/enviar-anexos";
+import { ArquivosPendentes } from "@/app/dashboard/_overlay/arquivos-pendentes";
 
 // Cadastro de oportunidade no MESMO card do detalhe (pedido do usuário,
 // 2026-09-04): o formulário pequeno que existia antes (nova-form.tsx)
@@ -48,8 +49,8 @@ export default function NovaCard({
   // "modal": rodapé cola na borda do OverlayModal; "page": corpo e rodapé
   // ganham o mesmo painel da versão full-page do detalhe.
   frame: "modal" | "page";
-  // Responsável da tarefa opcional — só o próprio representante ou o
-  // gerente dele (web/lib/api/assignee-options.ts).
+  // Responsável da tarefa opcional — qualquer membro ativo, quem cria
+  // primeiro (web/lib/api/assignee-options.ts).
   assigneeOptions: AssigneeOption[];
   // Contatos da empresa travada (lockedCompanyId); sem trava, a lista é
   // buscada conforme a empresa é escolhida no seletor.
@@ -143,20 +144,8 @@ export default function NovaCard({
             </dd>
             {/* Moeda saiu do formulário (pedido do usuário, 2026-09-11):
                 tudo é negociado em real. O backend continua guardando a
-                moeda, com "BRL" como padrão. */}
-            <dt>Valor</dt>
-            <dd>
-              <input
-                name="amount"
-                type="number"
-                step="0.01"
-                min="0"
-                required
-                placeholder="0,00"
-                aria-label="Valor"
-                style={{ width: 170, fontFamily: "var(--font-mono)" }}
-              />
-            </dd>
+                moeda, com "BRL" como padrão. Valor (2026-10-28) é o
+                totalizador da coluna de Itens, igual ao card salvo. */}
             <dt>Previsão</dt>
             <dd>
               <input name="expectedCloseDate" type="date" aria-label="Previsão de fechamento" />
@@ -176,23 +165,9 @@ export default function NovaCard({
 
           <div className="task-detail-section">
             <div className="drawer-section-title" style={{ marginTop: 0 }}>
-              Anexos
+              Anexos (opcional)
             </div>
-            <div className="attach-drop" style={{ cursor: "default" }}>
-              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-              </svg>
-              <div className="attach-drop-text" style={{ marginBottom: 10 }}>
-                Anexar arquivos (foto, PDF, planilha) — opcional
-              </div>
-              <div className="row-form" style={{ justifyContent: "center" }}>
-                <input
-                  type="file"
-                  multiple
-                  onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-                />
-              </div>
-            </div>
+            <ArquivosPendentes files={files} onChange={setFiles} />
           </div>
 
           <div className="task-detail-section">
@@ -264,6 +239,12 @@ export default function NovaCard({
             items={items.map((name) => ({ key: name, name }))}
             onAdd={addItem}
             onRemove={(item) => removeItem(item.name)}
+            totalizador={
+              <label className="opp-item-total">
+                <span>Valor total</span>
+                <input name="amount" type="number" step="0.01" min="0" placeholder="0,00" />
+              </label>
+            }
           />
         </aside>
       </div>

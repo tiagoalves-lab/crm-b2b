@@ -90,8 +90,24 @@ export class TarefasConcluidasRelatorioService {
       // antiga.
       status: 'done',
       AND: [
+        // Membro da tarefa (2026-09-29) também a enxerga, igual à tela
+        // de Tarefas.
         ...(scope.ownerUserId !== undefined
-          ? [{ assigneeUserId: scope.ownerUserId }]
+          ? [
+              {
+                OR: [
+                  { assigneeUserId: scope.ownerUserId },
+                  {
+                    memberUserIds: {
+                      hasSome:
+                        typeof scope.ownerUserId === 'string'
+                          ? [scope.ownerUserId]
+                          : scope.ownerUserId.in,
+                    },
+                  },
+                ],
+              },
+            ]
           : []),
         ...(query.usuarioId ? [{ assigneeUserId: query.usuarioId }] : []),
       ],

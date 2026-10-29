@@ -45,6 +45,50 @@ export function diferencaEmDias(
   return Math.round((fim - inicio) / 86_400_000);
 }
 
+// Dia "AAAA-MM-DD" em que cai o prazo de uma tarefa. Prazo só-data vem de
+// um <input type="date"> e é gravado como meia-noite UTC — lido no fuso de
+// Brasília ele recuaria pro dia anterior (era o caso do resumo até
+// 2026-10-22: tarefa de hoje saía como "1 dia" atrasada). Prazo com hora
+// marcada é instante real, então vale o dia em Brasília. Mesma régua de
+// web/app/dashboard/tarefas/calendar-view.tsx#dueDateKey.
+export function diaDoPrazo(
+  dueAt: Date,
+  comHora: boolean,
+  tz: string = FUSO_PADRAO,
+): string {
+  return comHora ? diaBR(dueAt, tz) : dueAt.toISOString().slice(0, 10);
+}
+
+// Diferença em dias entre dois dias "AAAA-MM-DD" (positivo = `ate` depois).
+export function diasEntre(de: string, ate: string): number {
+  return Math.round(
+    (Date.parse(`${ate}T12:00:00Z`) - Date.parse(`${de}T12:00:00Z`)) /
+      86_400_000,
+  );
+}
+
+// Soma `dias` a um dia "AAAA-MM-DD".
+export function somarDias(dia: string, dias: number): string {
+  return new Date(Date.parse(`${dia}T12:00:00Z`) + dias * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+// Domingo que fecha a semana do dia "AAAA-MM-DD" — semana de segunda a
+// domingo, como no W0/W+1 que o usuário usa (2026-10-22).
+export function domingoDaSemana(dia: string): string {
+  const semana = new Date(`${dia}T12:00:00Z`).getUTCDay();
+  return somarDias(dia, semana === 0 ? 0 : 7 - semana);
+}
+
+// "seg 27/10" — dia da semana abreviado + dia curto, pra lista de tarefas
+// agrupada por semana.
+export function diaComSemanaCurto(dia: string): string {
+  const nomes = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const [, mes, d] = dia.split('-');
+  return `${nomes[new Date(`${dia}T12:00:00Z`).getUTCDay()]} ${d}/${mes}`;
+}
+
 // Dias úteis (segunda a sexta, sem feriados) entre dois dias "AAAA-MM-DD":
 // conta os dias DEPOIS do início até o fim, inclusive. É o selo de SLA
 // (pedido do usuário, 2026-09-16): abertura → Prazo SLA. Mesma conta de

@@ -231,4 +231,43 @@ describe('EgestorHttpService', () => {
       expect(waitMs).toBeLessThanOrEqual(1100);
     });
   });
+
+  // 2026-10-20: a cota de 60/min é da conta, dividida com o backend em
+  // produção — 429 espera a janela virar e tenta de novo.
+  describe('429 (Too Many Attempts)', () => {
+    it('espera e repete a chamada até o eGestor aceitar', async () => {
+      const http = new EgestorHttpService();
+      mockFetchOnce(429, null);
+      mockFetchOnce(429, null);
+      mockFetchOnce(200, { codigo: 7 });
+
+      await expect(http.getOne('token-abc', '/v1/nfse/7')).resolves.toEqual({ codigo: 7 });
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      const esperas = (global.setTimeout as unknown as jest.Mock).mock.calls.map((c) => c[1] as number);
+      expect(esperas.filter((ms) => ms >= 15_000)).toEqual([15_000, 30_000]);
+    });
+
+    it('usa o Retry-After quando o eGestor manda', async () => {
+      const http = new EgestorHttpService();
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: { get: (h: string) => (h.toLowerCase() === 'retry-after' ? '7' : null) },
+        text: async () => 'Too Many Attempts.',
+      });
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, text: async () => '<nfeProc/>' });
+
+      await expect(http.getText('token-abc', '/v1/nfe/1/xml')).resolves.toBe('<nfeProc/>');
+      const esperas = (global.setTimeout as unknown as jest.Mock).mock.calls.map((c) => c[1] as number);
+      expect(esperas).toContain(7_000);
+    });
+
+    it('desiste depois de 4 repetições e lança o 429', async () => {
+      const http = new EgestorHttpService();
+      for (let i = 0; i < 5; i++) mockFetchOnce(429, null);
+
+      await expect(http.getOne('token-abc', '/v1/nfe/1')).rejects.toThrow(/HTTP 429/);
+      expect(global.fetch).toHaveBeenCalledTimes(5);
+    });
+  });
 });

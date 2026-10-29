@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CompanyModule } from '../../companies/company.module';
 import { MembershipModule } from '../../memberships/membership.module';
 import { OpportunityModule } from '../../opportunities/opportunity.module';
 import { PdfModule } from '../../pdf/pdf.module';
@@ -24,6 +25,8 @@ import { CotacoesService } from './cotacoes.service';
 @Module({
   imports: [
     TenancyModule,
+    // Cartão CNPJ da Receita no cliente vindo do app (2026-10-02).
+    CompanyModule,
     OpportunityModule,
     MembershipModule,
     // Proposta congelada do app de cotacoes -> PDF (Chromium) -> anexo do

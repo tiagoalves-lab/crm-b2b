@@ -18,7 +18,7 @@ export class EgestorWebhookPayloadDto {
   @IsString()
   date!: string;
 
-  @IsIn(['produtos', 'contatos', 'vendas', 'usuarios', 'financeiro'])
+  @IsIn(['produtos', 'contatos', 'vendas', 'usuarios', 'financeiro', 'nfe', 'nfce'])
   module!: string;
 
   @IsString()

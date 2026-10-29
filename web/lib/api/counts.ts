@@ -5,6 +5,7 @@ export interface SidebarCounts {
   pipeline: number;
   tarefas: number;
   empresas: number;
+  convertidos: number;
 }
 
 // Badges da barra lateral numa chamada só.

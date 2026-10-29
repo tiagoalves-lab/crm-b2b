@@ -11,7 +11,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ITEM_NAME_MAX, ITEMS_MAX } from '../../opportunities/opportunity-tags';
-import { PARTICIPANTS_MAX, TASK_TYPES } from '../task-type.constants';
+import { MEMBERS_MAX, PARTICIPANTS_MAX, TASK_TYPES } from '../task-type.constants';
 
 const STATUSES: TaskStatus[] = ['pending', 'done'];
 
@@ -61,6 +61,15 @@ export class UpdateTaskDto {
   @ArrayMaxSize(PARTICIPANTS_MAX)
   @IsUUID(undefined, { each: true })
   participantContactIds?: string[];
+
+  // Membros da tarefa (2026-09-29): outros usuários do CRM que veem e
+  // trabalham a tarefa junto com o responsável. Cada um precisa ser membro
+  // ativo (checado no service). Substitui a lista inteira; vazia limpa.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MEMBERS_MAX)
+  @IsUUID(undefined, { each: true })
+  memberUserIds?: string[];
 
   @IsOptional()
   @IsIn(STATUSES)

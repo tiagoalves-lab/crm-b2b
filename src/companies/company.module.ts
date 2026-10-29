@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ActivityModule } from '../activities/activity.module';
 import { PolicyModule } from '../policy/policy.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
+import { CartaoCnpjService } from './cartao-cnpj.service';
 import { CompanyAbcService } from './company-abc.service';
 import { CompanyTeamService } from './company-team.service';
 import { CompanyController } from './company.controller';
@@ -17,7 +18,8 @@ import { ContactService } from './contact.service';
     ContactService,
     CompanyAbcService,
     CompanyTeamService,
+    CartaoCnpjService,
   ],
-  exports: [CompanyService, ContactService],
+  exports: [CompanyService, ContactService, CartaoCnpjService],
 })
 export class CompanyModule {}

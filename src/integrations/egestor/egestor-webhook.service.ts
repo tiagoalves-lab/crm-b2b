@@ -16,6 +16,10 @@ import { EgestorVendaSyncService } from './egestor-venda-sync.service';
 import { EgestorWebhookEchoService } from './egestor-webhook-echo.service';
 import { EgestorWebhookProcessingService } from './egestor-webhook-processing.service';
 import {
+  EgestorNfeWebhookRegistry,
+  type ResultadoEventoNfe,
+} from './egestor-nfe-webhook.registry';
+import {
   descreverContato,
   descreverEmpresa,
   limparDocumento,
@@ -45,7 +49,9 @@ const SYSTEM_ACTOR_USER_ID = '00000000-0000-4000-8000-000000000000';
 // outro é registrado e encerrado como "modulo_nao_suportado" — o cadastro
 // do webhook nas duas contas mantém produtos/usuários/financeiro
 // desligados, isto é só a rede de segurança.
-const MODULOS_SUPORTADOS = new Set(['contatos', 'vendas']);
+// "nfe" desde 2026-10-20: NF-e emitida, gravada pelo console fiscal
+// (docs/console-fiscal.md, decisão 5.2).
+const MODULOS_SUPORTADOS = new Set(['contatos', 'vendas', 'nfe']);
 
 // Tradução das chaves curtas de `processResult` pro texto que o usuário lê
 // no botão "Histórico de requisições". Mesmo espírito de
@@ -64,6 +70,16 @@ const DESCRICAO_RESULTADO_VENDA: Record<string, string> = {
     'cliente desta venda ainda não tem empresa correspondente no CRM — venda não registrada (promova o contato e sincronize as vendas).',
   venda_sem_dados_minimos:
     'venda veio sem código, cliente ou data utilizável — ignorada.',
+};
+
+const DESCRICAO_RESULTADO_NFE: Record<ResultadoEventoNfe['resultado'], string> = {
+  nfe_criada: 'nota registrada no Console fiscal.',
+  nfe_atualizada: 'nota atualizada no Console fiscal.',
+  nfe_removida: 'nota excluída no eGestor — removida do Console fiscal.',
+  nfe_inexistente_ignorada:
+    'nota não existe mais no eGestor e não constava no Console fiscal — nada a fazer.',
+  nfe_homologacao_ignorada:
+    'nota de homologação (teste do emissor) — ignorada, não tem efeito fiscal.',
 };
 
 // Handler operacional do webhook de contatos (2026-08-12; regra de
@@ -117,6 +133,7 @@ export class EgestorWebhookService {
     private readonly interactionLog: EgestorInteractionLogService,
     private readonly cartaoCnpj: EgestorCartaoCnpjService,
     private readonly vendas: EgestorVendaSyncService,
+    private readonly nfeWebhook: EgestorNfeWebhookRegistry,
   ) {}
 
   // Comparação em tempo constante — não é senha de usuário, mas é o único
@@ -235,7 +252,7 @@ export class EgestorWebhookService {
       // Eco só existe pro módulo de contatos: o CRM escreve contato de
       // volta no eGestor (correção/consolidação/completar), mas nunca
       // escreve venda — nenhum evento de venda pode ser eco nosso.
-      if (payload.module === 'vendas') {
+      if (payload.module === 'vendas' || payload.module === 'nfe') {
         return { eventoId: evento.id, encerrar: false as const };
       }
 
@@ -288,6 +305,17 @@ export class EgestorWebhookService {
     // Venda tem pipeline próprio (bem mais curto que o de contato: não há
     // consolidação Matriz×Filial, correção automática nem eco) — desvia
     // aqui em vez de encher as fases abaixo de `if (module === ...)`.
+    if (payload.module === 'nfe') {
+      return this.processarEventoNfe(
+        ctx,
+        workspaceId,
+        estabelecimento,
+        codigo,
+        payload.action,
+        decisao.eventoId,
+      );
+    }
+
     if (payload.module === 'vendas') {
       return this.processarEventoVenda(
         ctx,
@@ -477,6 +505,41 @@ export class EgestorWebhookService {
     );
 
     return { processResult };
+  }
+
+  // NF-e emitida (console fiscal, 2026-10-20). O webhook só avisa o
+  // código: quem busca a nota no eGestor e grava é o console fiscal,
+  // registrado na ponte EgestorNfeWebhookRegistry. Mão única como venda —
+  // o CRM nunca escreve nota no eGestor, então não há eco. Erro propaga
+  // (500) e o eGestor reenvia; o evento fica sem processedAt até dar certo.
+  private async processarEventoNfe(
+    ctx: { userId: string; workspaceId: string; role: 'owner' },
+    workspaceId: string,
+    estabelecimento: Estabelecimento,
+    codigo: string,
+    action: string,
+    eventoId: string,
+  ): Promise<{ processResult: string }> {
+    const processador = this.nfeWebhook.obter();
+    if (!processador) {
+      throw new Error('Console fiscal não registrado para processar NF-e.');
+    }
+
+    const r = await processador.aplicarEventoNfe(ctx, estabelecimento, codigo, action);
+
+    await this.tenantContext.run(ctx, async (tx) => {
+      await tx.egestorWebhookEvent.update({
+        where: { id: eventoId },
+        data: { processedAt: new Date(), processResult: r.resultado },
+      });
+      await this.interactionLog.registrar(tx, workspaceId, {
+        origin: origemDoEstabelecimento(estabelecimento),
+        action: 'webhook_nfe_processado',
+        summary: `Webhook nfe.${action} recebido (NF-e ${r.numero !== null ? `nº ${r.numero}` : `código ${codigo}`}, ${nomeDoEstabelecimento(estabelecimento)}) — ${DESCRICAO_RESULTADO_NFE[r.resultado]}${r.situacao ? ` Situação: ${r.situacao}.` : ''}`,
+      });
+    });
+
+    return { processResult: r.resultado };
   }
 
   // Isolada num método próprio pra deixar explícito que NADA aqui pode

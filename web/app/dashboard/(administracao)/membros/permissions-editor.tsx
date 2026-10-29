@@ -12,9 +12,17 @@ import {
   PERMISSION_ACTIONS,
   PERMISSION_MODULES,
   effectivePermissions,
+  hasPermission,
+  temBypass,
   type PermissionModule,
 } from "@/lib/api/permission-catalog";
+import { IS_BETA } from "@/lib/ambiente";
 import { ROLE_LABELS, memberName } from "./roles";
+
+// Módulo em teste no endereço beta: a caixa só aparece lá até o usuário
+// aprovar (mesma marca `beta` do item de menu, nav-items.ts). Vazio desde
+// 2026-10-22, quando o Console fiscal foi pra produção.
+const MODULOS_SO_NO_BETA = new Set<PermissionModule>([]);
 
 // Subpágina de Permissões do modal de membro (pedido direto do usuário,
 // 2026-08-12) — grade de checkbox módulo×ação + "copiar permissões de".
@@ -28,20 +36,25 @@ import { ROLE_LABELS, memberName } from "./roles";
 // de grupo antes da primeira linha de cada grupo novo. MODULE_HINTS marca
 // as duas linhas (Tarefas/Oportunidades dentro da empresa) onde só "Ver"
 // tem efeito próprio — ver comentário em permission-catalog.ts.
+//
+// `actor` (2026-10-22): quem está editando. Caixa que o próprio ator não
+// tem fica travada — o backend não deixa ninguém ligar nem desligar um
+// acesso que não tem (ex.: admin sem o Console fiscal).
 export default function PermissionsEditor({
   role,
   matrix,
   onChange,
   members,
   excludeMemberId,
+  actor,
 }: {
   role: MembershipRole;
   matrix: PermissionMatrix;
   onChange: (matrix: PermissionMatrix) => void;
   members: Membership[];
   excludeMemberId?: string;
+  actor: Pick<Membership, "role" | "permissions">;
 }) {
-  const isBypass = role === "owner" || role === "admin";
   const copyCandidates = members.filter((m) => m.id !== excludeMemberId);
 
   function toggle(module: PermissionModule, action: string, checked: boolean) {
@@ -65,11 +78,17 @@ export default function PermissionsEditor({
 
   return (
     <div>
-      {isBypass ? (
+      {role === "owner" ? (
         <p className="field-hint">
           {ROLE_LABELS[role]} tem acesso total em todo o sistema — a matriz
           abaixo não se aplica a este papel (fica salva, mas ignorada
           enquanto o membro continuar como {ROLE_LABELS[role]}).
+        </p>
+      ) : role === "admin" ? (
+        <p className="field-hint">
+          {ROLE_LABELS[role]} tem acesso total em todo o sistema, exceto no
+          Console fiscal e nos Relatórios financeiros, que seguem as caixas
+          abaixo — marque ou desmarque para este membro.
         </p>
       ) : (
         <p className="field-hint">
@@ -119,7 +138,7 @@ export default function PermissionsEditor({
             </tr>
           </thead>
           <tbody>
-            {PERMISSION_MODULES.map((module) => {
+            {PERMISSION_MODULES.filter((module) => !MODULOS_SO_NO_BETA.has(module) || IS_BETA).map((module) => {
               const group = MODULE_GROUP[module];
               const showGroupHeader = group !== null && group !== lastGroup;
               lastGroup = group;
@@ -159,13 +178,15 @@ export default function PermissionsEditor({
                     </td>
                     {PERMISSION_ACTIONS.map((action) => {
                       const applies = MODULE_ACTIONS[module].includes(action);
+                      const atorSemAcesso = !hasPermission(actor.role, actor.permissions, module, action);
                       return (
                         <td key={action} style={{ textAlign: "center" }}>
                           {applies ? (
                             <input
                               type="checkbox"
                               checked={matrix[module]?.[action] ?? false}
-                              disabled={isBypass}
+                              disabled={temBypass(role, module) || atorSemAcesso}
+                              title={atorSemAcesso ? "Você não tem este acesso, então não pode mudá-lo." : undefined}
                               onChange={(e) => toggle(module, action, e.target.checked)}
                               style={{
                                 width: 16,

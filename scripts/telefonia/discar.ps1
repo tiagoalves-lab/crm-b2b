@@ -60,4 +60,15 @@ if (-not $microsip) {
 
 Start-Process -FilePath $microsip -ArgumentList $numero
 Escrever-Log "discar: $numero"
+
+# Envio das gravações pendentes (das ligações anteriores), no mesmo
+# processo, depois de o MicroSIP já estar discando. É o único gatilho:
+# tarefa agendada e o aviso de fim de chamada são bloqueados pelo
+# antivírus da máquina da SDR (ver instalar.ps1, passo 6). Falha aqui não
+# atrapalha a ligação — o arquivo fica e vai no próximo clique.
+try {
+  & (Join-Path $raiz 'enviar-gravacoes.ps1') -EsperaSegundos 0
+} catch {
+  Escrever-Log ("envio de gravacoes no Ligar -> FALHOU: {0}" -f $_.Exception.Message)
+}
 exit 0

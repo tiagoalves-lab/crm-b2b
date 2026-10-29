@@ -38,6 +38,7 @@ export default function ContactItem({
   const [email, setEmail] = useState(contact.email ?? "");
   const [telefone, setTelefone] = useState(contact.telefone ?? "");
   const [decisor, setDecisor] = useState(contact.decisor);
+  const [savingDecisor, setSavingDecisor] = useState(false);
 
   async function handleRemove() {
     if (busy) return;
@@ -86,6 +87,22 @@ export default function ContactItem({
       return;
     }
     setEditing(false);
+    refresh();
+  }
+
+  // Atualização otimista: marca na hora e desfaz se o backend recusar.
+  async function handleToggleDecisor(value: boolean) {
+    if (busy || savingDecisor) return;
+    setDecisor(value);
+    setSavingDecisor(true);
+    setError(null);
+    const res = await updateContactAction(companyId, contact.id, { decisor: value });
+    setSavingDecisor(false);
+    if (!res.ok) {
+      setDecisor(!value);
+      setError(res.message);
+      return;
+    }
     refresh();
   }
 
@@ -161,12 +178,29 @@ export default function ContactItem({
             />
           </div>
         )}
-        <label style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+        {/* Clicável direto (sem passar por "Editar") pra quem pode editar —
+            pedido do usuário (2026-10-08): o checkbox parecia quebrado
+            por ser só exibição. Sem permissão continua só leitura. */}
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            marginTop: 4,
+            cursor: canEdit ? "pointer" : "default",
+          }}
+        >
           <input
             type="checkbox"
-            checked={contact.decisor}
-            onChange={() => {}}
-            onClick={(event) => event.preventDefault()}
+            checked={decisor}
+            disabled={busy || savingDecisor}
+            onChange={(event) => {
+              if (canEdit) void handleToggleDecisor(event.target.checked);
+            }}
+            onClick={(event) => {
+              if (!canEdit) event.preventDefault();
+            }}
             style={{ width: "auto", accentColor: "var(--blue)" }}
           />
           <span className="dli-sub" style={{ margin: 0 }}>

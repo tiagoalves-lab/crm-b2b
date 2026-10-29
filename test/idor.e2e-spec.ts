@@ -119,6 +119,10 @@ const ROTAS_PUBLICAS = [
   // telefonia_dispositivos (TelefoniaDeviceService#autenticar) — é ela
   // também que diz de quem é a chamada. Teste logo abaixo do bloco do Meta.
   '/telefonia/eventos',
+  // Gravação das ligações (2026-10-26) — mesmo script, mesma credencial
+  // por máquina, conferida antes de qualquer áudio ser guardado. Testes
+  // logo abaixo dos de /telefonia/eventos.
+  '/telefonia/gravacoes',
 ];
 
 describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP', () => {
@@ -343,10 +347,55 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       );
     }, 20000);
 
+    // Rota nova de 2026-10-16 (editar o texto do comentário do card).
+    it('PATCH /opportunities/:id/comments/:commentId de outro representante responde 404', async () => {
+      const comentario = await withTenant(
+        prisma,
+        admin.userId,
+        workspace.id,
+        (tx) =>
+          tx.opportunityComment.create({
+            data: {
+              opportunityId: doDono.opportunities,
+              authorUserId: admin.userId,
+              body: 'Texto original',
+            },
+          }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .patch(
+          `/opportunities/${doDono.opportunities}/comments/${comentario.id}`,
+        )
+        .send({ body: 'Texto trocado por quem não podia' });
+      expect(res.status).toBe(404);
+
+      const depois = await withTenant(
+        prisma,
+        admin.userId,
+        workspace.id,
+        (tx) =>
+          tx.opportunityComment.findUnique({ where: { id: comentario.id } }),
+      );
+      expect(depois?.body).toBe('Texto original');
+      expect(depois?.editedAt).toBeNull();
+
+      await withTenant(prisma, admin.userId, workspace.id, (tx) =>
+        tx.opportunityComment.delete({ where: { id: comentario.id } }),
+      );
+    }, 20000);
+
     it('PATCH /raw-leads/:id/tier de outro representante responde 404', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/raw-leads/${doDono['raw-leads']}/tier`)
         .send({ tier: 'quente' });
+      expect(res.status).toBe(404);
+    }, 20000);
+
+    it('POST /raw-leads/:id/restore de outro representante responde 404', async () => {
+      const res = await request(app.getHttpServer()).post(
+        `/raw-leads/${doDono['raw-leads']}/restore`,
+      );
       expect(res.status).toBe(404);
     }, 20000);
 
@@ -696,6 +745,31 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       expect(res.status).toBe(401);
     }, 20000);
 
+    // Query VÁLIDA de propósito: com nome de arquivo fora do padrão o 400 do
+    // ValidationPipe passaria verde sem exercitar a credencial.
+    const gravacaoValida =
+      '/telefonia/gravacoes?arquivo=20261027-143005-5551999998888-outgoing-x.mp3';
+
+    it('recusa gravação de ligação com credencial de máquina forjada', async () => {
+      const res = await request(app.getHttpServer())
+        .post(gravacaoValida)
+        .set('Authorization', 'Bearer gama-fone_forjado-de-proposito')
+        .set('Content-Type', 'audio/mpeg')
+        .send(Buffer.from([0xff, 0xfb, 0x90, 0x00]));
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Credencial do computador inválida.',
+      );
+    }, 20000);
+
+    it('recusa gravação de ligação sem credencial nenhuma', async () => {
+      const res = await request(app.getHttpServer())
+        .post(gravacaoValida)
+        .set('Content-Type', 'audio/mpeg')
+        .send(Buffer.from([0xff, 0xfb, 0x90, 0x00]));
+      expect(res.status).toBe(401);
+    }, 20000);
+
     // Fila de cotação (2026-09-30). Sem token, qualquer um leria o funil
     // inteiro — empresa, valor negociado e o que cada cliente pediu.
     it('recusa a fila de cotação sem Authorization nenhum', async () => {
@@ -759,6 +833,50 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       expect((res.body as { message?: string }).message).toBe(
         'Authorization ausente ou mal formado.',
       );
+    }, 20000);
+
+    // Situação do orçamento → estágio do card (2026-10-08). Sem token,
+    // qualquer um arrastaria cards do funil.
+    // Valor dos itens do card (2026-10-08). Sem token, qualquer um mudaria o
+    // valor negociado — que alimenta previsão, ganho e curva ABC.
+    it('recusa valor de item com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/itens-valor')
+        .set('Authorization', 'Bearer token-forjado-de-proposito')
+        .send({
+          opportunity_id: '11111111-1111-4111-8111-111111111111',
+          itens: [
+            { item_id: '22222222-2222-4222-8222-222222222222', amount: 10 },
+          ],
+        });
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
+    it('recusa mudança de estágio com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/estagio')
+        .set('Authorization', 'Bearer token-forjado-de-proposito')
+        .send({
+          opportunity_id: '11111111-1111-4111-8111-111111111111',
+          etapa: 'aprovacao',
+        });
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
+    it('recusa mudança de estágio sem Authorization nenhum', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/integrations/cotacoes/estagio')
+        .send({
+          opportunity_id: '11111111-1111-4111-8111-111111111111',
+          etapa: 'aprovacao',
+        });
+      expect(res.status).toBe(401);
     }, 20000);
 
     it('recusa espelhamento de comentários com token forjado', async () => {

@@ -15,6 +15,7 @@ import { createTask, deleteTask, updateTask } from "@/lib/api/tasks";
 import type { CreateTaskInput, UpdateTaskInput } from "@/lib/api/tasks";
 import { createContact, listContacts } from "@/lib/api/contacts";
 import { inputLocalParaISO } from "@/lib/format-date";
+import { resolveAssigneeOptions, type AssigneeOption } from "@/lib/api/assignee-options";
 import type { CreateContactInput } from "@/lib/api/contacts";
 import type { Contact, Task, TaskComment, TaskStatus } from "@/lib/api/types";
 
@@ -34,6 +35,24 @@ export async function listCompanyContactsAction(companyId: string): Promise<Cont
   if (!companyId) return [];
   const token = await getServerAccessToken();
   return listContacts(token, companyId);
+}
+
+// Tarefa nova embutida no card da oportunidade (2026-10-29): contatos da
+// empresa e opções de responsável só são buscados quando o form abre, pra
+// não pesar a abertura de todo card.
+export async function novaTarefaContextoAction(
+  companyId: string,
+): Promise<ActionResult<{ contacts: Contact[]; assigneeOptions: AssigneeOption[] }>> {
+  const token = await getServerAccessToken();
+  try {
+    const [contacts, assigneeOptions] = await Promise.all([
+      listContacts(token, companyId),
+      resolveAssigneeOptions(token),
+    ]);
+    return { ok: true, data: { contacts, assigneeOptions } };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
 }
 
 // Cadastro rápido de contato direto do combobox de Contato (TipoContatoFields)
@@ -78,7 +97,7 @@ function backPath(formData: FormData): string {
   return emptyToUndefined(formData.get("back")) ?? "/dashboard/tarefas";
 }
 
-export type CreateTaskState = { ok: true } | { ok: false; message: string };
+export type CreateTaskState = { ok: true; taskId: string } | { ok: false; message: string };
 
 // Toda criação de tarefa passa por aqui — devolve o resultado em vez de
 // redirecionar, usado via useActionState pelo form "Nova tarefa"
@@ -92,6 +111,23 @@ export async function createTaskModalAction(
   _prevState: CreateTaskState | null,
   formData: FormData,
 ): Promise<CreateTaskState> {
+  const result = await criarTarefa(formData);
+  if (result.ok) revalidatePath("/dashboard/tarefas");
+  return result;
+}
+
+// Mesma criação, sem revalidatePath: chamada de dentro do card da
+// oportunidade (2026-10-29), que fica aberto num @modal — revalidar ali
+// trava o modal (ver pipeline/actions.ts). A lista de Tarefas chega em dia
+// pela marca de refresh pendente, ao fechar o card.
+export async function createTaskNoCardAction(
+  _prevState: CreateTaskState | null,
+  formData: FormData,
+): Promise<CreateTaskState> {
+  return criarTarefa(formData);
+}
+
+async function criarTarefa(formData: FormData): Promise<CreateTaskState> {
   const token = await getServerAccessToken();
 
   let task: Task;
@@ -130,21 +166,10 @@ export async function createTaskModalAction(
     }
   }
 
-  // Anexo inicial (opcional) — mesma dança de signed URL do upload no
-  // cartão de uma tarefa existente (uploadTaskAttachmentAction): o binário
-  // nunca passa pelo NestJS, só esta Server Action assina a URL e faz o
-  // PUT direto no Storage do Supabase.
-  const file = formData.get("file");
-  if (file instanceof File && file.size > 0) {
-    try {
-      await enviarArquivo(token, task.id, file);
-    } catch (error) {
-      return { ok: false, message: errorMessage(error) };
-    }
-  }
-
-  revalidatePath("/dashboard/tarefas");
-  return { ok: true };
+  // Anexos não viajam aqui desde 2026-10-28: a Server Action corta o
+  // corpo em 1 MB e print colado com Ctrl+V passa disso fácil. Quem
+  // envia é o navegador, com o id devolvido abaixo (_detail/enviar-anexos.ts).
+  return { ok: true, taskId: task.id };
 }
 
 // ---------- Lista de Tarefas (checkbox de concluir/reabrir) ----------
@@ -273,6 +298,11 @@ export async function saveTaskDetailAction(
         ? input.participantContactIds.map(String)
         : undefined,
       assigneeUserId: str(input.assigneeUserId),
+      // Membros da tarefa (2026-09-29): lista inteira, só quando a ficha
+      // mandou o campo.
+      memberUserIds: Array.isArray(input.memberUserIds)
+        ? input.memberUserIds.map(String)
+        : undefined,
       // Lista inteira de carimbos (pode ser vazia = tirar todos); só vai
       // quando a ficha mandou o campo.
       tags: Array.isArray(input.tags) ? input.tags.map(String) : undefined,
@@ -320,40 +350,31 @@ export async function removeTaskCommentAction(
   }
 }
 
-// O binário nunca passa pelo NestJS: o backend só assina a URL de upload;
-// quem faz o PUT do arquivo é esta Server Action, direto no Storage do
-// Supabase — mesmo raciocínio de nunca expor a service role key ao
-// navegador (docs/seguranca.md).
-async function enviarArquivo(token: string, taskId: string, file: File): Promise<void> {
-  const { uploadUrl } = await createUploadUrl(token, taskId, {
-    fileName: file.name,
-    mimeType: file.type || undefined,
-    sizeBytes: file.size,
-  });
-  const bytes = await file.arrayBuffer();
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    body: bytes,
-    headers: { "Content-Type": file.type || "application/octet-stream" },
-  });
-  if (!res.ok) {
-    throw new Error(`Falha ao enviar o arquivo pro storage (status ${res.status}).`);
+// Anexo pelo NAVEGADOR (2026-10-28, mesmo molde do card de Oportunidade):
+// aqui só se registra o anexo e assina a URL — requisição pequena, sem o
+// arquivo. O PUT do binário vai direto do navegador pro Storage do
+// Supabase (_detail/enviar-anexos.ts), sem passar pelo NestJS nem pelo
+// limite de 1 MB da Server Action.
+export async function prepareTaskAttachmentAction(
+  taskId: string,
+  file: { fileName: string; mimeType?: string; sizeBytes: number },
+): Promise<ActionResult<{ attachmentId: string; uploadUrl: string }>> {
+  const token = await getServerAccessToken();
+  try {
+    const { attachment, uploadUrl } = await createUploadUrl(token, String(taskId), {
+      fileName: String(file.fileName),
+      mimeType: file.mimeType ? String(file.mimeType) : undefined,
+      sizeBytes: Number(file.sizeBytes),
+    });
+    return { ok: true, data: { attachmentId: attachment.id, uploadUrl } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
-// Recebe o FormData do <form> de anexo (campo "file") e devolve a lista
-// já atualizada, pra ficha mostrar o arquivo sem esperar o refresh.
-export async function uploadTaskAttachmentAction(
-  taskId: string,
-  formData: FormData,
-): Promise<ActionResult<TaskAttachment[]>> {
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, message: "Selecione um arquivo pra enviar." };
-  }
+export async function listTaskAttachmentsAction(taskId: string): Promise<ActionResult<TaskAttachment[]>> {
   const token = await getServerAccessToken();
   try {
-    await enviarArquivo(token, String(taskId), file);
     return { ok: true, data: await listAttachments(token, String(taskId)) };
   } catch (error) {
     return fail(error);

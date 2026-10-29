@@ -26,3 +26,6 @@ export const CONTACT_REQUIRED_TASK_TYPES: TaskType[] = [
 // arbitrário e generoso, só pra impedir payload absurdo; reunião de
 // verdade tem meia dúzia de gente.
 export const PARTICIPANTS_MAX = 20;
+
+// Teto de membros numa tarefa (2026-09-29) — a equipe inteira cabe folgada.
+export const MEMBERS_MAX = 30;

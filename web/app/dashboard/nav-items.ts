@@ -16,19 +16,25 @@ export interface NavItem {
   label: string;
   group: string;
   icon: string;
-  count?: "leads" | "pipeline" | "tarefas" | "empresas";
+  count?: "leads" | "pipeline" | "tarefas" | "empresas" | "convertidos";
   roles?: MembershipRole[];
   // Item liberado por checkbox da matriz de permissões (só "ver"), em vez
-  // de papel fixo — owner/admin sempre veem (bypass de hasPermission).
+  // de papel fixo — owner/admin sempre veem (bypass de hasPermission),
+  // exceto o admin no Console fiscal, que segue a caixa.
   permission?: PermissionModule;
   // Prefixos de URL que também acendem este item (Administração, que
   // agrupa várias telas em abas).
   matches?: string[];
+  // Funcionalidade em teste: só aparece no endereço beta (lib/ambiente.ts)
+  // até o usuário aprovar e o item perder esta marca.
+  beta?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Painel", group: "Comercial", icon: "painel" },
   { href: "/dashboard/leads", label: "Funil de vendas", group: "Comercial", icon: "leads", count: "leads" },
+  // Leads convertidos que ainda não compraram (2026-10-27).
+  { href: "/dashboard/leads-convertidos", label: "Leads convertidos", group: "Comercial", icon: "convertidos", count: "convertidos" },
   { href: "/dashboard/pipeline", label: "Oportunidades", group: "Comercial", icon: "pipeline", count: "pipeline" },
   { href: "/dashboard/tarefas", label: "Tarefas", group: "Comercial", icon: "tarefas", count: "tarefas" },
   // Carteira de clientes entrou em Comercial (pedido do usuário,
@@ -37,6 +43,8 @@ export const NAV_ITEMS: NavItem[] = [
   // item de "Cadastros" faz o título desaparecer sozinho.
   { href: "/dashboard/empresas", label: "Carteira de clientes", group: "Comercial", icon: "empresas", count: "empresas" },
   { href: "/dashboard/relatorios", label: "Relatórios", group: "Análise", icon: "relatorios" },
+  // Console fiscal (2026-10-20, docs/console-fiscal.md) — em produção desde 2026-10-22.
+  { href: "/dashboard/fiscal", label: "Console fiscal", group: "Análise", icon: "fiscal", permission: "fiscal" },
   // Administração virou UM item (pedido do usuário, 2026-09-17, no molde
   // das Configurações do eGestor): as telas administrativas são abas de
   // uma página só — ver ADMIN_TABS abaixo e (administracao)/layout.tsx.

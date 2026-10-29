@@ -22,7 +22,7 @@ export default async function NovoMembroModal({
     <OverlayModal title="Novo membro">
       {error && <div className="error-banner">{error}</div>}
       {canCreate ? (
-        <MemberForm members={members} actorRole={me.membership.role} />
+        <MemberForm members={members} actor={me.membership} />
       ) : (
         <div className="error-banner">
           Só owner/admin/gerente podem cadastrar membros.

@@ -20,6 +20,7 @@ import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { AttachmentsSection } from "@/app/dashboard/_overlay/attachments";
 import type { TaskDetail } from "./load";
 import TipoContatoFields from "../tipo-contato-fields";
+import MembrosPicker from "./membros-picker";
 import LigarButton from "@/app/dashboard/_telefonia/ligar-button";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import { TagPicker } from "../../pipeline/_detail/item-tags";
@@ -31,8 +32,8 @@ import {
   removeTaskCommentAction,
   saveTaskDetailAction,
   setTaskStatusAction,
-  uploadTaskAttachmentAction,
 } from "../actions";
+import { enviarAnexosTarefa } from "./enviar-anexos";
 
 // Ficha da tarefa (modal interceptado e página cheia) — client component
 // desde 2026-09-03. Antes cada botão era um <form action> com
@@ -284,6 +285,15 @@ export function DetailBody() {
   // atuais da oportunidade mais qualquer tag já gravada na tarefa (item
   // que saiu da lista continua visível aqui, pra poder ser desmarcado).
   const [tags, setTags] = useState<string[]>(task.tags ?? []);
+  // Membros da tarefa (2026-09-29): outros usuários que veem e trabalham a
+  // tarefa. O responsável escolhido no select nunca aparece como opção —
+  // ele já tem a tarefa.
+  const [responsavel, setResponsavel] = useState(task.assigneeUserId);
+  const [membros, setMembros] = useState<string[]>(task.memberUserIds ?? []);
+  const opcoesMembros = memberships.filter(
+    (m) => m.status === "active" && m.userId !== responsavel,
+  );
+  const membrosMarcados = membros.filter((id) => opcoesMembros.some((m) => m.userId === id));
   const tagOptions = Array.from(new Set([...(opportunityItems ?? []), ...(task.tags ?? [])]));
   const canDeleteOwn = me.membership.role !== "sales_rep";
   // Botão de ligar na tarefa do tipo Ligação (docs/telefonia-crm.md).
@@ -323,6 +333,7 @@ export function DetailBody() {
             .getAll("participantContactIds")
             .filter((v): v is string => typeof v === "string"),
           assigneeUserId: campo("assigneeUserId"),
+          memberUserIds: membrosMarcados,
           tags: tagOptions.length > 0 ? fd.getAll("tags").filter((t): t is string => typeof t === "string") : undefined,
         }),
       (saved) => setTask((prev) => ({ ...prev, ...saved })),
@@ -335,14 +346,25 @@ export function DetailBody() {
   // navegação de verdade pra própria URL — que, fora da interceptação,
   // abre a página cheia e o modal "some". Sem form não existe submit
   // nativo: o botão lê o arquivo do input e chama a Server Action.
-  function handleUpload(file: File) {
-    const fd = new FormData();
-    fd.append("file", file);
+  function handleUpload(files: File[]) {
     void run(
       "upload",
-      () => uploadTaskAttachmentAction(task.id, fd),
+      async (): Promise<ActionResult<TaskAttachment[]>> => {
+        const { lista, falhas } = await enviarAnexosTarefa(task.id, files);
+        if (falhas.length === 0 && lista) return { ok: true, data: lista };
+        // Falha parcial: o que entrou já aparece na lista, e o aviso de
+        // erro nomeia só os arquivos que ficaram de fora.
+        if (lista) setAttachments(lista);
+        return {
+          ok: false,
+          message:
+            falhas.length > 0
+              ? `Não deu pra enviar: ${falhas.join("; ")}`
+              : "Arquivos enviados, mas a lista não atualizou. Feche e abra a tarefa.",
+        };
+      },
       (list) => setAttachments(list),
-      "Anexo adicionado",
+      files.length === 1 ? "Anexo adicionado" : `${files.length} anexos adicionados`,
     );
   }
 
@@ -447,7 +469,12 @@ export function DetailBody() {
         />
         <label>
           Responsável
-          <select name="assigneeUserId" defaultValue={task.assigneeUserId} required>
+          <select
+            name="assigneeUserId"
+            value={responsavel}
+            onChange={(e) => setResponsavel(e.target.value)}
+            required
+          >
             {memberships.map((m) => (
               <option key={m.userId} value={m.userId}>
                 {memberDisplayName(m.userId, memberships)}
@@ -455,6 +482,17 @@ export function DetailBody() {
             ))}
           </select>
         </label>
+        {opcoesMembros.length > 0 && (
+          <MembrosPicker
+            opcoes={opcoesMembros.map((m) => ({
+              userId: m.userId,
+              nome: memberDisplayName(m.userId, memberships),
+            }))}
+            selecionados={membrosMarcados}
+            onChange={setMembros}
+            disabled={busy !== null}
+          />
+        )}
       </form>
 
       <AttachmentsSection
@@ -463,7 +501,8 @@ export function DetailBody() {
         meUserId={me.user.id}
         canRemove={canDeleteOwn}
         nomeDoAutor={(userId) => memberDisplayName(userId, memberships)}
-        onUpload={(files) => handleUpload(files[0])}
+        multiple
+        onUpload={handleUpload}
         onRemove={(id) =>
           void run(
             `attach:${id}`,

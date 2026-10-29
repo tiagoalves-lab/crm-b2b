@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { CONTACT_REQUIRED_ACTIVITY_SUBTIPOS } from "@/lib/api/activities";
-import { inputLocalParaISO } from "@/lib/format-date";
+import {
+  dataDoAtalho,
+  detectarDataNoTexto,
+  rotuloDataRetorno,
+  type AtalhoRetorno,
+} from "@/lib/detectar-data";
+import { dayKeyBR, inputLocalParaISO } from "@/lib/format-date";
 import type { Contact } from "@/lib/api/types";
 import { createContactInlineAction } from "../../tarefas/actions";
 import { createNoteRpcAction } from "../actions";
@@ -31,6 +37,23 @@ import { createNoteRpcAction } from "../actions";
 // (ligação/reunião/visita/e-mail, mesma regra de TipoContatoFields nas
 // Tarefas), então juntar tudo num só evita duas camadas de state pra
 // sincronizar.
+//
+// "Retomar contato" (pedido do usuário, 2026-10-28): o vendedor escrevia
+// "contatar novamente em janeiro" e não criava tarefa. Atalhos de data
+// logo abaixo do texto criam o lembrete no mesmo clique do Registrar; e
+// se o texto menciona uma data futura (lib/detectar-data.ts), a tela
+// sugere o lembrete — e pergunta de novo no Registrar se a pessoa não
+// escolheu nada.
+type Retorno = "nenhum" | AtalhoRetorno | "data";
+
+const ATALHOS_RETORNO: Array<{ value: Retorno; label: string }> = [
+  { value: "nenhum", label: "Sem retorno" },
+  { value: "7d", label: "Em 7 dias" },
+  { value: "30d", label: "Em 30 dias" },
+  { value: "3m", label: "Em 3 meses" },
+  { value: "data", label: "Escolher data" },
+];
+
 export default function AddNoteForm({
   companyId,
   subtipoOptions,
@@ -60,6 +83,30 @@ export default function AddNoteForm({
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
   const [decisor, setDecisor] = useState(false);
+  const [retorno, setRetorno] = useState<Retorno>("nenhum");
+  const [retornoData, setRetornoData] = useState("");
+  // Registrar com data no texto e "Sem retorno" marcado pede confirmação
+  // uma vez; "Registrar sem lembrete" deixa passar.
+  const [confirmarSemRetorno, setConfirmarSemRetorno] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  const hoje = dayKeyBR(new Date());
+  const mencionada = useMemo(() => detectarDataNoTexto(texto, hoje), [texto, hoje]);
+  // Reunião com data marcada já vira tarefa sozinha — o retorno sairia
+  // duplicado (e a data da reunião no texto dispararia a sugestão).
+  const mostraRetorno = !(subtipo === "reuniao" && reuniaoEm);
+  const retornoEm = !mostraRetorno
+    ? ""
+    : retorno === "nenhum"
+      ? ""
+      : retorno === "data"
+        ? retornoData
+        : dataDoAtalho(retorno, hoje);
+
+  useEffect(() => {
+    setConfirmarSemRetorno(false);
+    if (texto) setAviso(null);
+  }, [texto]);
 
   useEffect(() => {
     setLocalContacts(contacts);
@@ -98,8 +145,12 @@ export default function AddNoteForm({
     setDecisor(false);
   }
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  function usarDataMencionada(data: string) {
+    setRetorno("data");
+    setRetornoData(data);
+  }
+
+  async function registrar(dataRetorno: string) {
     const trimmedTexto = texto.trim();
     if (!trimmedTexto) {
       setFormError("Escreva algo antes de registrar.");
@@ -109,8 +160,17 @@ export default function AddNoteForm({
       setFormError("Selecione um contato.");
       return;
     }
+    if (mostraRetorno && retorno === "data" && !dataRetorno) {
+      setFormError("Escolha a data do retorno.");
+      return;
+    }
+    if (dataRetorno && dataRetorno <= hoje) {
+      setFormError("A data do retorno precisa ser depois de hoje.");
+      return;
+    }
     setBusy(true);
     setFormError(null);
+    setAviso(null);
     const res = await createNoteRpcAction(companyId, {
       subtipo,
       texto: trimmedTexto,
@@ -118,8 +178,10 @@ export default function AddNoteForm({
       // Só a reunião agenda; nos outros tipos o campo nem aparece.
       reuniaoEm: ehReuniao && reuniaoEm ? inputLocalParaISO(reuniaoEm) : undefined,
       contatoNome: localContacts.find((c) => c.id === selectedContactId)?.nome,
+      retornoEm: dataRetorno || undefined,
     });
     setBusy(false);
+    setConfirmarSemRetorno(false);
     if (!res.ok) {
       setFormError(res.message);
       return;
@@ -127,7 +189,19 @@ export default function AddNoteForm({
     setTexto("");
     setSelectedContactId("");
     setReuniaoEm("");
+    setRetorno("nenhum");
+    setRetornoData("");
+    if (dataRetorno) setAviso(`Lembrete criado em Tarefas para ${rotuloDataRetorno(dataRetorno)}.`);
     refresh();
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (mostraRetorno && !retornoEm && retorno !== "data" && mencionada && texto.trim()) {
+      setConfirmarSemRetorno(true);
+      return;
+    }
+    await registrar(retornoEm);
   }
 
   return (
@@ -237,7 +311,82 @@ export default function AddNoteForm({
         </div>
       )}
       <textarea value={texto} onChange={(event) => setTexto(event.target.value)} placeholder={placeholder} />
+      {mostraRetorno && mencionada && retornoEm !== mencionada.data && !confirmarSemRetorno && (
+        <div className="retorno-sugestao">
+          <span>
+            Você mencionou <strong>“{mencionada.trecho}”</strong>. Criar lembrete para{" "}
+            <strong>{rotuloDataRetorno(mencionada.data)}</strong>?
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => usarDataMencionada(mencionada.data)}
+          >
+            Usar esta data
+          </button>
+        </div>
+      )}
+      {mostraRetorno && (
+        <div className="retorno-campo">
+          <span className="retorno-titulo">Retomar contato</span>
+          <div className="add-note-types" style={{ marginBottom: 0 }}>
+            {ATALHOS_RETORNO.map(({ value, label }) => (
+              <label key={value} className="note-type-btn">
+                <input
+                  type="radio"
+                  name="retorno"
+                  value={value}
+                  checked={retorno === value}
+                  style={{ display: "none" }}
+                  onChange={() => setRetorno(value)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          {retorno === "data" && (
+            <input
+              type="date"
+              className="retorno-data"
+              value={retornoData}
+              onChange={(event) => setRetornoData(event.target.value)}
+            />
+          )}
+          {retornoEm && (
+            <div className="field-hint">
+              Cria uma tarefa em Tarefas para <strong>{rotuloDataRetorno(retornoEm)}</strong>.
+            </div>
+          )}
+        </div>
+      )}
+      {confirmarSemRetorno && mencionada && (
+        <div className="retorno-confirmar">
+          <div>
+            Você mencionou <strong>“{mencionada.trecho}”</strong> mas não marcou o retorno. Criar o
+            lembrete para <strong>{rotuloDataRetorno(mencionada.data)}</strong>?
+          </div>
+          <div className="row-form">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={busy}
+              onClick={() => void registrar(mencionada.data)}
+            >
+              Criar lembrete e registrar
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={() => void registrar("")}
+            >
+              Registrar sem lembrete
+            </button>
+          </div>
+        </div>
+      )}
       {formError && <div className="error-banner">{formError}</div>}
+      {aviso && <div className="retorno-aviso">{aviso}</div>}
       <div className="add-note-foot">
         <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>
           {busy ? "Registrando…" : "Registrar"}

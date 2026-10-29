@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type {
   OpportunityComment,
+  OpportunityCommentEdit,
   OpportunityStatus,
   Prisma,
 } from '@prisma/client';
@@ -18,7 +19,11 @@ import type { ListCommentFeedQueryDto } from './dto/list-comment-feed-query.dto'
 import { mustTagsBeItems } from './opportunity-tags';
 import { OpportunityService } from './opportunity.service';
 import { COMPANY_REF_SELECT, type CompanyRef } from '../companies/company-ref';
-import { nomeDaEmpresa, registrarExclusao, resumo } from '../deletion-log/registrar-exclusao';
+import {
+  nomeDaEmpresa,
+  registrarExclusao,
+  resumo,
+} from '../deletion-log/registrar-exclusao';
 
 // Item do histórico de anotações do Pipeline (2026-09-09): o comentário
 // mais o mínimo da oportunidade pra tela rotular a linha (empresa,
@@ -149,14 +154,88 @@ export class OpportunityCommentService {
     if (comment.authorUserId !== membership.userId) {
       throw new ForbiddenException('Só o autor pode remover o comentário.');
     }
+    // As versões anteriores do texto (edição, 2026-10-16) saem junto em
+    // cascata — vão na cópia do registro de exclusões pra o histórico não
+    // sumir com o comentário.
+    const edicoes = await tx.opportunityCommentEdit.findMany({
+      where: { commentId },
+      orderBy: { editedAt: 'asc' },
+    });
     await registrarExclusao(tx, membership, {
       entidade: 'oportunidade_comentario',
       registroId: comment.id,
       titulo: resumo(comment.body),
       contexto: await nomeDaEmpresa(tx, opportunity.companyId),
-      snapshot: comment,
+      snapshot: edicoes.length > 0 ? { ...comment, edicoes } : comment,
     });
     await tx.opportunityComment.delete({ where: { id: commentId } });
+  }
+
+  // Editar o texto (pedido do usuário, 2026-10-16: "pode ocorrer erro de
+  // digitação"). Só o autor, e só comentário escrito aqui dentro — a
+  // mensagem espelhada do Trello se corrige no Trello e chega pelo
+  // espelho. Cada edição grava o texto de antes e o de depois em
+  // opportunity_comment_edits, na mesma transação: não existe edição sem
+  // rastro. Diferente de remover, não depende de papel — corrigir o
+  // próprio texto não apaga nada.
+  async update(
+    tx: TenantTx,
+    membership: MembershipContext,
+    opportunityId: string,
+    commentId: string,
+    body: string,
+  ): Promise<OpportunityComment & { edits: OpportunityCommentEdit[] }> {
+    await this.opportunities.mustBeVisible(
+      tx,
+      membership,
+      opportunityId,
+      'read',
+    );
+    const comment = await tx.opportunityComment.findFirst({
+      where: { id: commentId, opportunityId },
+    });
+    if (!comment) {
+      throw new NotFoundException('Comentário não encontrado.');
+    }
+    if (comment.externalRef) {
+      throw new ForbiddenException(
+        'Mensagem do Trello se corrige no Trello — a correção chega sozinha ao card.',
+      );
+    }
+    if (comment.authorUserId !== membership.userId) {
+      throw new ForbiddenException('Só o autor pode editar o comentário.');
+    }
+
+    const novo = body.trim();
+    if (!novo) {
+      throw new BadRequestException(
+        'O comentário não pode ficar vazio. Para tirá-lo, use Remover.',
+      );
+    }
+
+    // Texto igual: nada a registrar.
+    if (novo !== comment.body) {
+      const agora = new Date();
+      await tx.opportunityCommentEdit.create({
+        data: {
+          commentId,
+          opportunityId,
+          bodyBefore: comment.body,
+          bodyAfter: novo,
+          editedByUserId: membership.userId,
+          editedAt: agora,
+        },
+      });
+      await tx.opportunityComment.update({
+        where: { id: commentId },
+        data: { body: novo, editedAt: agora },
+      });
+    }
+
+    return tx.opportunityComment.findUniqueOrThrow({
+      where: { id: commentId },
+      include: { edits: { orderBy: { editedAt: 'asc' } } },
+    });
   }
 
   // Fixar/desafixar (2026-09-09): marca de destaque do comentário, que
@@ -223,7 +302,8 @@ export class OpportunityCommentService {
     // é destacado DE NOVO depois de ter saído da lista volta com pendência
     // em aberto — o destaque novo é um pedido novo.
     const mentionsDoneUserIds = comment.mentionsDoneUserIds.filter(
-      (id) => mentionedUserIds.includes(id) && comment.mentionedUserIds.includes(id),
+      (id) =>
+        mentionedUserIds.includes(id) && comment.mentionedUserIds.includes(id),
     );
 
     const atualizado = await tx.opportunityComment.update({
@@ -361,6 +441,39 @@ export class OpportunityCommentService {
         : [];
     });
     return { items };
+  }
+
+  // Contagem da barra da tela Pipeline (2026-10-21): fixadas e não lidas
+  // por quem pediu, sem baixar o feed. As não lidas contam tudo que a
+  // pessoa enxerga, inclusive fora da janela dos recentes — mesmo alcance
+  // do "Marcar tudo como lido", que zera o número. A condição de autoria
+  // espelha jaLeu(): o que ela mesma escreveu aqui dentro não conta.
+  async contagem(
+    tx: TenantTx,
+    membership: MembershipContext,
+  ): Promise<{ fixados: number; naoLidas: number }> {
+    const visiveis = await this.cardsDoHistorico(tx, membership);
+    const [fixados, naoLidas] = await Promise.all([
+      tx.opportunityComment.count({
+        where: { pinnedAt: { not: null }, opportunity: visiveis },
+      }),
+      tx.opportunityComment.count({
+        where: {
+          opportunity: visiveis,
+          NOT: { readByUserIds: { has: membership.userId } },
+          OR: [
+            { authorUserId: { not: membership.userId } },
+            {
+              AND: [
+                { externalAuthor: { not: null } },
+                { externalAuthor: { not: '' } },
+              ],
+            },
+          ],
+        },
+      }),
+    ]);
+    return { fixados, naoLidas };
   }
 
   // Marcar como lido / não lido (2026-09-17) — uma anotação, só pra quem

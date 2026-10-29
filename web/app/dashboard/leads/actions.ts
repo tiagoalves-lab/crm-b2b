@@ -11,6 +11,8 @@ import {
   createRawLead,
   discardLead,
   importRawLeadsWithContactsSpreadsheet,
+  restoreLead,
+  unconvertLead,
   updateLeadCadastro,
   updateLeadEtapa,
   updateLeadSegmento,
@@ -271,4 +273,30 @@ export async function discardLeadFormAction(_prev: FormState, formData: FormData
     return { ok: false, message: errorMessage(error) };
   }
   return { ok: true, message: "Lead descartado (fica na staging)" };
+}
+
+// Recuperar lead descartado (2026-10-19) — mesmo formato do descarte de
+// dentro da ficha.
+export async function restoreLeadFormAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const token = await getServerAccessToken();
+  const id = String(formData.get("id"));
+  try {
+    await restoreLead(token, id);
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+  return { ok: true, message: "Lead recuperado — voltou para a Prospecção" };
+}
+
+// Desconverter lead (2026-10-27) — a trava (proposta vinculada, cliente)
+// é do backend; a mensagem dele chega como faixa vermelha.
+export async function unconvertLeadFormAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const token = await getServerAccessToken();
+  const id = String(formData.get("id"));
+  try {
+    await unconvertLead(token, id);
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
+  }
+  return { ok: true, message: "Lead desconvertido — voltou para a Prospecção" };
 }

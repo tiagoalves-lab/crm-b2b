@@ -1,17 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { Contact, RawLead } from "@/lib/api/types";
-import {
-  effectiveTier,
-  ETAPA_COR,
-  FAIXA_FUNIL_LABEL,
-  FAIXA_FUNIL_PILL,
-  TIER_LABEL,
-  type ScoreTier,
-} from "@/lib/api/raw-leads";
-import { formatDateBR } from "@/lib/format-date";
+import { effectiveTier, ETAPA_COR, TIER_LABEL, type ScoreTier } from "@/lib/api/raw-leads";
 import { normalizeForFilter, useTopbarQuery } from "@/app/_components/topbar-filter";
 import { leadBateComBusca } from "./filtro";
 import FiltroModal, {
@@ -31,7 +22,10 @@ import ProspeccaoKanban from "./prospeccao-kanban";
 // estavam na tela. Agora a troca é estado no navegador, sem ida ao
 // servidor. Os filtros de tag/segmento continuam em querystring (eles
 // mudam o conjunto que o servidor monta).
-export type Aba = "prospects" | "qualificados" | "convertidos" | "descartados";
+//
+// A aba "Leads convertidos" saiu em 2026-10-29 (pedido do usuário): o lead
+// convertido tem menu próprio e não faz mais parte do funil de prospecção.
+export type Aba = "prospects" | "qualificados" | "descartados";
 
 // Lista × Kanban (2026-09-23, pedido do usuário: "crie um ícone de visão
 // que nem a Auvo Sistemas, onde posso ver no modo lista e também no modo
@@ -41,32 +35,16 @@ type Visao = "lista" | "kanban";
 
 const VISAO_KEY = "prospeccao-visao";
 
-export interface ConvertidoRow {
-  companyId: string;
-  nome: string;
-  abertas: number;
-  ganhas: number;
-  perdidas: number;
-  valorAberto: number;
-  ultimoMovimento: string | null;
-}
-
-const brl = (valor: number) =>
-  valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-
 const ABA_LABEL: Record<Aba, string> = {
   prospects: "Prospects",
   qualificados: "Leads qualificados",
-  convertidos: "Leads convertidos",
   descartados: "Descartados",
 };
 
 export default function ProspeccaoTabs({
   abaInicial,
   novos,
-  aprovados,
   descartados,
-  convertidos,
   contactsByCompanyId,
   nomePorUserId,
   tagsDisponiveis,
@@ -74,11 +52,7 @@ export default function ProspeccaoTabs({
 }: {
   abaInicial: Aba;
   novos: RawLead[];
-  // Leads convertidos como LEAD (não a linha agregada por empresa de
-  // `convertidos`) — é o que o quadro põe na coluna Negociação/Fechamento.
-  aprovados: RawLead[];
   descartados: RawLead[];
-  convertidos: ConvertidoRow[];
   contactsByCompanyId: Record<string, Contact[]>;
   nomePorUserId: Record<string, string>;
   // Todas as tags/segmentos que existem na Prospecção — o modal de filtro
@@ -119,11 +93,9 @@ export default function ProspeccaoTabs({
 
   // Busca do cabeçalho (2026-09-18, furo achado pelo usuário: "no filtro
   // geral a empresa consta no prospect, mas dentro do prospect o filtro
-  // não relaciona a empresa"). Duas coisas faltavam:
-  //   1. A aba Leads convertidos não filtrava NADA — é tabela própria,
-  //      fora do LeadsTable, e ninguém tinha ligado o filtro nela.
-  //   2. A contagem das abas ignorava a busca, então a aba aberta dizia
-  //      "nenhum lead bate" sem dizer onde o resultado estava.
+  // não relaciona a empresa"):
+  // a contagem das abas ignorava a busca, então a aba aberta dizia
+  // "nenhum lead bate" sem dizer onde o resultado estava.
   // Agora a contagem é a dos resultados e a busca pula pra aba que tem o
   // registro (ver abaEfetiva abaixo).
   const needle = normalizeForFilter(useTopbarQuery().trim());
@@ -137,30 +109,24 @@ export default function ProspeccaoTabs({
   const prospects = novos.filter((r) => r.etapa !== "qualificado" && bate(r));
   const qualificados = novos.filter((r) => r.etapa === "qualificado" && bate(r));
   const descartadosVisiveis = descartados.filter(bate);
-  const convertidosVisiveis = useMemo(
-    () =>
-      needle ? convertidos.filter((r) => normalizeForFilter(r.nome).includes(needle)) : convertidos,
-    [convertidos, needle],
-  );
   const porPrazo = (t: ScoreTier) => qualificados.filter((r) => effectiveTier(r) === t).length;
 
   const contagem: Record<Aba, number> = {
     prospects: prospects.length,
     qualificados: qualificados.length,
-    convertidos: convertidosVisiveis.length,
     descartados: descartadosVisiveis.length,
   };
 
   // A busca PULA pra aba que tem o resultado (2026-09-21, bug relatado
-  // pelo usuário: buscou uma empresa que é lead convertido estando em
-  // Prospects e a tela não mostrou nada). Antes a aba vazia só apontava
+  // pelo usuário: buscou uma empresa estando na aba errada e a tela não
+  // mostrou nada). Antes a aba vazia só apontava
   // onde estava o registro, e ele tinha que clicar — buscar e não achar
   // é um bug, mesmo com a dica ao lado.
   //
   // É aba EFETIVA, não troca de estado: `aba` continua sendo a escolha da
   // pessoa, então limpar a busca volta sozinho pra aba onde ela estava.
   // Ordem de preferência: a ordem do funil.
-  const ORDEM: Aba[] = ["prospects", "qualificados", "convertidos", "descartados"];
+  const ORDEM: Aba[] = ["prospects", "qualificados", "descartados"];
   const pulouPara =
     needle !== "" && contagem[aba] === 0
       ? (ORDEM.find((a) => a !== aba && contagem[a] > 0) ?? null)
@@ -172,9 +138,7 @@ export default function ProspeccaoTabs({
       ? prospects
       : abaEfetiva === "qualificados"
         ? qualificados.filter((r) => prazo === null || effectiveTier(r) === prazo)
-        : abaEfetiva === "descartados"
-          ? descartadosVisiveis
-          : [];
+        : descartadosVisiveis;
 
   // Outras abas que também têm resultado — atalho, já que o pulo escolhe
   // uma só.
@@ -193,8 +157,8 @@ export default function ProspeccaoTabs({
   );
 
   const baseToda = useMemo(
-    () => [...novos, ...aprovados, ...descartados],
-    [novos, aprovados, descartados],
+    () => [...novos, ...descartados],
+    [novos, descartados],
   );
   const { contagemPorTag, contagemPorSegmento, semTagTotal } = useMemo(() => {
     const porTag: Record<string, number> = {};
@@ -208,12 +172,12 @@ export default function ProspeccaoTabs({
     return { contagemPorTag: porTag, contagemPorSegmento: porSegmento, semTagTotal: semTag };
   }, [baseToda]);
 
-  // Cartões do quadro: triagem + convertidos, na mesma busca da lista.
-  // Descartado fica de fora — saiu do funil e tem aba própria.
+  // Cartões do quadro: só a triagem, na mesma busca da lista. Convertido
+  // tem menu próprio e descartado tem aba própria.
   const leadsDoQuadro = useMemo(
-    () => [...novos, ...aprovados].filter((l) => bate(l)),
+    () => novos.filter((l) => bate(l)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [novos, aprovados, needle, contactsByCompanyId, filtro],
+    [novos, needle, contactsByCompanyId, filtro],
   );
 
   const chip = (alvo: ScoreTier | null, label: string) => (
@@ -233,7 +197,6 @@ export default function ProspeccaoTabs({
           <div className="seg">
             {tab("prospects", `Prospects (${contagem.prospects})`)}
             {tab("qualificados", `Leads qualificados (${contagem.qualificados})`)}
-            {tab("convertidos", `Leads convertidos (${contagem.convertidos})`)}
             {tab("descartados", `Descartados (${contagem.descartados})`)}
           </div>
         ) : (
@@ -392,68 +355,14 @@ export default function ProspeccaoTabs({
         </div>
       )}
 
-      {visao === "lista" &&
-        (abaEfetiva === "convertidos" ? (
-        <div className="panel">
-          <table className="data-table">
-            <thead>
-              <tr>
-                {/* Mesma coluna Funil das outras visões (2026-09-21). Aqui
-                    a faixa é sempre a mesma, mas a coluna fica assim mesmo:
-                    quem chega nesta aba vem pulando da busca e precisa ver
-                    em que faixa caiu. */}
-                <th>Funil</th>
-                <th>Empresa</th>
-                <th>Em negociação</th>
-                <th>Ganhas</th>
-                <th>Perdidas</th>
-                <th style={{ textAlign: "right" }}>Valor em negociação</th>
-                <th>Último movimento</th>
-              </tr>
-            </thead>
-            <tbody>
-              {convertidosVisiveis.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ color: "var(--text-secondary)" }}>
-                    {needle ? "Nenhuma empresa bate com o filtro." : "Nenhum lead convertido ainda."}
-                  </td>
-                </tr>
-              ) : (
-                convertidosVisiveis.map((row) => {
-                  const semProposta = row.abertas + row.ganhas + row.perdidas === 0;
-                  return (
-                    <tr key={row.companyId}>
-                      <td>
-                        <span className={FAIXA_FUNIL_PILL.negociacao}>
-                          {FAIXA_FUNIL_LABEL.negociacao}
-                        </span>
-                      </td>
-                      <td className="row-clickable">
-                        <Link href={`/dashboard/empresas/${row.companyId}`} className="t-co">
-                          {row.nome}
-                        </Link>
-                        {semProposta && <div className="t-sub">proposta ainda não cadastrada</div>}
-                      </td>
-                      <td>{row.abertas || "—"}</td>
-                      <td>{row.ganhas || "—"}</td>
-                      <td>{row.perdidas || "—"}</td>
-                      <td style={{ textAlign: "right" }}>{row.valorAberto > 0 ? brl(row.valorAberto) : "—"}</td>
-                      <td>{row.ultimoMovimento ? formatDateBR(row.ultimoMovimento) : "—"}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        ) : (
-          <LeadsTable
-            rows={rows}
-            readOnly={abaEfetiva === "descartados"}
-            contactsByCompanyId={contactsByCompanyId}
-            nomePorUserId={nomePorUserId}
-          />
-        ))}
+      {visao === "lista" && (
+        <LeadsTable
+          rows={rows}
+          readOnly={abaEfetiva === "descartados"}
+          contactsByCompanyId={contactsByCompanyId}
+          nomePorUserId={nomePorUserId}
+        />
+      )}
     </>
   );
 }

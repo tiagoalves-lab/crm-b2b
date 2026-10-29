@@ -33,9 +33,11 @@ export interface TarefaPendente {
   titulo: string;
   empresa: string | null;
   responsavel: string;
-  // "atrasada" | "hoje" | "proxima" — o template agrupa por isto.
-  grupo: 'atrasada' | 'hoje' | 'proxima';
-  // Texto já pronto: "3 dias", "hoje", "17/09".
+  // Recorte W0/W+1 (pedido do usuário, 2026-10-22): atrasadas, desta
+  // semana (inclui hoje) e da próxima, semana de segunda a domingo. O
+  // template agrupa por isto.
+  grupo: 'atrasada' | 'semana' | 'proxima-semana';
+  // Texto já pronto: "3 dias", "hoje", "seg 27/10".
   quando: string;
 }
 
@@ -59,6 +61,11 @@ export interface DadosReportDiario {
   fixadas: AnotacaoFixada[];
   tarefas: TarefaPendente[];
   totalTarefasPendentes: number;
+  // Quantas pendentes caem no recorte (antes do teto de linhas) e até que
+  // dia ele vai ("dom 02/11", fim da próxima semana) — o resto, sem
+  // prazo ou mais adiante, vira uma linha de aviso no fim da seção.
+  tarefasNoRecorte: number;
+  tarefasRecorteAte: string;
   tarefasAtrasadas: number;
   appUrl: string | null;
 }

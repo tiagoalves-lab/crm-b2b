@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, RawLeadEtapa, RawLeadStatus } from '@prisma/client';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
@@ -22,8 +22,26 @@ export interface AnotacaoRelatorioRow {
   company: CompanyRef | null;
 }
 
+// Posição da empresa no funil de prospecção e o dia em que ela entrou em
+// cada etapa (pedido do usuário, 2026-10-27: "coluna do Funil e que
+// conste as datas em que a conta mudou de posição"). As datas são as
+// marcas de passagem que o lead já guarda (raw_leads.*At) — null =
+// passagem que não aconteceu ou anterior a existir a marca.
+export interface FunilDaEmpresa {
+  companyId: string;
+  etapa: RawLeadEtapa;
+  status: RawLeadStatus;
+  entradaAt: string;
+  andamentoAt: string | null;
+  reuniaoAt: string | null;
+  qualifiedAt: string | null;
+  convertedAt: string | null;
+  discardedAt: string | null;
+}
+
 export interface AnotacoesRelatorio {
   rows: AnotacaoRelatorioRow[];
+  funis: FunilDaEmpresa[];
   total: number;
   truncado: boolean;
 }
@@ -133,10 +151,63 @@ export class AnotacoesRelatorioService {
           : true,
       );
 
+    const visiveis = rows.slice(0, LIMITE);
     return {
-      rows: rows.slice(0, LIMITE),
+      rows: visiveis,
+      funis: await this.funisDasEmpresas(tx, membership, visiveis),
       total: rows.length,
       truncado: rows.length > LIMITE,
     };
+  }
+
+  // Um lead por empresa. Quando a empresa tem mais de um (reimportada,
+  // descartada e cadastrada de novo), vale o que está em andamento; entre
+  // iguais, o mais novo. O RLS de raw_leads continua valendo: lead que a
+  // pessoa não enxerga na Prospecção fica com a coluna vazia aqui.
+  private async funisDasEmpresas(
+    tx: TenantTx,
+    membership: MembershipContext,
+    rows: AnotacaoRelatorioRow[],
+  ): Promise<FunilDaEmpresa[]> {
+    const ids = [...new Set(rows.map((r) => r.company?.id).filter((id): id is string => !!id))];
+    if (ids.length === 0) return [];
+
+    const leads = await tx.rawLead.findMany({
+      where: { workspaceId: membership.workspaceId, promotedCompanyId: { in: ids } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        promotedCompanyId: true,
+        etapa: true,
+        status: true,
+        createdAt: true,
+        andamentoAt: true,
+        reuniaoAt: true,
+        qualifiedAt: true,
+        convertedAt: true,
+        discardedAt: true,
+      },
+    });
+
+    const porEmpresa = new Map<string, (typeof leads)[number]>();
+    for (const lead of leads) {
+      const id = lead.promotedCompanyId as string;
+      const atual = porEmpresa.get(id);
+      if (!atual || (atual.status === 'descartado' && lead.status !== 'descartado')) {
+        porEmpresa.set(id, lead);
+      }
+    }
+
+    const iso = (d: Date | null) => (d ? d.toISOString() : null);
+    return [...porEmpresa.entries()].map(([companyId, lead]) => ({
+      companyId,
+      etapa: lead.etapa,
+      status: lead.status,
+      entradaAt: lead.createdAt.toISOString(),
+      andamentoAt: iso(lead.andamentoAt),
+      reuniaoAt: iso(lead.reuniaoAt),
+      qualifiedAt: iso(lead.qualifiedAt),
+      convertedAt: iso(lead.convertedAt),
+      discardedAt: iso(lead.discardedAt),
+    }));
   }
 }

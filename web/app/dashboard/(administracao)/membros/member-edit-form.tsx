@@ -8,7 +8,7 @@ import ConfirmSubmitButton from "./confirm-submit-button";
 import PasswordConfirmFields from "./password-confirm-fields";
 import { effectivePermissions } from "@/lib/api/permission-catalog";
 import PermissionsEditor from "./permissions-editor";
-import { ROLE_LABELS, ROLE_OPTIONS, memberName } from "./roles";
+import { ROLE_LABELS, memberName, roleOptionsFor } from "./roles";
 import SubmitButton from "@/app/_components/submit-button";
 import VendedorCheckbox from "./vendedor-checkbox";
 
@@ -29,9 +29,11 @@ type Tab = "dados" | "permissoes";
 export default function MemberEditForm({
   member,
   members,
+  actor,
 }: {
   member: Membership;
   members: Membership[];
+  actor: Pick<Membership, "role" | "permissions">;
 }) {
   const [tab, setTab] = useState<Tab>("dados");
   const [role, setRole] = useState<MembershipRole>(member.role);
@@ -102,7 +104,7 @@ export default function MemberEditForm({
               value={role}
               onChange={(e) => setRole(e.target.value as MembershipRole)}
             >
-              {ROLE_OPTIONS.map((r) => (
+              {roleOptionsFor(actor.role, member.role).map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r]}
                 </option>
@@ -139,6 +141,7 @@ export default function MemberEditForm({
             onChange={setPermissions}
             members={members}
             excludeMemberId={member.id}
+            actor={actor}
           />
         </div>
 

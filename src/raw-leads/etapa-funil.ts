@@ -51,6 +51,23 @@ export function etapaAvancada(
   return ordemDaEtapa(alvo) > ordemDaEtapa(atual) ? alvo : atual;
 }
 
+// Data da primeira entrada em Andamento/Reunião (2026-10-21) — é o que o
+// funil do Painel usa pra contar quem avançou no período. Vale a primeira
+// vez: puxar o cartão de volta e avançar de novo não reescreve a data.
+// Qualificado e Negociação já têm a sua (qualifiedAt segue o prazo de
+// investimento, convertedAt a conversão).
+export function marcaPassagem(
+  etapa: RawLeadEtapa,
+  atual: { andamentoAt: Date | null; reuniaoAt: Date | null },
+  agora: Date = new Date(),
+): { andamentoAt?: Date; reuniaoAt?: Date } {
+  if (etapa === 'andamento' && !atual.andamentoAt) {
+    return { andamentoAt: agora };
+  }
+  if (etapa === 'reuniao' && !atual.reuniaoAt) return { reuniaoAt: agora };
+  return {};
+}
+
 // Etapa que um registro da Timeline empurra o lead a alcançar.
 // `null` = esse tipo de registro não mexe na etapa.
 export function etapaDoSubtipo(

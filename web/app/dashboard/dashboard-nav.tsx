@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { IS_BETA } from "@/lib/ambiente";
 import { hasPermission } from "@/lib/api/permission-catalog";
 import type { MembershipRole, PermissionMatrix } from "@/lib/api/types";
 import { NAV_ITEMS, pathMatches } from "./nav-items";
@@ -18,6 +19,14 @@ const ICONS: Record<string, React.ReactNode> = {
     </>
   ),
   leads: <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
+  // "user-check" (feather-icons) — Leads convertidos (2026-10-27).
+  convertidos: (
+    <>
+      <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" />
+      <path d="M17 11l2 2 4-4" />
+    </>
+  ),
   pipeline: (
     <>
       <path d="M3 3v18h18" />
@@ -96,6 +105,13 @@ const ICONS: Record<string, React.ReactNode> = {
   telefonia: (
     <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.1 9.9a16 16 0 006 6l1.26-1.26a2 2 0 012.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0122 16.92z" />
   ),
+  // "file-text" (feather-icons) — Console fiscal (2026-10-20).
+  fiscal: (
+    <>
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+    </>
+  ),
   // "x-octagon" (feather-icons) — aba Motivos de perda (2026-09-17).
   motivos: (
     <>
@@ -118,6 +134,8 @@ interface NavCounts {
   pipeline: number;
   tarefas: number;
   empresas: number;
+  // Opcional: o backend só passou a mandar em 2026-10-27.
+  convertidos?: number;
 }
 
 export default function DashboardNav({
@@ -132,6 +150,7 @@ export default function DashboardNav({
   const pathname = usePathname();
   const visibleItems = NAV_ITEMS.filter(
     (item) =>
+      (!item.beta || IS_BETA) &&
       (!item.roles || item.roles.includes(role)) &&
       (!item.permission || hasPermission(role, permissions, item.permission, "ver")),
   );
@@ -155,7 +174,7 @@ export default function DashboardNav({
               aria-current={ativo ? "page" : undefined}
             >
               <Icon name={item.icon} />
-              {item.label}
+              <span className="nav-text">{item.label}</span>
               {count !== undefined && <span className="nav-badge">{count}</span>}
             </Link>
           </div>

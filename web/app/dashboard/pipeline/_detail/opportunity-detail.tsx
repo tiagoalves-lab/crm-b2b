@@ -4,14 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createContext, type Dispatch, type FormEvent, type ReactNode, type SetStateAction, useContext, useEffect, useRef, useState } from "react";
 import { companyRazaoSocialName } from "@/lib/api/companies";
-import type { Activity, Membership, OpportunityItem, OpportunityWithDetails } from "@/lib/api/types";
+import { formatCnpj } from "@/app/dashboard/leads/cnpj-lookup-fields";
+import type {
+  Activity,
+  Contact,
+  Membership,
+  OpportunityComment,
+  OpportunityItem,
+  OpportunityWithDetails,
+} from "@/lib/api/types";
 import type { OpportunityAttachment } from "@/lib/api/opportunity-attachments";
-import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
+import { formatDateBR, formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
 import { REFRESH_SESSION_KEY, TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import { useRefresh } from "@/app/dashboard/_overlay/refresh";
 import { AttachmentsSection } from "@/app/dashboard/_overlay/attachments";
 import type { OpportunityDetail } from "./load";
 import MotivoPerdaModal from "./motivo-perda-modal";
+import StandbyModal from "./standby-modal";
 import {
   addOpportunityCommentAction,
   addOpportunityItemAction,
@@ -27,12 +36,17 @@ import {
   setOpportunityCommentPinnedAction,
   setOpportunityMentionDoneAction,
   setOpportunityItemAmountAction,
+  setOpportunityStandbyAction,
   setOpportunityStatusAction,
+  updateOpportunityCommentAction,
 } from "../actions";
 import { ItemsPanel, TagChips, TagPicker } from "./item-tags";
 import HistoricoSection from "./historico";
 import { TextoTrello } from "./texto-trello";
 import { enviarAnexosOportunidade } from "./enviar-anexos";
+import NovaForm from "@/app/dashboard/tarefas/nova/nova-form";
+import { novaTarefaContextoAction } from "@/app/dashboard/tarefas/actions";
+import type { AssigneeOption } from "@/lib/api/assignee-options";
 
 // Card da oportunidade (modal interceptado e página cheia) — client
 // component desde 2026-09-03, mesmo molde da ficha de tarefa
@@ -47,6 +61,7 @@ type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
 type Busy =
   | "status"
+  | "standby"
   | "save"
   | "delete"
   | "comment"
@@ -55,6 +70,7 @@ type Busy =
   | `pin:${string}`
   | `pendencia:${string}`
   | `destaque:${string}`
+  | `editar:${string}`
   | `attach:${string}`
   | `download:${string}`
   | `publish:${string}`
@@ -78,6 +94,9 @@ interface OpportunityDetailState {
   setItems: Dispatch<SetStateAction<OpportunityItem[]>>;
   run: <T>(key: Busy, fn: () => Promise<ActionResult<T>>, onOk: (data: T) => void, notice?: string) => Promise<void>;
   setStatus: (status: "won" | "open" | "lost", noticeText: string, lostReason?: string) => Promise<void>;
+  // Stand by (2026-10-22): `dayKey` é a nova previsão de fechamento,
+  // obrigatória ao colocar; ausente ao retomar.
+  setStandby: (standby: boolean, dayKey?: string) => Promise<void>;
   remove: () => Promise<void>;
   close: () => void;
   // Histórico do card (2026-09-14): o botão mora no rodapé e o painel no
@@ -88,6 +107,11 @@ interface OpportunityDetailState {
   historicoErro: string | null;
   historicoCarregando: boolean;
   toggleHistorico: () => void;
+  // Tarefa nova dentro do próprio card (2026-10-29): o botão mora em "Mais
+  // ações" e o formulário no corpo, por isso o estado fica aqui.
+  tarefaAberta: boolean;
+  setTarefaAberta: (aberta: boolean) => void;
+  tarefaCriada: (mensagem: string) => void;
 }
 
 const OpportunityDetailContext = createContext<OpportunityDetailState | null>(null);
@@ -122,6 +146,7 @@ export function OpportunityDetailProvider({
   const [historico, setHistorico] = useState<Activity[] | null>(null);
   const [historicoErro, setHistoricoErro] = useState<string | null>(null);
   const [historicoCarregando, setHistoricoCarregando] = useState(false);
+  const [tarefaAberta, setTarefaAberta] = useState(false);
   const refresh = useRefresh();
   // Marcar Fechada/Reabrir fecham o card (ver setStatus): só depois que o
   // refresh chegou — o quadro de trás recarrega junto — ou, se ele
@@ -220,6 +245,12 @@ export function OpportunityDetailProvider({
       .finally(() => setHistoricoCarregando(false));
   }
 
+  function tarefaCriada(mensagem: string) {
+    setTarefaAberta(false);
+    setNotice(mensagem);
+    markRefreshPending();
+  }
+
   function toggleHistorico() {
     const abrindo = !historicoAberto;
     setHistoricoAberto(abrindo);
@@ -231,11 +262,34 @@ export function OpportunityDetailProvider({
   // no quadro (card na coluna certa + toast), em vez de trocar o botão
   // pelo oposto no mesmo lugar com o quadro de trás ainda desatualizado.
   async function setStatus(status: "won" | "open" | "lost", noticeText: string, lostReason?: string) {
+    await mudarSituacao(
+      "status",
+      () => setOpportunityStatusAction(opportunity.id, opportunity.version, status, lostReason),
+      noticeText,
+    );
+  }
+
+  // Colocar em Stand by / retomar (2026-10-22) tira ou devolve o card ao
+  // quadro — mesmo fluxo de Fechada/Reabrir: fecha o card e o resultado
+  // aparece no quadro.
+  async function setStandby(standby: boolean, dayKey?: string) {
+    await mudarSituacao(
+      "standby",
+      () => setOpportunityStandbyAction(opportunity.id, opportunity.version, standby, dayKey),
+      standby ? "Oportunidade em stand by" : "Negociação retomada",
+    );
+  }
+
+  async function mudarSituacao(
+    key: "status" | "standby",
+    fn: () => Promise<ActionResult<Partial<OpportunityWithDetails>>>,
+    noticeText: string,
+  ) {
     if (busy) return;
-    setBusy("status");
+    setBusy(key);
     setError(null);
     try {
-      const res = await setOpportunityStatusAction(opportunity.id, opportunity.version, status, lostReason);
+      const res = await fn();
       if (!res.ok) {
         setError(res.message);
         setBusy(null);
@@ -296,6 +350,7 @@ export function OpportunityDetailProvider({
         setItems,
         run,
         setStatus,
+        setStandby,
         remove,
         close,
         historicoAberto,
@@ -303,6 +358,9 @@ export function OpportunityDetailProvider({
         historicoErro,
         historicoCarregando,
         toggleHistorico,
+        tarefaAberta,
+        setTarefaAberta,
+        tarefaCriada,
       }}
     >
       {children}
@@ -321,10 +379,22 @@ function fmtDate(value?: string | null): string {
 
 
 
+// As rotas de fixar, destacar e dar baixa devolvem o comentário sem o
+// histórico de edição (só o GET do card e a edição trazem) — troca o
+// comentário na lista sem perder o histórico que a ficha já tem.
+function trocarComentario(lista: OpportunityComment[], salvo: OpportunityComment): OpportunityComment[] {
+  return lista.map((x) => (x.id === salvo.id ? { ...salvo, edits: salvo.edits ?? x.edits } : x));
+}
+
 function memberDisplayName(userId: string, memberships: Membership[]): string {
   const m = memberships.find((mm) => mm.userId === userId);
   return m?.name?.trim() || m?.login?.trim() || `${userId.slice(0, 8)}…`;
 }
+
+// Usuário-sistema do backend (SYSTEM_ACTOR_USER_ID): no card, quem anexa com
+// ele é só o "Enviar proposta ao CRM" do app de cotações. Não é membro, então
+// sem isso o anexo mostrava "Enviado por 00000000…".
+const SISTEMA_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 function initialsOf(name: string): string {
   return name.slice(0, 2).toUpperCase();
@@ -346,19 +416,75 @@ const EDIT_FORM_ID = "opportunity-edit-form";
 // Fora daqui de propósito: "Etapa" (quem move o card de etapa é o
 // arrasto no quadro) e "Ponderado" (era o único uso da probabilidade da
 // etapa na ficha) — os dois saíram a pedido do usuário.
-function DetailKv() {
-  const { data, opportunity: o, items, busy, setOpportunity, run } = useOpportunityDetail();
-  const { company } = data;
-  const closed = o.status !== "open";
-  // Valor da oportunidade quando os itens têm preço: quem manda é a
-  // soma (o backend grava, ver OpportunityItemService#sincronizarValor),
-  // então o campo vira leitura pra não existirem dois números brigando
-  // na mesma tela.
-  const somaItens = items.reduce(
+// Valor da oportunidade quando os itens têm preço: quem manda é a soma (o
+// backend grava, ver OpportunityItemService#sincronizarValor), então o
+// campo vira leitura pra não existirem dois números brigando na mesma tela.
+function valorDosItens(items: { amount: string | number | null }[]): number | null {
+  if (!items.some((item) => item.amount !== null)) return null;
+  return items.reduce<number>(
     (total, item) => (item.amount === null ? total : total + Number(item.amount)),
     0,
   );
-  const valorVemDosItens = items.some((item) => item.amount !== null);
+}
+
+// Valor da oportunidade no rodapé da coluna de Itens, como totalizador
+// (pedido do usuário, 2026-10-28) — antes era um campo do formulário ao
+// lado do Representante. Editável só com a oportunidade aberta e sem item
+// com preço; o campo pertence ao formulário do card via form= (o "Salvar"
+// do rodapé grava junto com o resto).
+function ValorTotalizador() {
+  const { opportunity: o, items, busy } = useOpportunityDetail();
+  const soma = valorDosItens(items);
+  const editavel = o.status === "open" && soma === null;
+  return (
+    <label className="opp-item-total">
+      <span>Valor total</span>
+      {editavel ? (
+        <input
+          name="amount"
+          form={EDIT_FORM_ID}
+          type="number"
+          step="0.01"
+          min="0"
+          defaultValue={o.amount}
+          disabled={busy !== null}
+        />
+      ) : (
+        <strong title={soma !== null ? "Soma dos itens acima" : undefined}>
+          {brlFull(soma ?? Number(o.amount), o.currency)}
+        </strong>
+      )}
+    </label>
+  );
+}
+
+// Cabeçalho da empresa no card (pedido do usuário, 2026-10-29): etapa do
+// Kanban ao lado da razão social e o CNPJ logo abaixo. Card encerrado
+// (ganho ou perdido) mostra "Concluído", não a etapa onde parou.
+function EmpresaIdentificacao() {
+  const { data, opportunity: o } = useOpportunityDetail();
+  const { company } = data;
+  const stage = data.stages.find((s) => s.id === o.stageId) ?? data.stage;
+  const concluido = o.status !== "open";
+  return (
+    <div className="opp-empresa-id">
+      <div className="opp-empresa-nome">
+        <span>{companyRazaoSocialName(company)}</span>
+        {concluido ? (
+          <span className="opp-etapa-tag concluido">Concluído</span>
+        ) : (
+          stage && <span className="opp-etapa-tag">{stage.name}</span>
+        )}
+      </div>
+      {company.cpfCnpj && <div className="opp-empresa-cnpj">{formatCnpj(company.cpfCnpj)}</div>}
+    </div>
+  );
+}
+
+function DetailKv() {
+  const { data, opportunity: o, items, busy, setOpportunity, run } = useOpportunityDetail();
+  const closed = o.status !== "open";
+  const valorVemDosItens = valorDosItens(items) !== null;
   // Só membro ativo e marcado como Vendedor no cadastro de membros
   // (2026-09-17) pode receber a oportunidade — o backend recusa o resto.
   // O dono atual entra na lista mesmo sem a marcação ou inativo, senão o
@@ -398,15 +524,11 @@ function DetailKv() {
       <dl className="kv">
         <dt>Empresa</dt>
         <dd className="opp-empresa-linha">
-          <span>{companyRazaoSocialName(company)}</span>
+          <EmpresaIdentificacao />
           <MaisAcoes />
         </dd>
         <dt>Representante</dt>
         <dd>{memberDisplayName(o.ownerUserId, data.memberships)}</dd>
-        <dt>Valor</dt>
-        <dd style={{ fontFamily: "var(--font-mono)", color: "var(--accent-secondary)", fontWeight: 600 }}>
-          {brlFull(Number(o.amount), o.currency)}
-        </dd>
         <dt>Encerrado em</dt>
         <dd>{fmtDate(o.closedAt)}</dd>
         {o.description && (
@@ -430,9 +552,20 @@ function DetailKv() {
       <dl className="kv">
         <dt>Empresa</dt>
         <dd className="opp-empresa-linha">
-          <span>{companyRazaoSocialName(company)}</span>
+          <EmpresaIdentificacao />
           <MaisAcoes />
         </dd>
+        {/* Stand by (2026-10-22): o card está fora do quadro. A retomada
+            prevista é a previsão de fechamento logo abaixo. */}
+        {o.standbyAt && (
+          <>
+            <dt>Situação</dt>
+            <dd>
+              <span className="standby-tag">Stand by</span> desde {formatDateBR(o.standbyAt)} · retomada prevista
+              para {o.expectedCloseDate ? formatDateOnlyBR(o.expectedCloseDate) : "—"}
+            </dd>
+          </>
+        )}
       </dl>
       <form id={EDIT_FORM_ID} onSubmit={handleSave} className="form-grid" style={{ marginTop: 12 }}>
         {/* Representante (2026-09-04): o dono da oportunidade é quem
@@ -449,28 +582,8 @@ function DetailKv() {
             ))}
           </select>
         </label>
-        <label>
-          Valor
-          {valorVemDosItens ? (
-            <input
-              name="amount-somado"
-              value={somaItens.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-              readOnly
-              title="Soma dos itens da lista ao lado"
-            />
-          ) : (
-            <input
-              name="amount"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              defaultValue={o.amount}
-              disabled={busy !== null}
-            />
-          )}
-        </label>
-        {/* Moeda saiu do card (pedido do usuário, 2026-09-11): tudo é
+        {/* Valor (2026-10-28) saiu daqui: é o totalizador da coluna de
+            Itens (ValorTotalizador). Moeda saiu do card (pedido do usuário, 2026-09-11): tudo é
             negociado em real. O valor gravado mantém a moeda que já
             estava na oportunidade. */}
         <label>
@@ -517,6 +630,7 @@ export function DetailBody() {
     historico,
     historicoErro,
     historicoCarregando,
+    tarefaAberta,
   } = useOpportunityDetail();
   const { me, memberships } = data;
   const [commentText, setCommentText] = useState("");
@@ -535,6 +649,27 @@ export function DetailBody() {
   // painel está aberto e se o comentário já nasce fixado.
   const [painelComposer, setPainelComposer] = useState<"itens" | "membros" | null>(null);
   const [fixarAoEnviar, setFixarAoEnviar] = useState(false);
+  // Edição do texto (pedido do usuário, 2026-10-16: corrigir erro de
+  // digitação sem perder o histórico). Qual comentário está com a caixa
+  // de edição aberta e o rascunho dela; e de qual comentário o painel de
+  // versões anteriores está aberto.
+  const [editandoTexto, setEditandoTexto] = useState<string | null>(null);
+  const [rascunho, setRascunho] = useState("");
+  const [versoesDe, setVersoesDe] = useState<string | null>(null);
+
+  function salvarEdicao(comentarioId: string) {
+    const texto = rascunho.trim();
+    if (!texto) return;
+    void run(
+      `editar:${comentarioId}`,
+      () => updateOpportunityCommentAction(o.id, comentarioId, texto),
+      (saved) => {
+        setOpportunity((prev) => ({ ...prev, comments: trocarComentario(prev.comments, saved) }));
+        setEditandoTexto(null);
+      },
+      "Comentário editado",
+    );
+  }
 
   // Marca/desmarca um membro num comentário que já existe. Cada clique
   // grava — a lista inteira vai pro backend, que substitui a anterior.
@@ -548,7 +683,7 @@ export function DetailBody() {
       (saved) =>
         setOpportunity((prev) => ({
           ...prev,
-          comments: prev.comments.map((x) => (x.id === saved.id ? saved : x)),
+          comments: trocarComentario(prev.comments, saved),
         })),
       atuais.includes(userId) ? "Destaque removido" : "Membro destacado",
     );
@@ -669,7 +804,7 @@ export function DetailBody() {
       (saved) =>
         setOpportunity((prev) => ({
           ...prev,
-          comments: prev.comments.map((x) => (x.id === saved.id ? saved : x)),
+          comments: trocarComentario(prev.comments, saved),
         })),
       "Comentário fixado",
     );
@@ -698,11 +833,17 @@ export function DetailBody() {
         </div>
       )}
 
-      {/* Duas colunas (2026-09-04): conteúdo do card + lista lateral de
-          itens — mesmo layout do card de cadastro (nova/nova-card.tsx). */}
-      <div className="opp-grid">
+      {/* Três colunas (pedido do usuário, 2026-10-16: "semelhante ao
+          Trello"): lista de itens · conteúdo do card · comentários. A
+          conversa tem coluna própria e, no modal, cada coluna rola por
+          conta própria — o histórico longo do Trello não empurra mais os
+          dados do card. O card de cadastro (nova/nova-card.tsx) segue em
+          duas colunas: ainda não tem conversa. */}
+      <div className="opp-grid com-chat">
       <div className="opp-main">
       <DetailKv />
+
+      {tarefaAberta && <NovaTarefaNoCard />}
 
       {/* Histórico do card (2026-09-14): painel ligado pelo botão
           "Histórico" no rodapé, logo abaixo dos dados pra ser a primeira
@@ -724,7 +865,9 @@ export function DetailBody() {
         canRemove={canDeleteOwn}
         canPublish={podePublicarAnexo}
         multiple
-        nomeDoAutor={(userId) => memberDisplayName(userId, memberships)}
+        nomeDoAutor={(userId) =>
+          userId === SISTEMA_USER_ID ? "App de cotações" : memberDisplayName(userId, memberships)
+        }
         onUpload={handleUpload}
         onRemove={(id) =>
           void run(
@@ -745,18 +888,19 @@ export function DetailBody() {
         getUrl={urlDoAnexo}
       />
 
-      {/* Barra de ações no meio do card (pedido do usuário, 2026-09-14):
-          antes ficava no rodapé do modal, e com o histórico de comentários
-          longo era preciso rolar até o fim só pra Fechar ou Salvar. */}
+      {/* Barra de ações no fim da coluna do conteúdo (2026-09-14): saiu
+          do rodapé do modal pra não depender de rolar a conversa — que
+          desde 2026-10-16 mora na coluna própria ao lado. */}
       <div className="card-acoes">
         <DetailFooter />
       </div>
+      </div>
 
-      <div className="task-detail-section">
+      <section className="opp-chat" aria-label="Comentários">
         <div className="drawer-section-title">Comentários{o.comments.length > 0 ? ` · ${o.comments.length}` : ""}</div>
-        {/* Campo de comentário no topo da seção, logo abaixo da barra de
-            botões (pedido do usuário, 2026-09-15): com muitos comentários
-            era preciso rolar a conversa inteira pra escrever. */}
+        {/* Campo de comentário no topo da coluna (pedido do usuário,
+            2026-09-15): com muitos comentários era preciso rolar a
+            conversa inteira pra escrever. */}
         <form onSubmit={handleComment} className="chat-input-row chat-input-topo">
           <div className="chat-composer">
             <textarea
@@ -883,6 +1027,12 @@ export function DetailBody() {
               const souDestacado = destacados.includes(me.user.id);
               const jaDeiBaixa = (c.mentionsDoneUserIds ?? []).includes(me.user.id);
               const minhaPendencia = souDestacado && !jaDeiBaixa;
+              // Edição (2026-10-16): só o autor, e só o que foi escrito
+              // aqui — mensagem do Trello se corrige no Trello e a
+              // correção chega pelo espelho, também com histórico.
+              const podeEditar = !externo && c.authorUserId === me.user.id;
+              const versoes = c.edits ?? [];
+              const editado = Boolean(c.editedAt) || versoes.length > 0;
               return (
                 <div key={c.id} className="chat-msg">
                   <div className="chat-avatar">{initialsOf(authorName)}</div>
@@ -903,9 +1053,82 @@ export function DetailBody() {
                     {/* pre-wrap: o texto guarda as quebras de linha (quem
                         escreve no Trello separa cada máquina em linhas) e
                         sem isso o navegador emendava tudo. */}
-                    <div className="chat-text" style={{ whiteSpace: "pre-wrap" }}>
-                      {externo ? <TextoTrello texto={c.body} /> : c.body}
-                    </div>
+                    {editandoTexto === c.id ? (
+                      <div className="chat-edit">
+                        <textarea
+                          value={rascunho}
+                          onChange={(e) => setRascunho(e.target.value)}
+                          onKeyDown={(e) => {
+                            // Esc fecha só a edição — sem isso ele subia
+                            // até o modal e fechava o card inteiro.
+                            if (e.key === "Escape") {
+                              e.stopPropagation();
+                              setEditandoTexto(null);
+                            }
+                          }}
+                          rows={Math.min(12, Math.max(3, rascunho.split("\n").length + 1))}
+                          disabled={busy !== null}
+                          aria-label="Editar comentário"
+                          autoFocus
+                        />
+                        <div className="chat-edit-acoes">
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={busy !== null}
+                            onClick={() => setEditandoTexto(null)}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={busy !== null || rascunho.trim() === "" || rascunho.trim() === c.body}
+                            onClick={() => salvarEdicao(c.id)}
+                          >
+                            {busy === `editar:${c.id}` ? "Salvando…" : "Salvar"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="chat-text" style={{ whiteSpace: "pre-wrap" }}>
+                        {externo ? <TextoTrello texto={c.body} /> : c.body}
+                      </div>
+                    )}
+                    {/* "(editado)" abre as versões anteriores — o texto
+                        nunca se perde (histórico gravado pelo backend). */}
+                    {editado && (
+                      <button
+                        type="button"
+                        className="chat-editado"
+                        aria-expanded={versoesDe === c.id}
+                        title="Ver o texto antes de cada edição"
+                        onClick={() => setVersoesDe((atual) => (atual === c.id ? null : c.id))}
+                      >
+                        {versoesDe === c.id ? "(editado · ocultar versões)" : "(editado · ver versões)"}
+                      </button>
+                    )}
+                    {versoesDe === c.id && (
+                      <div className="chat-versoes">
+                        {versoes.length > 0 ? (
+                          [...versoes].reverse().map((v) => (
+                            <div key={v.id} className="chat-versao">
+                              <div className="chat-versao-quando">
+                                Texto até {formatDateTimeBR(v.editedAt)} —{" "}
+                                {externo
+                                  ? "corrigido no Trello"
+                                  : `editado por ${memberDisplayName(v.editedByUserId, memberships)}`}
+                              </div>
+                              <div className="chat-versao-texto">
+                                {externo ? <TextoTrello texto={v.bodyBefore} /> : v.bodyBefore}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="chat-versao-quando">Feche e abra o card para ver as versões.</div>
+                        )}
+                      </div>
+                    )}
                     {destacados.length > 0 && (
                       <div className="tag-stamp-row">
                         {destacados.map((userId) => (
@@ -954,6 +1177,20 @@ export function DetailBody() {
                       </div>
                     )}
                     <div className="chat-msg-actions">
+                      {podeEditar && editandoTexto !== c.id && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: 0 }}
+                          disabled={busy !== null}
+                          onClick={() => {
+                            setEditandoTexto(c.id);
+                            setRascunho(c.body);
+                          }}
+                        >
+                          ✎ Editar
+                        </button>
+                      )}
                       {/* Baixa da pendência (2026-09-14): só aparece pra
                           quem foi destacado. É o que apaga o triângulo
                           amarelo do card no quadro — pra essa pessoa. */}
@@ -970,7 +1207,7 @@ export function DetailBody() {
                               (saved) =>
                                 setOpportunity((prev) => ({
                                   ...prev,
-                                  comments: prev.comments.map((x) => (x.id === saved.id ? saved : x)),
+                                  comments: trocarComentario(prev.comments, saved),
                                 })),
                               jaDeiBaixa ? "Pendência reaberta" : "Pendência resolvida",
                             )
@@ -1014,7 +1251,7 @@ export function DetailBody() {
                             (saved) =>
                               setOpportunity((prev) => ({
                                 ...prev,
-                                comments: prev.comments.map((x) => (x.id === saved.id ? saved : x)),
+                                comments: trocarComentario(prev.comments, saved),
                               })),
                             fixado ? "Comentário desafixado" : "Comentário fixado",
                           )
@@ -1056,8 +1293,7 @@ export function DetailBody() {
             <div className="chat-empty">Nenhum comentário ainda. Registre o andamento da negociação.</div>
           )}
         </div>
-      </div>
-      </div>
+      </section>
 
       <aside className="opp-side">
         <ItemsPanel
@@ -1072,10 +1308,55 @@ export function DetailBody() {
           busyKey={busy === "item" ? "add" : busy?.startsWith("item:") ? busy.slice("item:".length) : null}
           disabled={busy !== null}
           canEdit={canEditItems}
+          totalizador={<ValorTotalizador />}
         />
       </aside>
       </div>
     </>
+  );
+}
+
+// Formulário de tarefa nova aberto dentro do card (2026-10-29), já
+// vinculado à oportunidade. Contatos e responsáveis vêm só na abertura.
+function NovaTarefaNoCard() {
+  const { data, opportunity: o, items, setTarefaAberta, tarefaCriada } = useOpportunityDetail();
+  const [contexto, setContexto] = useState<{ contacts: Contact[]; assigneeOptions: AssigneeOption[] } | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    void novaTarefaContextoAction(data.company.id)
+      .then((res) => {
+        if (cancelado) return;
+        if (res.ok) setContexto(res.data);
+        else setErro(res.message);
+      })
+      .catch(() => !cancelado && setErro("Não deu pra abrir o formulário. Tente de novo."));
+    return () => {
+      cancelado = true;
+    };
+  }, [data.company.id]);
+
+  return (
+    <section className="task-detail-section opp-nova-tarefa">
+      <div className="drawer-section-title">Nova tarefa</div>
+      {erro ? (
+        <div className="error-banner">{erro}</div>
+      ) : !contexto ? (
+        <div className="field-hint">Carregando…</div>
+      ) : (
+        <NovaForm
+          lockedOpportunityId={o.id}
+          lockedLabel="Vinculada a esta oportunidade"
+          initialContacts={contexto.contacts}
+          initialCompanyId={data.company.id}
+          assigneeOptions={contexto.assigneeOptions}
+          opportunityItems={items.map((item) => item.name)}
+          onCreated={tarefaCriada}
+          onCancel={() => setTarefaAberta(false)}
+        />
+      )}
+    </section>
   );
 }
 
@@ -1086,14 +1367,29 @@ export function DetailBody() {
 // tarefa (2026-09-04): botão que muda a situação colado no de salvar faz
 // encerrar a oportunidade quem só queria corrigir um campo.
 function MaisAcoes() {
-  const { data, opportunity: o, busy, error, setStatus, historicoAberto, toggleHistorico } = useOpportunityDetail();
+  const {
+    data,
+    opportunity: o,
+    busy,
+    error,
+    setStatus,
+    setStandby,
+    historicoAberto,
+    toggleHistorico,
+    setTarefaAberta,
+  } = useOpportunityDetail();
   const [aberto, setAberto] = useState(false);
   const [perguntaPerda, setPerguntaPerda] = useState(false);
+  const [perguntaStandby, setPerguntaStandby] = useState(false);
   // setStatus fecha o card quando dá certo; se falhar, o erro aparece no
   // card e o modal de motivo sai da frente pra ele ficar visível.
   useEffect(() => {
-    if (error) setPerguntaPerda(false);
+    if (error) {
+      setPerguntaPerda(false);
+      setPerguntaStandby(false);
+    }
   }, [error]);
+  const emStandby = Boolean(o.standbyAt);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { stage, maxOrder } = data;
   const closed = o.status !== "open";
@@ -1130,7 +1426,13 @@ function MaisAcoes() {
         aria-expanded={aberto}
         onClick={() => setAberto((v) => !v)}
       >
-        {busy === "status" ? (closed ? "Reabrindo…" : "Fechando…") : "Mais ações"}
+        {busy === "status"
+          ? closed
+            ? "Reabrindo…"
+            : "Fechando…"
+          : busy === "standby"
+            ? "Salvando…"
+            : "Mais ações"}
         <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M6 9l6 6 6-6" />
         </svg>
@@ -1170,11 +1472,37 @@ function MaisAcoes() {
               ↩ Reabrir
             </button>
           )}
-          {!closed && (
-            <Link href={`/dashboard/pipeline/${o.id}/nova-tarefa`} role="menuitem" className="mais-acoes-item">
-              + Gerar tarefa
-            </Link>
+          {/* Stand by (pedido do usuário, 2026-10-22): o cliente avaliou e
+              vai retomar mais adiante. Sai do quadro e volta pelo
+              calendário na nova previsão de fechamento. */}
+          {!closed && !emStandby && (
+            <button
+              type="button"
+              role="menuitem"
+              className="mais-acoes-item"
+              disabled={disabled}
+              onClick={() => setPerguntaStandby(true)}
+            >
+              ⏸ Colocar em Stand by
+            </button>
           )}
+          {!closed && emStandby && (
+            <button
+              type="button"
+              role="menuitem"
+              className="mais-acoes-item"
+              disabled={disabled}
+              onClick={() => void setStandby(false)}
+            >
+              ▶ Retomar negociação
+            </button>
+          )}
+          {/* Gerar tarefa (2026-10-29): também no card encerrado — lembrete
+              pra retomar uma perdida — e dentro do próprio card, sem abrir
+              outra janela. */}
+          <button type="button" role="menuitem" className="mais-acoes-item" onClick={() => setTarefaAberta(true)}>
+            + Gerar tarefa
+          </button>
           {/* Histórico (2026-09-14): liga/desliga o relatório de
               movimentações do card — trocas de etapa, edições de campo e
               mexidas na lista de itens, com data, hora e autor. */}
@@ -1188,6 +1516,14 @@ function MaisAcoes() {
           enviando={busy === "status"}
           onCancelar={() => setPerguntaPerda(false)}
           onEscolher={(motivo) => void setStatus("lost", "Oportunidade marcada como perdida", motivo)}
+        />
+      )}
+      {perguntaStandby && (
+        <StandbyModal
+          previsaoAtual={o.expectedCloseDate ? formatDateOnlyBR(o.expectedCloseDate) : null}
+          enviando={busy === "standby"}
+          onCancelar={() => setPerguntaStandby(false)}
+          onConfirmar={(dayKey) => void setStandby(true, dayKey)}
         />
       )}
     </div>

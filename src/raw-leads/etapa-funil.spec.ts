@@ -1,4 +1,9 @@
-import { etapaAvancada, etapaDoSubtipo, ordemDaEtapa } from './etapa-funil';
+import {
+  etapaAvancada,
+  etapaDoSubtipo,
+  marcaPassagem,
+  ordemDaEtapa,
+} from './etapa-funil';
 
 // A régua do funil de prospecção (2026-09-23). O que importa aqui é a
 // propriedade que o resto do código assume: avanço automático só empurra
@@ -25,6 +30,25 @@ describe('etapa-funil', () => {
     expect(etapaAvancada('qualificado', 'andamento')).toBe('qualificado');
     expect(etapaAvancada('negociacao', 'reuniao')).toBe('negociacao');
     expect(etapaAvancada('reuniao', 'reuniao')).toBe('reuniao');
+  });
+
+  it('marca a data só na primeira entrada em Andamento/Reunião', () => {
+    const agora = new Date('2026-10-21T12:00:00Z');
+    const antes = new Date('2026-10-01T12:00:00Z');
+    const semData = { andamentoAt: null, reuniaoAt: null };
+    expect(marcaPassagem('andamento', semData, agora)).toEqual({
+      andamentoAt: agora,
+    });
+    expect(marcaPassagem('reuniao', semData, agora)).toEqual({
+      reuniaoAt: agora,
+    });
+    // Voltou pra Andamento e avançou de novo: a série não é reescrita.
+    expect(
+      marcaPassagem('reuniao', { andamentoAt: antes, reuniaoAt: antes }, agora),
+    ).toEqual({});
+    // As outras faixas têm data própria (qualifiedAt/convertedAt).
+    expect(marcaPassagem('entrada', semData, agora)).toEqual({});
+    expect(marcaPassagem('qualificado', semData, agora)).toEqual({});
   });
 
   it('mapeia o registro da Timeline para a etapa que ele comprova', () => {

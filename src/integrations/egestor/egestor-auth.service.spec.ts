@@ -1,6 +1,6 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import { EgestorAuthService } from './egestor-auth.service';
+import { EgestorAuthService, tokenRenovavel } from './egestor-auth.service';
 
 function fakeConfig(values: Record<string, string | undefined>): ConfigService {
   return { get: (key: string) => values[key] } as unknown as ConfigService;
@@ -94,5 +94,34 @@ describe('EgestorAuthService', () => {
     await expect(service.getAccessToken('matriz')).rejects.toThrow(
       InternalServerErrorException,
     );
+  });
+});
+
+// A carga do console fiscal passa dos 900 s de validade do access_token
+// (273 XML recusados com 401 em 2026-10-21).
+describe('tokenRenovavel', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('reaproveita o token dentro da validade e pede um novo depois dela', async () => {
+    let agora = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => agora);
+    const obter = jest
+      .fn()
+      .mockResolvedValueOnce('token-1')
+      .mockResolvedValueOnce('token-2');
+    const token = tokenRenovavel(obter, 10 * 60_000);
+
+    expect(await token()).toBe('token-1');
+    agora += 9 * 60_000;
+    expect(await token()).toBe('token-1');
+    agora += 60_000;
+    expect(await token()).toBe('token-2');
+    expect(obter).toHaveBeenCalledTimes(2);
+  });
+
+  it('não pede token antes da primeira chamada', () => {
+    const obter = jest.fn();
+    tokenRenovavel(obter);
+    expect(obter).not.toHaveBeenCalled();
   });
 });

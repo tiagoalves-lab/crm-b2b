@@ -32,10 +32,11 @@ function serialize(attachment: OpportunityAttachment): SerializedAttachment {
 // novo — a fronteira de segurança é o backend, não uma policy de
 // storage.objects por bucket, ver SupabaseStorageService) com um prefixo
 // de path próprio pra não colidir com os anexos de Task.
-// Publicação do anexo (pedido do usuário, 2026-09-15). Arquivo enviado
-// por owner/admin nasce RESERVADO (publishedAt = null) e só aparece pra
-// gerente e representante depois que alguém de owner/admin publica;
-// arquivo enviado por gerente ou representante já nasce publicado. A
+// Publicação do anexo: desativada por ora (pedido do usuário,
+// 2026-10-16) — todo anexo novo nasce publicado (publishedAt = agora),
+// seja quem for que envie. O que segue valendo é só o tratamento dos
+// anexos que ficaram RESERVADOS (publishedAt = null) de antes: continuam
+// escondidos de gerente e representante até owner/admin publicar. A
 // regra é por PAPEL, não pela matriz de permissões granulares: o que
 // está em jogo é nível hierárquico ("quem pode ver antes da hora"), não
 // capacidade de ação num módulo — mesma razão pela qual o escopo de
@@ -120,10 +121,7 @@ export class OpportunityAttachmentService {
         mimeType: dto.mimeType,
         sizeBytes: dto.sizeBytes,
         uploadedBy: membership.userId,
-        // Owner/admin publica depois, num segundo ato; gerente e
-        // representante não têm o que reservar de quem já vê tudo o que
-        // eles veem, então o arquivo deles já entra publicado.
-        publishedAt: podePublicar(membership) ? null : new Date(),
+        publishedAt: new Date(),
       },
     });
 

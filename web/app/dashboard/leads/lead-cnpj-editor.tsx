@@ -19,13 +19,15 @@ import { cadastroFromLookup, formatCnpj } from "./cnpj-lookup-fields";
 export default function LeadCnpjEditor({
   leadId,
   cnpj,
+  podeAlterar = true,
 }: {
   leadId: string;
   cnpj: string | null;
+  // false = lead descartado: só o botão de reconsultar a Receita.
+  podeAlterar?: boolean;
 }) {
   const refresh = useRefresh();
-  const [value, setValue] = useState(cnpj ?? "");
-  const [editing, setEditing] = useState(!cnpj);
+  const [value, setValue] = useState(formatCnpj(cnpj));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lookupFailed, setLookupFailed] = useState(false);
@@ -34,8 +36,7 @@ export default function LeadCnpjEditor({
   // Mesmo motivo do useEffect em LeadSegmentoEditor: a instância sobrevive
   // ao refresh, então sincroniza com a prop quando ela mudar.
   useEffect(() => {
-    setValue(cnpj ?? "");
-    setEditing(!cnpj);
+    setValue(formatCnpj(cnpj));
   }, [cnpj]);
 
   function digitsOrError(): string | null {
@@ -57,14 +58,16 @@ export default function LeadCnpjEditor({
       return false;
     }
     setSaved(sucesso);
-    setEditing(false);
     setLookupFailed(false);
     refresh();
     return true;
   }
 
-  async function consultarESalvar() {
-    const digits = digitsOrError();
+  // `cnpjAtual` (2026-10-07): botão "Buscar dados na Receita" da leitura
+  // reconsulta o CNPJ já salvo sem passar pelo modo de edição — mesmo
+  // recurso do "Buscar dados" da ficha de empresa.
+  async function consultarESalvar(cnpjAtual?: string) {
+    const digits = cnpjAtual ? cnpjAtual.replace(/\D/g, "") : digitsOrError();
     if (!digits) return;
     setBusy(true);
     setError(null);
@@ -95,77 +98,44 @@ export default function LeadCnpjEditor({
     await persist({ cnpj: digits }, "CNPJ salvo (sem os dados da Receita).");
   }
 
-  if (!editing) {
-    return (
-      <div>
-        <span>{formatCnpj(cnpj) || "—"}</span>{" "}
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ marginLeft: 6 }}
-          onClick={() => {
-            setSaved(null);
-            setEditing(true);
-          }}
-        >
-          Alterar
-        </button>
-        {saved && (
-          <div className="t-sub" style={{ color: "var(--green)", marginTop: 4 }}>
-            ✓ {saved}
-          </div>
-        )}
-      </div>
-    );
-  }
-
+  // Mesma caixa "Consultar CNPJ na Receita" da ficha da empresa
+  // (2026-10-28) — o cartão da Receita aparece logo abaixo (CartaoReceita).
+  // Lead descartado: campo travado, o botão só reconsulta o CNPJ salvo.
   return (
-    <div>
-      <div className="row-form">
-        <input
-          className="segmento-input"
-          placeholder="00.000.000/0000-00"
-          value={value}
-          disabled={busy}
-          maxLength={20}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void consultarESalvar();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={busy}
-          onClick={() => void consultarESalvar()}
-        >
-          {busy ? "Consultando…" : "Consultar Receita e salvar"}
-        </button>
-        {cnpj && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
+    <div className="cnpj-search">
+      <form
+        className="cnpj-search-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setSaved(null);
+          void consultarESalvar(podeAlterar ? undefined : (cnpj ?? undefined));
+        }}
+      >
+        <div className="field">
+          <label>Consultar CNPJ na Receita</label>
+          <input
+            placeholder="00.000.000/0001-00"
+            value={podeAlterar ? value : formatCnpj(cnpj)}
+            readOnly={!podeAlterar}
             disabled={busy}
-            onClick={() => {
-              setValue(cnpj);
-              setError(null);
-              setLookupFailed(false);
-              setEditing(false);
-            }}
-          >
-            Cancelar
-          </button>
-        )}
-      </div>
+            maxLength={20}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </div>
+        <button type="submit" className="btn btn-primary" disabled={busy || (!podeAlterar && !cnpj)}>
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          {busy ? "Buscando…" : "Buscar dados"}
+        </button>
+      </form>
       {error && (
-        <div className="t-sub" style={{ color: "var(--danger)", marginTop: 4 }}>
+        <div className="t-sub" style={{ color: "var(--danger)", marginTop: 8 }}>
           {error}
         </div>
       )}
-      {lookupFailed && (
+      {lookupFailed && podeAlterar && (
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -176,9 +146,15 @@ export default function LeadCnpjEditor({
           Salvar só o CNPJ, sem consultar
         </button>
       )}
-      <p className="t-sub" style={{ marginTop: 6 }}>
-        Preencha o CNPJ e o CRM completa razão social, CNAE, porte e situação pela Receita Federal.
-      </p>
+      {saved && (
+        <div className="t-sub" style={{ color: "var(--green)", marginTop: 8 }}>
+          ✓ {saved}
+        </div>
+      )}
+      <div className="field-hint" style={{ marginTop: 8 }}>
+        Puxa razão social, CNAE, endereço e situação da base da Receita Federal (via BrasilAPI). A
+        Inscrição Estadual é dado da SEFAZ e entra à parte, abaixo.
+      </div>
     </div>
   );
 }

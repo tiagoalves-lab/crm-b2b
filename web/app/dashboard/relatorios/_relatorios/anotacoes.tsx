@@ -1,9 +1,15 @@
 import { companyRazaoSocialName } from "@/lib/api/companies";
-import { gerarRelatorioAnotacoes, type AnotacaoRelatorioRow } from "@/lib/api/relatorios";
+import {
+  gerarRelatorioAnotacoes,
+  type AnotacaoRelatorioRow,
+  type FunilDaEmpresa,
+} from "@/lib/api/relatorios";
+import { FAIXA_FUNIL_LABEL_CURTO, FAIXA_FUNIL_PILL, faixaDoFunil } from "@/lib/api/raw-leads";
 import type { Membership } from "@/lib/api/types";
 import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
 import { memberName } from "../../(administracao)/membros/roles";
 import { faixaDoPeriodo, faixaPorExtenso, PERIODOS, PERIODO_PADRAO } from "../periodo";
+import PersonalizadoAoDigitar from "../personalizado-ao-digitar";
 
 // Rótulo e cor por tipo de registro — mesmas chaves da Timeline da ficha
 // (AddNoteForm/ficha-body.tsx), pra "Ligação" aqui ser a mesma "Ligação"
@@ -38,6 +44,43 @@ interface Linha {
   usuario: string;
   subtipo: string;
   registros: AnotacaoRelatorioRow[];
+}
+
+// Linhas da mesma empresa ficam juntas, com a célula da empresa (e a do
+// funil) mesclada sobre elas (pedido do usuário, 2026-10-27). A empresa
+// com o registro mais recente vem primeiro.
+interface GrupoEmpresa {
+  chave: string;
+  empresa: string;
+  empresaId: string | null;
+  linhas: Linha[];
+}
+
+function agruparPorEmpresa(linhas: Linha[]): GrupoEmpresa[] {
+  const grupos = new Map<string, GrupoEmpresa>();
+  for (const linha of linhas) {
+    const chave = linha.empresaId ?? "sem";
+    const atual = grupos.get(chave);
+    if (atual) atual.linhas.push(linha);
+    else grupos.set(chave, { chave, empresa: linha.empresa, empresaId: linha.empresaId, linhas: [linha] });
+  }
+  return [...grupos.values()];
+}
+
+// Dia em que a empresa entrou em cada etapa, na ordem do funil — só as
+// passagens que aconteceram.
+function passagensDoFunil(funil: FunilDaEmpresa): { label: string; data: string }[] {
+  const marcas: [string, string | null][] = [
+    ["Entrada", funil.entradaAt],
+    ["Andamento", funil.andamentoAt],
+    ["Reunião", funil.reuniaoAt],
+    ["Qualificado", funil.qualifiedAt],
+    ["Negociação", funil.convertedAt],
+    ["Descartado", funil.discardedAt],
+  ];
+  return marcas
+    .filter((m): m is [string, string] => !!m[1])
+    .map(([label, data]) => ({ label, data }));
 }
 
 function agrupar(rows: AnotacaoRelatorioRow[], nomeDe: (userId: string | null) => string, mesclar: boolean): Linha[] {
@@ -106,6 +149,8 @@ export default async function RelatorioAnotacoes({
     : null;
 
   const linhas = relatorio ? agrupar(relatorio.rows, nomeDe, mesclar) : [];
+  const grupos = agruparPorEmpresa(linhas);
+  const funilDe = new Map((relatorio?.funis ?? []).map((f) => [f.companyId, f]));
 
   return (
     <>
@@ -115,6 +160,7 @@ export default async function RelatorioAnotacoes({
         </div>
         <div className="panel-body">
           <form method="get" action="/dashboard/relatorios" className="rel-filtros">
+            <PersonalizadoAoDigitar />
             <input type="hidden" name="r" value="anotacoes" />
 
             <div className="field">
@@ -215,6 +261,7 @@ export default async function RelatorioAnotacoes({
                 <thead>
                   <tr>
                     <th>Empresa</th>
+                    <th>Funil</th>
                     <th>Usuário</th>
                     <th>Data</th>
                     <th>Tipo</th>
@@ -222,44 +269,71 @@ export default async function RelatorioAnotacoes({
                   </tr>
                 </thead>
                 <tbody>
-                  {linhas.map((linha) => {
-                    const cor = SUBTIPO_COLOR[linha.subtipo] ?? "gray";
-                    const varios = linha.registros.length > 1;
-                    return (
-                      <tr key={linha.chave}>
-                        <td>{linha.empresa}</td>
-                        <td>{linha.usuario}</td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          {formatDateBR(linha.registros[0].occurredAt)}
-                          {varios && (
-                            <div className="t-sub">
-                              {linha.registros.length} registros · desde{" "}
-                              {formatDateBR(linha.registros[linha.registros.length - 1].occurredAt)}
-                            </div>
+                  {grupos.flatMap((grupo) => {
+                    const funil = grupo.empresaId ? funilDe.get(grupo.empresaId) : undefined;
+                    return grupo.linhas.map((linha, i) => {
+                      const cor = SUBTIPO_COLOR[linha.subtipo] ?? "gray";
+                      const varios = linha.registros.length > 1;
+                      return (
+                        <tr key={linha.chave}>
+                          {i === 0 && (
+                            <>
+                              <td rowSpan={grupo.linhas.length} className="rel-celula-grupo">
+                                {grupo.empresa}
+                              </td>
+                              <td rowSpan={grupo.linhas.length} className="rel-celula-grupo">
+                                {funil ? (
+                                  <>
+                                    <span className={FAIXA_FUNIL_PILL[faixaDoFunil(funil)]}>
+                                      {FAIXA_FUNIL_LABEL_CURTO[faixaDoFunil(funil)]}
+                                    </span>
+                                    <div className="rel-funil-passagens">
+                                      {passagensDoFunil(funil).map((p) => (
+                                        <div key={p.label}>
+                                          {p.label} <span>{formatDateBR(p.data)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            </>
                           )}
-                        </td>
-                        <td>
-                          <span className={`pill pill-${cor}`}>
-                            {SUBTIPO_LABEL[linha.subtipo] ?? linha.subtipo}
-                          </span>
-                        </td>
-                        <td>
-                          {linha.registros.map((r) => (
-                            <div key={r.id} className="rel-anotacao">
-                              {varios && (
-                                <span className="rel-anotacao-data">
-                                  {formatDateTimeBR(r.occurredAt)}
-                                </span>
-                              )}
-                              <span>{r.texto || "—"}</span>
-                              {r.contatoNome && (
-                                <span className="rel-anotacao-contato">· {r.contatoNome}</span>
-                              )}
-                            </div>
-                          ))}
-                        </td>
-                      </tr>
-                    );
+                          <td>{linha.usuario}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            {formatDateBR(linha.registros[0].occurredAt)}
+                            {varios && (
+                              <div className="t-sub">
+                                {linha.registros.length} registros · desde{" "}
+                                {formatDateBR(linha.registros[linha.registros.length - 1].occurredAt)}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`pill pill-${cor}`}>
+                              {SUBTIPO_LABEL[linha.subtipo] ?? linha.subtipo}
+                            </span>
+                          </td>
+                          <td>
+                            {linha.registros.map((r) => (
+                              <div key={r.id} className="rel-anotacao">
+                                {varios && (
+                                  <span className="rel-anotacao-data">
+                                    {formatDateTimeBR(r.occurredAt)}
+                                  </span>
+                                )}
+                                <span>{r.texto || "—"}</span>
+                                {r.contatoNome && (
+                                  <span className="rel-anotacao-contato">· {r.contatoNome}</span>
+                                )}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      );
+                    });
                   })}
                 </tbody>
               </table>

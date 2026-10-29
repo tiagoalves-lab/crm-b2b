@@ -8,7 +8,7 @@ import { createMemberAction } from "./actions";
 import { DEFAULT_PERMISSIONS } from "@/lib/api/permission-catalog";
 import PasswordConfirmFields from "./password-confirm-fields";
 import PermissionsEditor from "./permissions-editor";
-import { MANAGER_CREATABLE_ROLE_OPTIONS, ROLE_LABELS, ROLE_OPTIONS, memberName } from "./roles";
+import { MANAGER_CREATABLE_ROLE_OPTIONS, ROLE_LABELS, memberName, roleOptionsFor } from "./roles";
 import SubmitButton from "@/app/_components/submit-button";
 import VendedorCheckbox from "./vendedor-checkbox";
 
@@ -24,7 +24,7 @@ type Tab = "dados" | "permissoes";
 // empresas/company-form.tsx sobre por que back() e não push()/redirect();
 // toast via sessionStorage porque back() não aceita querystring.
 //
-// `actorRole` (pedido direto do usuário, 2026-08-06): gerente também pode
+// `actor` (pedido direto do usuário, 2026-08-06): gerente também pode
 // cadastrar membro agora (antes só owner/admin), mas só Gerente/
 // Representante (MembershipService#create rejeita o resto) — o select de
 // Papel reflete isso, e o de Gerente some (backend força o próprio gerente
@@ -41,15 +41,15 @@ type Tab = "dados" | "permissoes";
 // aninhar quebraria o layout em colunas dos campos de "Dados".
 export default function MemberForm({
   members,
-  actorRole,
+  actor,
 }: {
   members: Membership[];
-  actorRole: MembershipRole;
+  actor: Pick<Membership, "role" | "permissions">;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(createMemberAction, null);
-  const isTeamManager = actorRole === "manager";
-  const roleOptions = isTeamManager ? MANAGER_CREATABLE_ROLE_OPTIONS : ROLE_OPTIONS;
+  const isTeamManager = actor.role === "manager";
+  const roleOptions = isTeamManager ? MANAGER_CREATABLE_ROLE_OPTIONS : roleOptionsFor(actor.role);
 
   const [tab, setTab] = useState<Tab>("dados");
   const [role, setRole] = useState<MembershipRole>("sales_rep");
@@ -140,6 +140,7 @@ export default function MemberForm({
             matrix={permissions}
             onChange={setPermissions}
             members={members}
+            actor={actor}
           />
         </div>
 

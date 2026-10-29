@@ -104,6 +104,20 @@ lista com o espelho e corrige com esta resposta; ela é a palavra final —
 Sem paginação de propósito: quem chama está escolhendo numa lista curta,
 não varrendo a base.
 
+**`prospeccao`** (2026-10-22): a resposta também traz
+`{ "prospeccao": [...] }` — mesmos campos de `itens` mais `etapa` (nome da
+coluna do funil, ex. "Prospectar/Entrada") e `descartado`. Só vem preenchido
+quando o termo é um **CNPJ completo** (14 dígitos) que não casou com nenhum
+cliente elegível mas existe parado na triagem da Prospecção; no resto é `[]`.
+Por nome nunca: traria os prospects que o recorte de elegibilidade evita.
+O app mostra "Consultar CNPJ na Receita e aprovar": consulta a Receita,
+mostra os dados oficiais pra conferir e chama o `POST /clientes` abaixo com
+eles e `receita_consultada: true` — casa com a company existente, regrava a
+ficha com os dados da Receita e qualifica o lead (mesmo efeito do Aprovar
+da Prospecção), sem criar nada. Mandar os dados do próprio lead não serve:
+cadastro de prospect costuma vir torto (endereço no campo cidade, sem
+CEP/UF) e o DTO recusa com 400.
+
 ## `POST /integrations/cotacoes/clientes` — cadastro vindo da cotação
 
 Body (`UpsertClienteDto`, snake_case espelhando as colunas de lá): `cnpj`
@@ -212,10 +226,21 @@ Body: `card_id` + `comentarios` (até 200), cada um
 Trello e vira `external_ref`. Cartão sem oportunidade → **404** (a tela
 oferece "Cadastrar" nesse caso).
 
-- **Só acrescenta.** O que já foi espelhado não entra de novo (filtro por
-  `external_ref` + `skipDuplicates` pra corrida), e comentário escrito por
-  gente no CRM (`external_ref` nulo) nunca é tocado. Apertar "Sincronizar"
-  dez vezes tem o mesmo efeito de apertar uma.
+- **Não duplica e nunca toca o que é do CRM.** O que já foi espelhado não
+  entra de novo (filtro por `external_ref` + `skipDuplicates` pra
+  corrida), e comentário escrito por gente no CRM (`external_ref` nulo)
+  nunca é tocado. Apertar "Sincronizar" dez vezes tem o mesmo efeito de
+  apertar uma.
+- **Mensagem corrigida no Trello é atualizada** (2026-10-16): `ref` já
+  espelhado com texto diferente do que chegou ganha o texto novo, e o
+  anterior vira uma linha em `opportunity_comment_edits` (mesmo histórico
+  da edição pela tela, `edited_by_user_id` = sentinela de sistema). A
+  Edge Function `trello-webhook` do gama-webapp trata `updateComment`
+  igual a `commentCard` (relê a conversa inteira e manda pra esta rota),
+  então a correção aparece no card na hora. Se o evento vier sem
+  `data.card`, ela descobre o cartão pela mensagem corrigida
+  (`data.action.id`). Mensagem apagada no Trello continua no card
+  (`deleteComment` segue ignorado).
 - **O autor externo tem coluna própria** (`external_author`, 2026-09-04):
   quem escreveu no Trello não é usuário do CRM, então `author_user_id`
   recebe o sentinela de sistema e o nome de verdade vai em
@@ -225,7 +250,7 @@ oferece "Cadastrar" nesse caso).
 - **A data é a do Trello**, não a do espelhamento — o chat do card fica na
   ordem em que a conversa aconteceu.
 
-Resposta: `{ opportunity_id, novos, recebidos }`.
+Resposta: `{ opportunity_id, novos, editados, recebidos }`.
 
 ## Carga inicial (feita em 2026-08-28)
 

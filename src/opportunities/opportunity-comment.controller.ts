@@ -19,6 +19,7 @@ import { ListCommentFeedQueryDto } from './dto/list-comment-feed-query.dto';
 import { MentionDoneDto } from './dto/mention-done.dto';
 import { SetMentionsDto } from './dto/set-mentions.dto';
 import { PinCommentDto } from './dto/pin-comment.dto';
+import { UpdateCommentDto } from './dto/update-comment.dto';
 import { OpportunityCommentService } from './opportunity-comment.service';
 
 @Controller('opportunities/:opportunityId/comments')
@@ -41,6 +42,32 @@ export class OpportunityCommentController {
         role: membership.role,
       },
       (tx) => this.comments.create(tx, membership, opportunityId, dto),
+    );
+  }
+
+  // Editar o texto (2026-10-16) — só o autor; cada versão anterior fica
+  // no histórico de edição do comentário.
+  @Patch(':commentId')
+  update(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('opportunityId', ParseUUIDPipe) opportunityId: string,
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @Body() dto: UpdateCommentDto,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) =>
+        this.comments.update(
+          tx,
+          membership,
+          opportunityId,
+          commentId,
+          dto.body,
+        ),
     );
   }
 
@@ -160,6 +187,20 @@ export class OpportunityCommentFeedController {
         role: membership.role,
       },
       (tx) => this.comments.feed(tx, membership, query),
+    );
+  }
+
+  // Fixadas e não lidas (2026-10-21) — os números da barra da tela
+  // Pipeline, ao lado do ícone de histórico.
+  @Get('contagem')
+  contagem(@CurrentMembership() membership: MembershipContext) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.comments.contagem(tx, membership),
     );
   }
 

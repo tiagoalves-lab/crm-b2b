@@ -54,3 +54,6 @@ docs/*.xlsx
 # por computador e log local de chamadas. Nunca versionar.
 scripts/telefonia/config.json
 scripts/telefonia/registro.log
+
+# Chrome do puppeteer (baixado no build, ver .puppeteerrc.cjs)
+.cache/

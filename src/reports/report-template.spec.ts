@@ -58,11 +58,20 @@ const BASE: DadosReportDiario = {
       titulo: 'Reunião de fechamento',
       empresa: null,
       responsavel: 'Beltrano',
-      grupo: 'hoje',
+      grupo: 'semana',
       quando: 'hoje',
+    },
+    {
+      titulo: 'Visita técnica',
+      empresa: 'Metalúrgica Exemplo',
+      responsavel: 'Fulano de Tal',
+      grupo: 'proxima-semana',
+      quando: 'qua 24/09',
     },
   ],
   totalTarefasPendentes: 9,
+  tarefasNoRecorte: 3,
+  tarefasRecorteAte: 'dom 28/09',
   tarefasAtrasadas: 1,
   appUrl: 'https://crm.exemplo.com.br',
 };
@@ -104,6 +113,28 @@ describe('template do resumo diário', () => {
     expect(html).toContain('7d');
   });
 
+  it('agrupa as tarefas em atrasadas, esta semana e próxima semana', () => {
+    const html = montarReportDiarioHtml(BASE);
+    expect(html).toContain('Atrasadas');
+    expect(html).toContain('Esta semana');
+    expect(html).toContain('Próxima semana');
+    expect(html).toContain('3 de 9 pendentes');
+    // O que ficou fora do recorte é avisado, não some em silêncio.
+    expect(html).toContain('6 outras pendentes têm prazo depois de dom 28/09');
+    expect(html).not.toContain('no total');
+  });
+
+  it('avisa quando há pendentes mas nenhuma no recorte', () => {
+    const html = montarReportDiarioHtml({
+      ...BASE,
+      tarefas: [],
+      tarefasNoRecorte: 0,
+      tarefasAtrasadas: 0,
+    });
+    expect(html).toContain('Nenhuma tarefa atrasada nem com prazo nesta semana ou na próxima.');
+    expect(html).toContain('9 outras pendentes');
+  });
+
   it('mostra "a definir" e "—" em vez de zero quando não há valor/previsão', () => {
     const html = montarReportDiarioHtml(BASE);
     expect(html).toContain('1 sem valor definido');
@@ -124,6 +155,7 @@ describe('template do resumo diário', () => {
       tarefas: [],
       totalOportunidades: 0,
       totalTarefasPendentes: 0,
+      tarefasNoRecorte: 0,
       tarefasAtrasadas: 0,
       totalEmAberto: 0,
       semValorDefinido: 0,

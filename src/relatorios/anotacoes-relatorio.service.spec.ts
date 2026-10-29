@@ -17,10 +17,14 @@ function membership(role: string, userId = REP): MembershipContext {
   } as MembershipContext;
 }
 
-function criarTx(atividades: unknown[] = []) {
+function criarTx(atividades: unknown[] = [], leads: unknown[] = []) {
   const findMany = jest.fn().mockResolvedValue(atividades);
-  const tx = { activity: { findMany } } as unknown as TenantTx;
-  return { tx, findMany };
+  const leadFindMany = jest.fn().mockResolvedValue(leads);
+  const tx = {
+    activity: { findMany },
+    rawLead: { findMany: leadFindMany },
+  } as unknown as TenantTx;
+  return { tx, findMany, leadFindMany };
 }
 
 function criarPolicy(
@@ -154,5 +158,48 @@ describe('AnotacoesRelatorioService', () => {
         fim: '2026-09-01',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+  it('traz a etapa do funil e as datas de passagem, preferindo o lead em andamento', async () => {
+    const { tx, leadFindMany } = criarTx(
+      [atividade()],
+      [
+        {
+          promotedCompanyId: 'c-1',
+          etapa: 'entrada',
+          status: 'descartado',
+          createdAt: new Date('2026-10-01T12:00:00.000Z'),
+          andamentoAt: null,
+          reuniaoAt: null,
+          qualifiedAt: null,
+          convertedAt: null,
+          discardedAt: new Date('2026-10-02T12:00:00.000Z'),
+        },
+        {
+          promotedCompanyId: 'c-1',
+          etapa: 'reuniao',
+          status: 'novo',
+          createdAt: new Date('2026-09-01T12:00:00.000Z'),
+          andamentoAt: new Date('2026-09-05T12:00:00.000Z'),
+          reuniaoAt: new Date('2026-09-10T12:00:00.000Z'),
+          qualifiedAt: null,
+          convertedAt: null,
+          discardedAt: null,
+        },
+      ],
+    );
+    const service = new AnotacoesRelatorioService(criarPolicy());
+
+    const r = await service.gerar(tx, membership('owner'), PERIODO);
+
+    expect(leadFindMany.mock.calls[0][0].where.promotedCompanyId).toEqual({ in: ['c-1'] });
+    expect(r.funis).toEqual([
+      expect.objectContaining({
+        companyId: 'c-1',
+        etapa: 'reuniao',
+        entradaAt: '2026-09-01T12:00:00.000Z',
+        andamentoAt: '2026-09-05T12:00:00.000Z',
+        reuniaoAt: '2026-09-10T12:00:00.000Z',
+      }),
+    ]);
   });
 });

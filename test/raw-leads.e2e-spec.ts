@@ -414,6 +414,93 @@ describe('RawLeadController (e2e) — CRUD + score (SPEC-CRM-GAMA.md §4.4)', ()
     expect(body.failed).toHaveLength(1);
   }, 15000);
 
+  it('POST /raw-leads/:id/restore devolve o lead descartado à triagem na mesma etapa', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({ razaoSocial: 'Lead a recuperar', situacao: 'ATIVA', uf: 'RS' })
+      .expect(201);
+    const lead = created.body as { id: string };
+    await request(app.getHttpServer())
+      .patch(`/raw-leads/${lead.id}/etapa`)
+      .send({ etapa: 'reuniao' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/raw-leads/${lead.id}/discard`)
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .post(`/raw-leads/${lead.id}/restore`)
+      .expect(201);
+    const body = res.body as {
+      status: string;
+      etapa: string;
+      discardedAt: string | null;
+    };
+    expect(body.status).toBe('novo');
+    expect(body.etapa).toBe('reuniao');
+    expect(body.discardedAt).toBeNull();
+
+    // Recuperar duas vezes não faz sentido — o lead já está na triagem.
+    await request(app.getHttpServer())
+      .post(`/raw-leads/${lead.id}/restore`)
+      .expect(400);
+  }, 15000);
+
+  it('POST /raw-leads/:id/restore recusa quando a empresa já tem outro lead em triagem', async () => {
+    const cnpj = '33444555000404';
+    const dados = {
+      razaoSocial: 'Recuperar duplicado',
+      cnpj,
+      situacao: 'ATIVA',
+      uf: 'RS',
+    };
+    const primeiro = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send(dados)
+      .expect(201);
+    const descartado = primeiro.body as { id: string };
+    await request(app.getHttpServer())
+      .post(`/raw-leads/${descartado.id}/discard`)
+      .expect(201);
+    // O dedupe de create() só olha lead 'novo' — com o primeiro
+    // descartado, o mesmo CNPJ entra de novo como outro lead.
+    await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send(dados)
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .post(`/raw-leads/${descartado.id}/restore`)
+      .expect(400);
+    expect((res.body as { message: string }).message).toContain('outro lead');
+  }, 15000);
+
+  it('POST /raw-leads/:id/restore recusa quando a empresa já saiu da triagem', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/raw-leads')
+      .send({
+        razaoSocial: 'Recuperar já cliente',
+        situacao: 'ATIVA',
+        uf: 'RS',
+      })
+      .expect(201);
+    const lead = created.body as { id: string; promotedCompanyId: string };
+    await request(app.getHttpServer())
+      .post(`/raw-leads/${lead.id}/discard`)
+      .expect(201);
+    await withTenant(prisma, membership.userId, workspace.id, (tx) =>
+      tx.company.update({
+        where: { id: lead.promotedCompanyId },
+        data: { tags: [] },
+      }),
+    );
+
+    const res = await request(app.getHttpServer())
+      .post(`/raw-leads/${lead.id}/restore`)
+      .expect(400);
+    expect((res.body as { message: string }).message).toContain('convertida');
+  }, 15000);
+
   it('POST /raw-leads/bulk-discard descarta em lote', async () => {
     const a = await request(app.getHttpServer())
       .post('/raw-leads')

@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import {
+  MODULOS_SEM_BYPASS_ADMIN,
   resolvePermission,
   toPermissionAction,
   type PermissionAction,
@@ -37,14 +38,17 @@ export type OwnerScopeFilter = { ownerUserId?: string | { in: string[] } };
 export class PolicyService {
   // Síncrono, sem tx — só olha membership.role/membership.permissions
   // (já carregados no MembershipContext pelo TenantMembershipGuard), sem
-  // round-trip novo no banco. owner/admin sempre true (bypass, nunca
-  // consultam a matriz — ver comentário de classe).
+  // round-trip novo no banco. owner sempre true; admin também, exceto nos
+  // MODULOS_SEM_BYPASS_ADMIN (Console fiscal), onde segue a matriz.
   canModule(
     membership: MembershipContext,
     module: PermissionModule,
     action: PermissionAction,
   ): boolean {
-    if (membership.role === 'owner' || membership.role === 'admin') {
+    if (membership.role === 'owner') {
+      return true;
+    }
+    if (membership.role === 'admin' && !MODULOS_SEM_BYPASS_ADMIN.has(module)) {
       return true;
     }
     // membership.permissions é Prisma.JsonValue cru (ver MembershipContext)
@@ -138,7 +142,7 @@ export class PolicyService {
   // (owner/admin/manager) sem filtro (`{}`) — veem todas as empresas do
   // workspace. `manager` é tratado igual a owner/admin AQUI de propósito
   // (pedido do usuário, 2026-08-13): em todo o resto do sistema
-  // (oportunidades, tarefas, leads, contatos) `manager` continua restrito
+  // (oportunidades, tarefas, contatos) `manager` continua restrito
   // à própria equipe via scopeFilter() — não generalizar esse bypass pra
   // lá sem pedido explícito. Nível 4 (sales_rep/readonly) mantém a lógica
   // antiga: dono direto OU oportunidade própria OU CompanyAccess (empresa
@@ -176,6 +180,13 @@ export class PolicyService {
     tx: TenantTx,
     membership: MembershipContext,
   ): Promise<Prisma.RawLeadWhereInput> {
+    // `manager` vê o Funil de vendas inteiro, igual a owner/admin (pedido
+    // do usuário, 2026-10-27): o gerente via 1.755 dos 1.798 leads porque
+    // os cadastrados por admin (SDR) não entram na equipe dele. Mesmo
+    // bypass de companyReadFilter(); a RLS de raw_leads já libera o papel.
+    if (membership.role === 'manager') {
+      return {};
+    }
     const scope = await this.scopeFilter(tx, membership);
     if (scope.ownerUserId === undefined) {
       return {};

@@ -12,7 +12,7 @@ import {
 } from 'class-validator';
 import { ExactlyOneOf } from '../../common/validators/exactly-one-of.decorator';
 import { ITEM_NAME_MAX, ITEMS_MAX } from '../../opportunities/opportunity-tags';
-import { PARTICIPANTS_MAX, TASK_TYPES } from '../task-type.constants';
+import { MEMBERS_MAX, PARTICIPANTS_MAX, TASK_TYPES } from '../task-type.constants';
 
 export class CreateTaskDto {
   @IsString()
@@ -55,6 +55,15 @@ export class CreateTaskDto {
   @ArrayMaxSize(PARTICIPANTS_MAX)
   @IsUUID(undefined, { each: true })
   participantContactIds?: string[];
+
+  // Membros da tarefa (2026-09-29): outros usuários do CRM que veem e
+  // trabalham a tarefa junto com o responsável. Cada um precisa ser membro
+  // ativo (checado no service). Substitui a lista inteira; vazia limpa.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MEMBERS_MAX)
+  @IsUUID(undefined, { each: true })
+  memberUserIds?: string[];
 
   // Default (não informado): quem está criando. Se informado, precisa ser
   // Membership ativo do mesmo workspace (checado no service).

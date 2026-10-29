@@ -72,6 +72,11 @@ export default () => ({
   // caso normal. A variável existe pro ambiente que já traz o chromium do
   // sistema (imagem própria, nixpacks com o pacote) e não quer o download.
   chromiumExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+  // Transcrição e resumo das ligações (docs/telefonia-crm.md, decisão 1.7)
+  // — chave da API do Groq. SEGREDO — nunca em web/, doc ou commit.
+  // Opcional: sem ela as gravações continuam chegando e ficam "pendente"
+  // até a chave existir.
+  groqApiKey: process.env.GROQ_API_KEY,
   // Aceita uma ou mais origens separadas por vírgula (ex.: URL da Vercel +
   // domínio próprio coexistindo, caso 2026-08-06 — crm.gamabrasil.com.br
   // adicionado ao lado de web-gamma-olive-80.vercel.app) — sem isso,

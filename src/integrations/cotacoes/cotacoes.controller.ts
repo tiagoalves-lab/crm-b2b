@@ -10,8 +10,10 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../auth/public.decorator';
 import { CotacoesService } from './cotacoes.service';
+import { AvancarEstagioDto } from './dto/avancar-estagio.dto';
 import { BuscarCompaniesQueryDto } from './dto/buscar-companies-query.dto';
 import { FilaQueryDto } from './dto/fila-query.dto';
+import { ItensValorDto } from './dto/itens-valor.dto';
 import { ListCompaniesQueryDto } from './dto/list-companies-query.dto';
 import { TrelloComentariosDto } from './dto/trello-comentarios.dto';
 import { TrelloStatusQueryDto } from './dto/trello-status-query.dto';
@@ -145,6 +147,34 @@ export class CotacoesController {
   ) {
     this.cotacoes.assertTokenValido(authorization);
     return this.cotacoes.diagnosticoPdf();
+  }
+
+  // Valor dos itens do card a partir do orçamento enviado (2026-10-08).
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Public()
+  @HttpCode(200)
+  @Post('itens-valor')
+  async itensValor(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() dto: ItensValorDto,
+  ) {
+    this.cotacoes.assertTokenValido(authorization);
+    return this.cotacoes.itensValor(dto);
+  }
+
+  // Situação do orçamento vinculado → estágio do card (2026-10-08). Só
+  // AVANÇA: card já à frente (ou fechado) fica onde está — ver
+  // CotacoesService#avancarEstagio.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Public()
+  @HttpCode(200)
+  @Post('estagio')
+  async avancarEstagio(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() dto: AvancarEstagioDto,
+  ) {
+    this.cotacoes.assertTokenValido(authorization);
+    return this.cotacoes.avancarEstagio(dto);
   }
 
   // "Sincronizar" — só acrescenta mensagem nova no chat do card.

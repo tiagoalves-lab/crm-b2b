@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oportunidades compacta</title>
+<!-- Prévia (2026-10-29): tela de Oportunidades cabendo inteira na altura
+     da janela — quadro com rolagem própria por coluna, encerradas fixas
+     embaixo, cards mais baixos. Dados fictícios. -->
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-sunken: #eceef2;
+  --surface-hover: #e2e5eb;
+  --border: #dde1e7;
+  --border-strong: #c5cbd4;
+  --text-primary: #1a1e24;
+  --text-secondary: #5b6472;
+  --text-tertiary: #838c99;
+  --accent: #052df4;
+  --accent-hover: #0322c9;
+  --accent-secondary: #2f5fe0;
+  --blue: #2f80c9;
+  --blue-soft: rgba(47, 128, 201, 0.1);
+  --green: #1f8a4c;
+  --purple: #7a52d6;
+  --danger: #c8402f;
+  --danger-soft: rgba(200, 64, 47, 0.1);
+  --radius: 6px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg); color: var(--text-primary);
+  font-family: var(--font-ui); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+
+/* ---------- Casca ---------- */
+.app-shell { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+.workspace-switch { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.logo { font-weight: 800; font-size: 20px; color: var(--accent); letter-spacing: -0.5px; }
+.logo-sub { font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px; color: var(--text-tertiary); }
+.nav-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--text-tertiary); text-transform: uppercase; padding: 18px 20px 6px; }
+.nav-item { display: flex; align-items: center; justify-content: space-between; margin: 1px 10px; padding: 7px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-primary); }
+.nav-item.active { background: var(--blue-soft); color: var(--accent); border: 1px solid rgba(5,45,244,.25); font-weight: 600; }
+.nav-badge { font-family: var(--font-mono); font-size: 10px; background: var(--surface-sunken); padding: 0 7px; border-radius: 8px; color: var(--text-secondary); }
+.nav-item.active .nav-badge { background: var(--accent); color: #fff; }
+.sidebar-foot { margin-top: auto; border-top: 1px solid var(--border); padding: 14px 20px; font-size: 13px; }
+
+/* NOVO: a área principal ocupa exatamente a altura da janela e reparte
+   entre cabeçalho, indicadores, quadro (flexível) e encerradas. */
+.main { min-width: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+.topbar { padding: 12px 28px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex: none; }
+.topbar > :first-child { margin-right: auto; }
+.page-title { font-size: 18px; font-weight: 600; letter-spacing: -0.2px; }
+.page-sub { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono); }
+.search { width: 520px; max-width: 40vw; height: 32px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); display: flex; align-items: center; padding: 0 10px; font-size: 13px; color: var(--text-tertiary); }
+.btn-primary { background: var(--accent); color: #fff; border-radius: var(--radius); padding: 7px 14px; font-size: 13px; font-weight: 600; }
+
+.content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px 28px 12px; gap: 12px; }
+
+/* ---------- Indicadores (mais baixos) ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; flex: none; }
+.stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 16px; position: relative; overflow: hidden; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.stat-tile::before { content: ""; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: var(--accent); }
+.stat-tile.blue::before { background: var(--blue); }
+.stat-tile.green::before { background: var(--green); }
+.stat-tile.purple::before { background: var(--purple); }
+.stat-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px; }
+.stat-value { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------- Quadro: estica no espaço que sobra, cada coluna rola ---------- */
+.board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(190px, 1fr)); gap: 12px; overflow-x: auto; }
+.col { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; }
+.col-head { padding: 8px 12px; border-bottom: 1px solid var(--border); flex: none; }
+.col-head-top { display: flex; align-items: center; justify-content: space-between; }
+.col-name { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.col-dot { width: 8px; height: 8px; border-radius: 2px; }
+.col-count { font-family: var(--font-mono); font-size: 10px; background: var(--surface-sunken); color: var(--text-secondary); padding: 1px 7px; border-radius: 8px; }
+.col-sum { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); }
+.col-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.col-head-right { display: flex; align-items: center; gap: 6px; }
+.col-list-btn { width: 22px; height: 22px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.col-list-btn:hover { border-color: var(--accent); color: var(--accent); }
+.col-list-btn:disabled { opacity: .4; cursor: default; border-color: var(--border); color: var(--text-secondary); }
+
+/* ---------- Modal "ver etapa em lista" ---------- */
+.overlay { position: fixed; inset: 0; background: rgba(15, 20, 30, .45); display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px; }
+.overlay.open { display: flex; }
+.modal { background: var(--surface); border-radius: 8px; width: min(1100px, 100%); max-height: 100%; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.modal-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.modal-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.modal-search { margin-left: auto; width: 280px; height: 30px; border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0 10px; font-size: 12px; font-family: var(--font-ui); }
+.modal-search:focus { outline: none; border-color: var(--accent); }
+.modal-close { width: 30px; height: 30px; border: none; background: transparent; font-size: 16px; color: var(--text-secondary); cursor: pointer; border-radius: 4px; }
+.modal-close:hover { background: var(--surface-hover); }
+.modal-body { overflow: auto; min-height: 0; }
+.lista { width: 100%; border-collapse: collapse; font-size: 12px; }
+.lista th { position: sticky; top: 0; background: var(--surface-sunken); text-align: left; font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--text-tertiary); padding: 8px 12px; cursor: pointer; user-select: none; white-space: nowrap; }
+.lista th:hover { color: var(--text-primary); }
+.lista th.num, .lista td.num { text-align: right; }
+.lista td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.lista td.emp { white-space: normal; font-weight: 600; min-width: 260px; }
+.lista td.mono { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+.lista td.val { font-family: var(--font-mono); font-weight: 600; color: var(--accent-secondary); }
+.lista tbody tr { cursor: pointer; }
+.lista tbody tr:hover { background: var(--blue-soft); }
+.lista .card-sla { display: inline-block; }
+.modal-foot { display: flex; justify-content: space-between; padding: 10px 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
+.modal-foot b { font-family: var(--font-mono); color: var(--text-primary); }
+
+.col-empty { font-size: 12px; color: var(--text-tertiary); padding: 4px 4px; }
+
+/* ---------- Card compacto ---------- */
+.card { background: var(--surface); border: 1px solid var(--border-strong); border-left: 2px solid var(--accent); border-radius: 5px; padding: 7px 9px; cursor: grab; transition: all .12s; flex: none; }
+.card:hover { border-color: var(--text-tertiary); box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+.card-top { display: flex; align-items: flex-start; gap: 6px; }
+.card-co { font-size: 11px; font-weight: 600; line-height: 1.25; flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-sla { font-family: var(--font-mono); font-size: 9px; font-weight: 600; color: var(--blue); background: var(--blue-soft); border: 1px solid var(--blue); border-radius: 999px; padding: 0 6px; white-space: nowrap; flex: none; line-height: 15px; }
+.card-meta { font-size: 9.5px; color: var(--text-tertiary); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-meta .rep { color: var(--text-secondary); }
+.card-meta .mono { font-family: var(--font-mono); font-size: 9px; }
+.card-val { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--accent-secondary); margin-top: 3px; }
+
+/* ---------- Encerradas: faixa fixa embaixo, rola pro lado ---------- */
+.closed-section { flex: none; border-top: 1px solid var(--border); padding-top: 10px; }
+.closed-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; flex-wrap: wrap; }
+.closed-title { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-tertiary); }
+.legend { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+.closed-summary { display: flex; gap: 14px; flex-wrap: wrap; }
+.cs-stat { font-size: 12px; color: var(--text-secondary); }
+.cs-stat b { font-family: var(--font-mono); font-size: 13px; }
+.period-filter { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.period-nav { display: flex; align-items: center; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
+.period-arrow { width: 26px; height: 24px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); border-radius: 4px; cursor: pointer; }
+.period-arrow:hover { background: var(--surface-hover); }
+.period-label { font-size: 13px; font-weight: 500; min-width: 110px; text-align: center; }
+.period-custom-btn { width: 28px; height: 28px; background: var(--accent); color: #fff; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; }
+
+/* Faixa mais alta (2026-10-29): duas fileiras de cards à vista; passou
+   disso, rola pra baixo dentro da própria faixa. */
+.closed-grid { display: grid; grid-template-columns: repeat(auto-fill, 235px); align-content: start; gap: 8px; height: 150px; overflow-y: auto; padding: 0 4px 6px 0; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.closed-card { display: block; border-radius: 6px; padding: 7px 10px; border: 1px solid; border-left-width: 3px; cursor: pointer; }
+.closed-card.ganho { background: var(--blue-soft); border-color: rgba(61,139,255,.3); border-left-color: var(--blue); }
+.closed-card.perdido { background: var(--danger-soft); border-color: rgba(224,90,74,.3); border-left-color: var(--danger); }
+.closed-card-top { display: flex; align-items: center; gap: 6px; }
+.closed-co { font-size: 11px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.closed-tag { font-family: var(--font-mono); font-size: 8px; font-weight: 600; padding: 1px 6px; border-radius: 4px; letter-spacing: .5px; text-transform: uppercase; color: #fff; flex: none; }
+.closed-tag.ganho { background: var(--blue); }
+.closed-tag.perdido { background: var(--danger); }
+.closed-prod { font-size: 9.5px; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.closed-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.closed-val { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
+.closed-val.ganho { color: var(--blue); }
+.closed-val.perdido { color: var(--danger); }
+.closed-motivo { font-size: 9px; color: var(--danger); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="workspace-switch">
+      <div class="logo">◇ Gama</div>
+      <div class="logo-sub">CRM</div>
+    </div>
+    <div class="nav-label">Comercial</div>
+    <a class="nav-item">Painel</a>
+    <a class="nav-item">Funil de vendas <span class="nav-badge">1777</span></a>
+    <a class="nav-item">Leads convertidos <span class="nav-badge">48</span></a>
+    <a class="nav-item active">Oportunidades <span class="nav-badge">38</span></a>
+    <a class="nav-item">Tarefas <span class="nav-badge">73</span></a>
+    <a class="nav-item">Carteira de clientes <span class="nav-badge">225</span></a>
+    <div class="nav-label">Análise</div>
+    <a class="nav-item">Relatórios</a>
+    <a class="nav-item">Console fiscal</a>
+    <div class="nav-label">Administração</div>
+    <a class="nav-item">Administração</a>
+    <a class="nav-item">Treinamento</a>
+    <div class="sidebar-foot"><b>Tiago</b><br><span style="font-size:11px;color:var(--text-tertiary)">Owner</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="page-title">Oportunidades</div>
+        <div class="page-sub">Ciclo de vida da venda · unidade: R$</div>
+      </div>
+      <div class="search">Buscar oportunidade por empresa…</div>
+      <a class="btn-primary">+ Nova oportunidade</a>
+    </div>
+
+    <div class="content">
+      <div class="stat-grid">
+        <div class="stat-tile green"><span class="stat-label">Taxa de fechamento</span><span class="stat-value">2%</span></div>
+        <div class="stat-tile blue"><span class="stat-label">Valor em aberto</span><span class="stat-value">BRL 25.682.040,00</span></div>
+        <div class="stat-tile purple"><span class="stat-label">Stand by</span><span class="stat-value">0</span></div>
+        <div class="stat-tile"><span class="stat-label">Ganhas / encerradas</span><span class="stat-value">2 / 130</span></div>
+      </div>
+
+      <div class="board" id="board"></div>
+
+      <section class="closed-section">
+        <div class="closed-head">
+          <span class="closed-title">Oportunidades encerradas</span>
+          <span class="legend">azul = fechada · vermelho = perdida</span>
+          <div class="closed-summary">
+            <span class="cs-stat">Encerradas: <b>5</b></span>
+            <span class="cs-stat" style="color:var(--blue)">Fechadas: <b>1</b></span>
+            <span class="cs-stat" style="color:var(--danger)">Perdidas: <b>4</b></span>
+            <span class="cs-stat" style="color:var(--green)">Ganho no período: <b>BRL 0,00</b></span>
+            <span class="cs-stat">Taxa de fechamento: <b>20%</b></span>
+          </div>
+          <div class="period-filter">
+            <div class="period-nav">
+              <span class="period-arrow">←</span>
+              <span class="period-label">outubro de 2026</span>
+              <span class="period-arrow">→</span>
+            </div>
+            <span class="period-custom-btn" title="Personalizar período">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            </span>
+          </div>
+        </div>
+        <div class="closed-grid" id="closed"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="modal-title"></div>
+        <div class="modal-sub" id="modal-sub"></div>
+      </div>
+      <input class="modal-search" id="modal-search" placeholder="Filtrar por empresa ou representante…">
+      <button class="modal-close" id="modal-close" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body">
+      <table class="lista">
+        <thead><tr>
+          <th data-k="co">Empresa</th>
+          <th data-k="rep">Representante</th>
+          <th data-k="abertaKey">Aberta</th>
+          <th data-k="prev">Previsão</th>
+          <th data-k="slaN" class="num">SLA</th>
+          <th data-k="valorN" class="num">Valor</th>
+        </tr></thead>
+        <tbody id="modal-rows"></tbody>
+      </table>
+    </div>
+    <div class="modal-foot">
+      <span id="modal-count"></span>
+      <span>Total: <b id="modal-total"></b></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// Dados fictícios — nenhum nome real de cliente.
+const etapas = [
+  { nome: "Solicitação de Propostas", cor: "#9b7fe0", soma: "—" },
+  { nome: "Elaboração de Propostas", cor: "#2f80c9", soma: "—" },
+  { nome: "Aprovação de Propostas", cor: "#3fb96b", soma: "R$ 0,00" },
+  { nome: "Propostas aprovadas", cor: "#7fb93f", soma: "R$ 1.264.950,00" },
+  { nome: "Negociação", cor: "#e0a030", soma: "R$ 24.417.090,00" },
+  { nome: "Fechamento", cor: "#e05a4a", soma: "—" },
+];
+const nomes = [
+  "ALFA EQUIPAMENTOS E MONTAGENS INDUSTRIAIS LTDA", "BETA SOLUCOES INDUSTRIAIS LTDA",
+  "GAMA METALURGICA LTDA", "DELTA INDUSTRIA E COMERCIO DE MAQUINAS LTDA",
+  "EPSILON MAQUINAS LTDA", "ZETA INDUSTRIA E EQUIPAMENTOS LTDA", "ETA INOX LTDA",
+  "TETA METALURGICA DO SUL LTDA", "IOTA AUTOMACAO LTDA", "KAPPA USINAGEM LTDA",
+  "LAMBDA CALDEIRARIA E MONTAGENS LTDA", "MI FERRAMENTARIA LTDA", "NI ESTRUTURAS METALICAS LTDA",
+  "XI INDUSTRIA MECANICA LTDA", "OMICRON TRANSPORTES E LOCACOES LTDA", "PI COMERCIO DE PECAS LTDA",
+];
+const reps = ["Arlei", "Arlei", "Arlei", "Levi Gomes"];
+const porEtapa = [0, 0, 2, 2, 34, 0];
+let n = 0;
+const board = document.getElementById("board");
+const brl = (v) => "BRL " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+const oppsPorEtapa = [];
+etapas.forEach((e, i) => {
+  const cards = [];
+  const opps = [];
+  for (let k = 0; k < porEtapa[i]; k++, n++) {
+    const valorN = Math.round(((n * 7919) % 1500) + 100) * 1000;
+    const dia = String(1 + ((n * 7) % 28)).padStart(2, "0");
+    const o = {
+      co: nomes[n % nomes.length], rep: reps[n % reps.length],
+      aberta: `${dia}/10/2026`, abertaKey: `2026-10-${dia}`, prev: "—",
+      slaN: (n * 3) % 9, valorN,
+    };
+    opps.push(o);
+    cards.push(`
+      <div class="card" style="border-left-color:${e.cor}">
+        <div class="card-top">
+          <div class="card-co">${o.co}</div>
+          <span class="card-sla" title="Dias corridos da proposta">${o.slaN}d</span>
+        </div>
+        <div class="card-meta"><span class="rep">${o.rep}</span> · <span class="mono">Aberta ${o.aberta} · Prev. ${o.prev}</span></div>
+        <div class="card-val">${brl(o.valorN)}</div>
+      </div>`);
+  }
+  oppsPorEtapa.push(opps);
+  board.insertAdjacentHTML("beforeend", `
+    <div class="col">
+      <div class="col-head">
+        <div class="col-head-top">
+          <div class="col-name"><span class="col-dot" style="background:${e.cor}"></span>${e.nome}</div>
+          <div class="col-head-right">
+            <button class="col-list-btn" data-etapa="${i}" title="Ver etapa em lista" aria-label="Ver ${e.nome} em lista" ${porEtapa[i] ? "" : "disabled"}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            </button>
+            <span class="col-count">${porEtapa[i]}</span>
+          </div>
+        </div>
+        <div class="col-sum">${e.soma}</div>
+      </div>
+      <div class="col-body">${cards.join("") || '<div class="col-empty">Vazio</div>'}</div>
+    </div>`);
+});
+
+const encerradas = [
+  { co: "ALFA IMPLEMENTOS AGRICOLAS LTDA", sla: "2d", ganho: false, datas: "Aberta 07/10/2026 · Perdida 29/10/2026", val: "BRL 884.940,00", motivo: "Cenário atual desfavorável para investimento" },
+  { co: "BETA MAQUINAS E EQUIPAMENTOS PNEUMATICOS LTDA", sla: "1d", ganho: false, datas: "Aberta 14/09/2026 · Perdida 29/10/2026", val: "BRL 0,00", motivo: "Cenário atual desfavorável para investimento" },
+  { co: "GAMA INDUSTRIA E DISTRIBUIDORA DE PECAS AGRICOLAS LTDA", sla: "8d", ganho: true, datas: "Aberta 01/10/2026 · Fechada 13/10/2026", val: "BRL 0,00", motivo: "" },
+  { co: "DELTA LOCACOES DE EQUIPAMENTOS E TRANSPORTES LTDA", sla: "1d", ganho: false, datas: "Aberta 21/09/2026 · Perdida 02/10/2026", val: "BRL 447.570,00", motivo: "Análise de investimento" },
+  { co: "EPSILON INDUSTRIA MECANICA LTDA", sla: "1d", ganho: false, datas: "Aberta 14/09/2026 · Perdida 02/10/2026", val: "BRL 0,00", motivo: "Preço / concorrente" },
+];
+document.getElementById("closed").innerHTML = encerradas.map((o) => {
+  const c = o.ganho ? "ganho" : "perdido";
+  return `
+    <a class="closed-card ${c}" title="${o.co}">
+      <div class="closed-card-top">
+        <span class="closed-co">${o.co}</span>
+        <span class="card-sla">${o.sla}</span>
+        <span class="closed-tag ${c}">${o.ganho ? "Fechada" : "Perdida"}</span>
+      </div>
+      <div class="closed-prod">${o.datas}</div>
+      <div class="closed-foot">
+        <span class="closed-val ${c}">${o.val}</span>
+        ${o.motivo ? `<span class="closed-motivo" title="${o.motivo}">${o.motivo}</span>` : ""}
+      </div>
+    </a>`;
+}).join("");
+
+// ---------- Modal: etapa em lista ----------
+const overlay = document.getElementById("overlay");
+const busca = document.getElementById("modal-search");
+let atual = { etapa: 0, ordem: "valorN", desc: true };
+
+function desenhar() {
+  const q = busca.value.trim().toLowerCase();
+  const lista = oppsPorEtapa[atual.etapa]
+    .filter((o) => !q || o.co.toLowerCase().includes(q) || o.rep.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const x = a[atual.ordem], y = b[atual.ordem];
+      const r = typeof x === "number" ? x - y : String(x).localeCompare(String(y), "pt-BR");
+      return atual.desc ? -r : r;
+    });
+  document.getElementById("modal-rows").innerHTML = lista.map((o) => `
+    <tr title="Abrir oportunidade">
+      <td class="emp">${o.co}</td>
+      <td>${o.rep}</td>
+      <td class="mono">${o.aberta}</td>
+      <td class="mono">${o.prev}</td>
+      <td class="num"><span class="card-sla">${o.slaN}d</span></td>
+      <td class="num val">${brl(o.valorN)}</td>
+    </tr>`).join("");
+  document.getElementById("modal-count").textContent =
+    `${lista.length} ${lista.length === 1 ? "oportunidade" : "oportunidades"}`;
+  document.getElementById("modal-total").textContent = brl(lista.reduce((s, o) => s + o.valorN, 0));
+  document.querySelectorAll(".lista th").forEach((th) => {
+    th.textContent = th.textContent.replace(/ [▲▼]$/, "") + (th.dataset.k === atual.ordem ? (atual.desc ? " ▼" : " ▲") : "");
+  });
+}
+
+board.addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".col-list-btn");
+  if (!btn) return;
+  const e = etapas[Number(btn.dataset.etapa)];
+  atual = { etapa: Number(btn.dataset.etapa), ordem: "valorN", desc: true };
+  document.getElementById("modal-title").innerHTML =
+    `<span class="col-dot" style="background:${e.cor}"></span>${e.nome}`;
+  document.getElementById("modal-sub").textContent = "Clique no título da coluna para ordenar";
+  busca.value = "";
+  desenhar();
+  overlay.classList.add("open");
+  busca.focus();
+});
+document.querySelectorAll(".lista th").forEach((th) => th.addEventListener("click", () => {
+  atual.desc = atual.ordem === th.dataset.k ? !atual.desc : false;
+  atual.ordem = th.dataset.k;
+  desenhar();
+}));
+busca.addEventListener("input", desenhar);
+const fechar = () => overlay.classList.remove("open");
+document.getElementById("modal-close").addEventListener("click", fechar);
+overlay.addEventListener("click", (ev) => { if (ev.target === overlay) fechar(); });
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") fechar(); });
+</script>
+</body>
+</html>

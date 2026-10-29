@@ -40,8 +40,8 @@ Duas constatações que mudaram o plano original:
   número fixo da empresa no visor, não o celular do vendedor.
 - **Ao desligar, o registro nasce sozinho** na Timeline da empresa: quem
   ligou, para qual contato, quando, quanto durou e se foi atendida.
-- **A gravação sobe para o CRM** e fica anexada ao registro, disponível
-  para ouvir na própria ficha.
+- **Toda ligação atendida é gravada** e o áudio sobe para o servidor do
+  CRM. A gravação não aparece em tela nenhuma (decisão 1.8).
 - **Minutos depois, o resumo aparece embaixo** — a conversa é transcrita
   e resumida automaticamente: o que o cliente falou, objeções e próximos
   passos. O SDR corrige/completa se quiser.
@@ -71,12 +71,11 @@ Duas constatações que mudaram o plano original:
 - Fonte → Recurso documentado do MicroSIP.
 
 **1.4**
-- Decisão → Um **programa pequeno roda no computador do SDR**, em segundo
-  plano, ligado ao MicroSIP: ele avisa o CRM quando a chamada começa e
-  termina e envia a gravação. É o que transforma ligação em registro sem
-  ninguém anotar.
-- Fonte → Recomendação do engenheiro — é a única peça que falta para o
-  automático funcionar, já que a linha não passa pelo nosso servidor.
+- Decisão → Um **programa pequeno no computador do SDR** só disca (botão
+  "Ligar") e **envia as gravações**. Ele **não mexe em nada no CRM**: não
+  avisa início nem fim de chamada, não encerra ligação sozinho e não cria
+  registro de ligação recebida. A gravação é um controle à parte.
+- Fonte → Decisão do usuário, 2026-10-27.
 
 **1.5**
 - Decisão → **Toda chamada vira registro**, atendida ou não. Ligação sem
@@ -85,27 +84,39 @@ Duas constatações que mudaram o plano original:
 - Fonte → Recomendação do engenheiro.
 
 **1.6**
-- Decisão → A gravação **não fica no computador do SDR**: sobe para o
-  armazenamento do CRM assim que a chamada termina e é apagada da máquina
-  em seguida. Áudio de conversa com cliente espalhado por desktop é risco
-  sem dono.
+- Decisão → O MicroSIP grava **toda chamada atendida**, em MP3, e a
+  gravação **não fica no computador do SDR**: sobe para um armazenamento
+  fechado do CRM ao fim da ligação e é apagada da máquina assim que o CRM
+  confirma o recebimento. O envio roda **a cada clique em "Ligar"**,
+  levando as gravações das ligações anteriores; se a internet ou o CRM
+  falharem, o arquivo espera na máquina e vai no clique seguinte. A
+  gravação é ligada à ligação registrada pelo número e pelo horário; sem
+  par, entra mesmo assim, sem ligação.
 - Fonte → Recomendação do engenheiro, alinhada à regra do projeto de não
-  deixar dado de cliente fora do sistema.
+  deixar dado de cliente fora do sistema. Envio preso ao "Ligar" porque o
+  antivírus da máquina da SDR bloqueia envio agendado (2026-10-27).
 
 **1.7**
-- Decisão → A transcrição e o resumo da conversa são feitos **na nuvem,
-  pelo Gemini** (o modelo de fala do Google), que recebe o áudio e
-  devolve texto e resumo numa única ida. O resultado entra na Timeline
-  como anotação da ligação.
-- Fonte → Custo verificado: cerca de um centavo por ligação de dois
-  minutos, contra algo perto de dez centavos por minuto nos serviços de
-  transcrição dedicados. O Claude, que já usamos, não recebe áudio.
+- Decisão → A transcrição e o resumo são feitos **pelo Groq**, no
+  servidor, poucos minutos depois de a gravação chegar: o Whisper
+  transforma o áudio em texto literal, e um segundo modelo marca quem
+  falou cada trecho (representante ou cliente) e escreve o resumo (o que
+  foi a ligação, o que o cliente pediu, objeções e próximo passo). O
+  Whisper não separa vozes, então a marcação de quem falou é feita pelo
+  contexto da conversa — boa, mas não exata. Ao Groq vai só o áudio e o
+  texto, nenhum dado de cadastro, e a conta tem a opção de não guardar
+  nada (Zero Data Retention) ligada. O resultado fica guardado junto da
+  gravação; **onde ler ainda não foi decidido**, e nenhuma tela mostra.
+- Fonte → Escolha do usuário, 2026-10-27 (plano gratuito: cerca de 8 h de
+  áudio por dia, sem cartão).
 
 **1.8**
-- Decisão → Telefonia entra como **módulo próprio na tela de Permissões**.
-  Representante liga e ouve **as próprias** chamadas; gerente e
-  administrador ouvem as da equipe.
-- Fonte → Mesma regra de carteira já valendo para empresa, lead e tarefa.
+- Decisão → Telefonia entra como **módulo próprio na tela de Permissões**,
+  com a mesma regra de carteira para o registro das chamadas. **A gravação
+  fica só no servidor**: nenhuma tela do CRM mostra que ela existe, lista
+  ou toca o áudio — nem para o SDR, nem para o gerente.
+- Fonte → Decisão do usuário, 2026-10-26: mostrar a gravação na tela pode
+  constranger quem liga.
 
 **1.9**
 - Decisão → Antes de discar, o CRM **arruma o número** (tira pontuação,
@@ -143,7 +154,9 @@ Duas constatações que mudaram o plano original:
   na primeira máquina.
 
 **Etapa 2 — Gravação e resultado**
-- Áudio sobe para o CRM e fica na ficha; marcação do resultado (atendeu,
+- Gravação pronta no servidor em 2026-10-26; começa a valer na máquina da
+  SDR depois de rodar de novo o instalador. O áudio sobe para o servidor,
+  sem aparecer em tela (decisões 1.6 e 1.8). Falta a marcação do resultado (atendeu,
   não atendeu, caixa postal, número errado), e número errado passando a
   **corrigir o cadastro** em vez de só sumir.
 - Esforço estimado: cerca de 3 dias.
@@ -179,8 +192,9 @@ Duas constatações que mudaram o plano original:
   celular e R$ 0,03 para fixo. Um SDR ligando o dia inteiro (algo entre
   1.500 e 1.800 minutos/mês) fica em torno de R$ 120 a R$ 150/mês em
   minutos.
-- **Transcrição e resumo** — cerca de R$ 0,01 por ligação de dois
-  minutos; numa operação intensa, poucos reais por mês.
+- **Transcrição e resumo** — grátis no plano gratuito do Groq (até cerca
+  de 8 h de áudio por dia). Passando disso, o plano pago custa centavos
+  por ligação.
 - **Nada mais.** Sem mensalidade por usuário, sem custo novo de servidor.
   Para comparar: a plataforma pronta que eu havia recomendado antes
   (API4COM) custaria R$ 169,90 por pessoa/mês — o caminho pela linha que
@@ -208,8 +222,9 @@ Duas constatações que mudaram o plano original:
 - O programa que roda na máquina do SDR fala com o CRM usando uma
   credencial própria daquele usuário, que só permite registrar chamadas
   dele — não dá acesso a mais nada do sistema.
-- A gravação é apagada do computador assim que sobe, e dentro do CRM só
-  abre por link temporário, para quem tem permissão.
+- A gravação é apagada do computador assim que sobe. No CRM ela fica num
+  armazenamento fechado, que só o servidor alcança: não existe link,
+  tela ou rota para ouvir ou baixar o áudio.
 - O áudio enviado para transcrição vai só com o conteúdo da conversa, sem
   cadastro do cliente junto.
 
@@ -220,7 +235,10 @@ Duas constatações que mudaram o plano original:
 - **Depende do computador do SDR.** PC desligado, programa fechado ou
   máquina nova sem instalação = ligação sem registro. Mitigação: o CRM
   mostra na tela quando não está conseguindo falar com o telefone da
-  máquina, em vez de falhar calado.
+  máquina, em vez de falhar calado. Constatado em 2026-10-26: desde a
+  instalação, os avisos de chamada da máquina da SDR nunca chegaram — todas
+  as ligações foram registradas à mão na tela. Causa ainda não
+  investigada (o `registro.log` da máquina é o primeiro lugar a olhar).
 - **Só Windows.** MicroSIP não tem versão para celular nem para Mac. Quem
   estiver na rua continua ligando do celular e registrando à mão, como
   hoje.

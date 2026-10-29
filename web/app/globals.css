@@ -248,6 +248,19 @@ a {
   color: var(--text-tertiary);
 }
 
+/* Selo do endereço beta (lib/ambiente.ts) — some no CRM oficial. */
+.beta-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--purple);
+  background: var(--purple-soft);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+}
+
 .primary-nav {
   display: flex;
   flex-direction: column;
@@ -373,6 +386,94 @@ a {
 
 .logout-link:hover {
   color: var(--danger);
+}
+
+/* ---------- Menu lateral recolhível ----------
+   Mesmo desenho do app de orçamentos: botão « / » no fim do rodapé do
+   menu (nav-collapse-button.tsx). Recolhido, o sidebar vira um trilho de
+   56px só com os ícones; o hover no trilho abre o menu inteiro flutuando
+   por cima da tela, sem empurrar o conteúdo. Os ícones não mudam de
+   lugar entre os dois estados — só aparecem os nomes à direita. */
+.nav-collapse-btn {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 0 2px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.nav-collapse-btn:hover {
+  color: var(--accent-secondary);
+  border-color: var(--border-strong);
+  background: var(--surface-sunken);
+}
+
+.nav-text {
+  white-space: nowrap;
+}
+
+.app-shell.nav-collapsed {
+  grid-template-columns: 56px 1fr;
+}
+
+.nav-collapsed .sidebar {
+  z-index: 40;
+}
+
+.nav-collapsed .workspace-switch {
+  padding: 18px 0;
+  align-items: center;
+}
+
+/* Só o símbolo da logo (o losango), sem o "GAMA" escrito. */
+.nav-collapsed .sidebar-logo {
+  width: 20px;
+  object-fit: cover;
+  object-position: -11px center;
+}
+
+.nav-collapsed .sidebar-tagline,
+.nav-collapsed .beta-badge,
+.nav-collapsed .sidebar-footer > :not(.nav-collapse-btn) {
+  display: none;
+}
+
+.nav-collapsed .sidebar-footer {
+  justify-content: center;
+  padding: 14px 0;
+}
+
+.nav-collapsed .nav-collapse-btn {
+  margin-left: 0;
+}
+
+.nav-collapsed .primary-nav {
+  width: 56px;
+  overflow-x: hidden;
+  background: var(--surface);
+}
+
+.nav-collapsed .primary-nav:not(:hover) :is(.nav-label, .nav-text, .nav-badge) {
+  visibility: hidden;
+}
+
+.nav-collapsed .primary-nav:hover {
+  width: 232px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: 1px 0 0 var(--border-strong), 0 8px 24px rgba(2, 10, 38, 0.12);
 }
 
 .main {
@@ -1912,6 +2013,10 @@ a {
   grid-template-columns: repeat(5, minmax(200px, 1fr));
 }
 
+.board.b6 {
+  grid-template-columns: repeat(6, minmax(190px, 1fr));
+}
+
 .board.b3 {
   grid-template-columns: repeat(3, minmax(220px, 1fr));
 }
@@ -3313,6 +3418,50 @@ button.tag-chip.active {
   margin-top: 10px;
 }
 
+/* "Retomar contato" do Registrar (2026-10-28) — atalhos de data, sugestão
+   tirada do texto e a confirmação quando a pessoa ignora a sugestão. */
+.retorno-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.retorno-titulo {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.retorno-data {
+  max-width: 180px;
+}
+.retorno-sugestao,
+.retorno-confirmar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
+}
+.retorno-confirmar {
+  flex-direction: column;
+  align-items: stretch;
+}
+.retorno-aviso {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
 .drawer-list-item {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -3581,41 +3730,22 @@ button.tag-chip.active {
   margin-top: 22px;
 }
 
-.attach-drop {
-  border: 1.5px dashed var(--border-strong);
-  border-radius: 8px;
-  padding: 16px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.12s;
-  margin-bottom: 12px;
-}
-
-.attach-drop:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.attach-drop .ic {
-  width: 22px;
-  height: 22px;
-  color: var(--text-tertiary);
-  margin-bottom: 6px;
-}
-
-.attach-drop-text {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 /* Bloco de anexos discreto (2026-09-04, pedido do usuário: "está muito
-   grande para inserir um arquivo"). Título e botão na mesma linha; a
-   caixa tracejada de antes (.attach-drop) sobrou só no card de
-   cadastro, onde ainda faz sentido convidar a anexar. */
+   grande para inserir um arquivo"). Título e botão na mesma linha. */
 .attach-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+/* Cadastro (Nova tarefa/oportunidade): botão + dica do Ctrl+V lado a
+   lado, alinhados à esquerda. */
+.attach-pick {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 8px;
 }
@@ -4001,10 +4131,32 @@ button.tag-chip.active {
    sólido ao lado é do "Nova oportunidade", que continua sendo a ação
    principal da tela. */
 .btn-anotacoes {
+  position: relative;
   border-color: var(--blue);
   background: var(--blue-soft);
   color: var(--blue);
   padding: 8px 10px;
+}
+
+/* Selo de anotações não lidas no canto do ícone (2026-10-21), no molde
+   do sino de notificações do Trello. Some quando não há nada por ler. */
+.anotacoes-nao-lidas {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  border: 2px solid var(--surface);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .btn-anotacoes:hover {
@@ -4056,8 +4208,52 @@ button.tag-chip.active {
   gap: 12px;
 }
 
-.opp-empresa-linha > span {
+.opp-empresa-id {
   min-width: 0;
+}
+
+.opp-empresa-nome {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.opp-etapa-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.opp-etapa-tag.concluido {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+/* Tarefa nova dentro do card da oportunidade (2026-10-29). */
+.opp-nova-tarefa {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.opp-nova-tarefa .drawer-section-title {
+  margin-top: 0;
+}
+
+.opp-empresa-cnpj {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .mais-acoes {
@@ -4999,6 +5195,244 @@ button.tag-chip.active {
   }
 }
 
+/* ---------- Card de oportunidade em três colunas (2026-10-16) ---------- */
+/* Pedido do usuário: comentários numa coluna dedicada à direita, como o
+   cartão do Trello — itens · conteúdo · comentários. As áreas do grid
+   mandam na posição (não a ordem do HTML). */
+.opp-grid.com-chat {
+  grid-template-columns: 210px minmax(0, 1.4fr) minmax(320px, 1fr);
+  grid-template-areas: "side main chat";
+}
+
+.opp-grid.com-chat > .opp-main {
+  grid-area: main;
+}
+
+.opp-grid.com-chat > .opp-side {
+  grid-area: side;
+}
+
+.opp-grid.com-chat > .opp-chat {
+  grid-area: chat;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 20px;
+}
+
+/* Título da coluna sem o respiro de cima — é a primeira coisa dela. */
+.opp-chat > .drawer-section-title:first-child {
+  margin-top: 0;
+}
+
+/* Coluna estreita: o botão Enviar desce pra baixo da caixa (ao lado, ele
+   espremia o texto) e o cabeçalho/ações da mensagem quebram linha. */
+.opp-chat .chat-input-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.opp-chat .chat-input-row > .btn {
+  align-self: flex-end;
+}
+
+.opp-chat .chat-msg-head,
+.opp-chat .chat-msg-actions {
+  flex-wrap: wrap;
+}
+
+/* Modal do card: altura fixa na tela e cada coluna rola por conta
+   própria — a conversa longa não empurra os dados do card e o campo de
+   escrever fica sempre à vista no topo da coluna dele. */
+.modal.split {
+  max-width: 1320px;
+  height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+
+.overlay:has(> .modal.split) {
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
+
+.modal.split .modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Aviso/erro do card acima das três colunas. */
+.modal.split .modal-body > .error-banner,
+.modal.split .modal-body > .field-hint {
+  margin: 12px 22px 0;
+}
+
+.modal.split .opp-grid.com-chat {
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+  align-items: stretch;
+}
+
+.modal.split .opp-grid.com-chat > * {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 22px 22px;
+}
+
+.modal.split .opp-grid.com-chat > .opp-side {
+  padding-right: 18px;
+}
+
+/* Fundo da coluna de comentários um tom abaixo do card, como o painel de
+   atividade do Trello; caixa de escrever e mensagens ficam em branco. */
+.modal.split .opp-grid.com-chat > .opp-chat {
+  background: var(--bg);
+}
+
+.modal.split .opp-chat .chat-composer {
+  background: var(--surface);
+}
+
+/* Tela média: a conversa desce pra baixo do conteúdo (ainda ao lado dos
+   itens) e o modal volta a rolar inteiro. */
+@media (max-width: 1000px) {
+  .opp-grid.com-chat {
+    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-areas:
+      "side main"
+      "side chat";
+  }
+
+  .opp-grid.com-chat > .opp-chat {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+
+  .modal.split {
+    height: auto;
+    display: block;
+  }
+
+  .overlay:has(> .modal.split) {
+    padding-top: 60px;
+    padding-bottom: 60px;
+  }
+
+  .modal.split .modal-body {
+    display: block;
+    padding: 22px;
+  }
+
+  .modal.split .modal-body > .error-banner,
+  .modal.split .modal-body > .field-hint {
+    margin: 0 0 14px;
+  }
+
+  .modal.split .opp-grid.com-chat {
+    gap: 24px;
+  }
+
+  .modal.split .opp-grid.com-chat > * {
+    overflow: visible;
+    padding: 0;
+  }
+
+  .modal.split .opp-grid.com-chat > .opp-side {
+    padding-right: 20px;
+  }
+
+  .modal.split .opp-grid.com-chat > .opp-chat {
+    background: none;
+    padding-top: 16px;
+  }
+}
+
+/* Celular: uma coluna só — conteúdo, conversa e por fim os itens. */
+@media (max-width: 760px) {
+  .opp-grid.com-chat {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "main"
+      "chat"
+      "side";
+  }
+
+  .modal.split .opp-grid.com-chat > .opp-side {
+    padding: 16px 0 0;
+  }
+}
+
+/* Edição do texto do comentário (2026-10-16). */
+.chat-edit textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.chat-edit textarea:focus {
+  outline: none;
+}
+
+.chat-edit-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* "(editado)" — abre as versões anteriores. */
+.chat-editado {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.chat-editado:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.chat-versoes {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border-strong);
+  background: var(--bg);
+  border-radius: 0 6px 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-versao-quando {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.chat-versao-texto {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .opp-items {
   list-style: none;
   margin: 0 0 10px;
@@ -5072,6 +5506,29 @@ button.tag-chip.active {
   font-family: var(--font-mono);
   font-size: 14px;
   color: var(--accent-secondary);
+}
+
+/* Valor da oportunidade editável no totalizador (2026-10-28). */
+.opp-item-total {
+  align-items: center;
+}
+
+.opp-item-total input {
+  width: 120px;
+  min-width: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--accent-secondary);
+}
+
+.opp-item-total input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .opp-item-empty {
@@ -5502,6 +5959,26 @@ button.tag-chip.active {
   color: var(--text-secondary);
 }
 
+/* Empresa e Funil mesclados sobre as linhas da mesma empresa. */
+.data-table td.rel-celula-grupo {
+  vertical-align: top;
+  background: var(--surface);
+}
+
+.rel-funil-passagens {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.rel-funil-passagens span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
 @media (max-width: 900px) {
   .rel-layout {
     grid-template-columns: 1fr;
@@ -5510,4 +5987,2030 @@ button.tag-chip.active {
   .rel-menu {
     position: static;
   }
+}
+
+/* Console fiscal (2026-10-21): as tabelas de nota têm 10 a 12 colunas e
+   rolam de lado dentro do painel em vez de estourar a tela; a linha de
+   total fica no rodapé da tabela, destacada como o cabeçalho. */
+.fiscal-tabela {
+  overflow-x: auto;
+}
+
+.data-table tfoot td {
+  padding: 11px 14px;
+  font-weight: 600;
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* Controle de remessas (2026-10-22, docs/console-fiscal.md decisão 7.5) —
+   formato da planilha do usuário: remessa e retorno lado a lado numa
+   tabela compacta, e as notas de retorno numa coluna à direita pra
+   arrastar até a linha. A coluna da direita acompanha a rolagem. */
+/* Abas do Console fiscal (no topo desde 2026-10-22, pra tabela ganhar a
+   largura toda). */
+.fiscal-abas {
+  display: inline-flex;
+  margin-bottom: 18px;
+}
+
+/* Filtros do Console fiscal numa linha só (pedido do usuário,
+   2026-10-22): campos menores, sem título de painel e sem dica embaixo
+   (a dica da data fica no mouse). Em tela estreita quebram de linha. */
+.filtros-painel .panel-body {
+  padding: 10px 14px;
+}
+
+.rel-filtros.filtros-linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+}
+
+.filtros-linha .field {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.filtros-linha .field label {
+  margin-bottom: 3px;
+}
+
+.filtros-linha .field input,
+.filtros-linha .field select {
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+
+.filtros-linha .rel-filtros-acoes {
+  flex: 0 0 auto;
+  padding-top: 0;
+}
+
+.filtros-linha .rel-filtros-acoes .btn {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+/* Cards de resumo compactos (Controle de remessas). */
+.stat-grid-compacto {
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stat-grid-compacto .stat-tile {
+  padding: 10px 14px;
+}
+
+.stat-grid-compacto .stat-value {
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.stat-grid-compacto .stat-tile .sub {
+  margin-top: 2px;
+}
+
+.remessas-painel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 14px;
+  align-items: start;
+}
+
+.remessas-painel.so-leitura {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.remessas-tabela th,
+.remessas-tabela td {
+  padding: 6px 7px;
+}
+
+.remessas-tabela th {
+  letter-spacing: 0.5px;
+}
+
+/* Cabeçalho congelado (pedido do usuário, 2026-10-22): a tabela rola
+   dentro da própria caixa e as duas linhas do cabeçalho ficam paradas. A
+   tabela perde o overflow hidden do .data-table — ele prenderia o
+   cabeçalho na própria tabela em vez da caixa que rola —, e a borda de
+   baixo vira sombra porque borda de célula não acompanha o sticky. */
+.remessas-rolagem {
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+.remessas-tabela {
+  overflow: visible;
+}
+
+.remessas-tabela thead th {
+  position: sticky;
+  z-index: 2;
+  border-bottom: none;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.remessas-tabela thead tr.grupo th {
+  top: 0;
+  box-sizing: border-box;
+  height: 26px;
+  line-height: 14px;
+}
+
+.remessas-tabela thead tr:not(.grupo) th {
+  top: 26px;
+}
+
+.remessas-tabela td {
+  font-size: 12px;
+  vertical-align: top;
+}
+
+.remessas-tabela .grupo th {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.remessas-tabela .inicio-retorno {
+  border-left: 2px solid var(--border-strong);
+}
+
+.remessas-tabela .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.remessas-tabela .nowrap {
+  white-space: nowrap;
+}
+
+.remessas-tabela .empresa {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remessas-tabela .operacao {
+  min-width: 110px;
+}
+
+.remessas-tabela .retorno-linha {
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+/* Descrição do item: uma linha por item, cortada com "…" — a lista
+   inteira fica na dica do mouse. */
+.remessas-tabela .item-linha {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 20px;
+}
+
+/* Durante o arraste: linha que aceita o retorno fica marcada, a do
+   sentido errado apaga, e a que está embaixo do mouse fica em destaque. */
+.remessas-tabela tr.alvo-possivel td {
+  background: var(--accent-soft);
+}
+
+.remessas-tabela tr.alvo-ativo td {
+  background: var(--accent-secondary-soft);
+  box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent);
+}
+
+.remessas-tabela tr.alvo-impossivel td {
+  opacity: 0.4;
+}
+
+.vinculo-desfazer {
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 6px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.vinculo-desfazer:hover {
+  color: var(--danger);
+}
+
+.retornos-coluna {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Card de alertas do Controle de remessas (decisão 7.6): cada regra é um
+   botão que filtra a tabela; o "!" vermelho marca a linha com alerta. */
+.alertas-card {
+  padding: 12px 18px;
+  margin-bottom: 14px;
+}
+
+.alertas-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alertas-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alerta-filtro {
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.alerta-filtro:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+.alerta-filtro:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.alerta-filtro.ativo {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.alerta-filtro .qtd {
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.alerta-sinal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 6px;
+  vertical-align: middle;
+  cursor: help;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  line-height: 1;
+}
+
+button.alerta-sinal {
+  cursor: pointer;
+}
+
+/* Alerta tratado (decisão 7.7): sai do vermelho, fica o ✓ discreto. */
+.alerta-sinal.tratado {
+  background: var(--text-tertiary);
+}
+
+.alerta-filtro.tratados.ativo {
+  background: var(--surface-hover);
+  border-color: var(--text-tertiary);
+  color: var(--text-primary);
+}
+
+.alertas-detalhe-linha > td {
+  background: var(--surface-sunken);
+  padding: 12px 14px !important;
+}
+
+.alertas-detalhe {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  white-space: normal;
+}
+
+.alertas-detalhe-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alerta-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.alerta-item.tratado {
+  border-left-color: var(--text-tertiary);
+}
+
+.alerta-item-cabeca {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+
+.alerta-item-cabeca .btn {
+  margin-left: auto;
+}
+
+.alerta-item-registro {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+.alerta-item-form {
+  margin: 8px 0 0;
+}
+
+.alerta-item-acoes {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.alertas-historico {
+  font-size: 12.5px;
+}
+
+.alertas-historico-titulo {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.alertas-historico ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  .alertas-detalhe {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.remessas-tabela tr.com-alerta td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.remessas-filtro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.remessas-filtro .field {
+  margin-bottom: 0;
+  width: 260px;
+  max-width: 100%;
+}
+
+.retornos-filtro {
+  padding: 10px 12px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.retornos-filtro .field {
+  margin-bottom: 8px;
+}
+
+.retornos-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.retornos-lista {
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.retorno-cartao {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  cursor: grab;
+  user-select: none;
+}
+
+.retorno-cartao:hover {
+  border-color: var(--accent);
+}
+
+.retorno-cartao:active {
+  cursor: grabbing;
+}
+
+.retorno-cartao.ja-ligado {
+  background: var(--surface-sunken);
+}
+
+.retorno-cartao .linha1,
+.retorno-cartao .linha3 {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.retorno-cartao .linha1 {
+  font-weight: 600;
+}
+
+.retorno-cartao .linha2 {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 2px 0;
+}
+
+.retorno-cartao .linha-item {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 2px;
+}
+
+.retorno-cartao .linha3 {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.retorno-cartao .linha4 {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+@media (max-width: 1100px) {
+  .remessas-painel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .retornos-coluna {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* ---------- Membros da tarefa (ficha da tarefa, 2026-09-30) — no card só
+   os escolhidos; a lista completa fica na janela de seleção. */
+.membros-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.membro-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 4px 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-secondary);
+}
+
+.membro-remover {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.membro-remover:hover {
+  opacity: 1;
+}
+
+.membros-lista {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.membros-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.membros-item:last-child {
+  border-bottom: 0;
+}
+
+.membros-item:hover {
+  background: var(--surface-sunken);
+}
+
+/* ---------- Stand by do Pipeline (2026-10-22) ---------- */
+/* Card "Stand by" do topo: rótulo e o ícone que abre a lista na mesma
+   linha. */
+.stat-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stat-tile-icone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: -4px -6px -4px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.stat-tile-icone:hover {
+  background: var(--purple-soft);
+  color: var(--purple);
+  border-color: var(--purple);
+}
+
+.stat-tile-icone .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.standby-lista tbody tr {
+  cursor: pointer;
+}
+
+.standby-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+
+.calendar-opp-tag.standby {
+  color: var(--purple);
+}
+
+/* Controle de remessas pra imprimir / salvar em PDF (/impressao/remessas,
+   pedido do usuário, 2026-10-26): folha A4 deitada, sem menu, cabeçalho da
+   tabela repetido em cada página. */
+.impressao {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.impressao-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+
+.impressao-cabecalho {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 2px solid var(--accent);
+}
+
+.impressao-cabecalho > div:nth-child(2) {
+  flex: 1;
+}
+
+.impressao-cabecalho h1 {
+  font-size: 18px;
+  margin: 0 0 2px;
+}
+
+.impressao-cabecalho p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+}
+
+.impressao-gerado {
+  text-align: right;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.impressao-aviso {
+  color: var(--danger);
+  margin: 0 0 10px;
+}
+
+.impressao-resumo,
+.impressao-tabela {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.impressao-resumo {
+  width: auto;
+  margin-bottom: 14px;
+}
+
+.impressao-resumo th,
+.impressao-resumo td,
+.impressao-tabela th,
+.impressao-tabela td {
+  border: 1px solid var(--border-strong);
+  padding: 3px 5px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.impressao-resumo th,
+.impressao-tabela th {
+  background: var(--surface-sunken);
+  font-weight: 600;
+}
+
+.impressao-resumo td:first-child {
+  white-space: nowrap;
+}
+
+.impressao-resumo tr.total td,
+.impressao-tabela tfoot td {
+  font-weight: 600;
+  background: var(--surface-sunken);
+}
+
+.impressao-resumo .num,
+.impressao-tabela .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.impressao-tabela .nowrap {
+  white-space: nowrap;
+}
+
+.impressao-tabela thead tr.grupo th {
+  text-align: center;
+}
+
+.impressao-tabela .inicio-retorno {
+  border-left: 2px solid var(--text-secondary);
+}
+
+.impressao-tabela .doc {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.impressao-tabela tr {
+  break-inside: avoid;
+}
+
+/* Texto do sinal de alerta da linha (pedido do usuário, 2026-10-26). */
+.impressao-tabela .alertas {
+  min-width: 180px;
+  font-size: 10px;
+}
+
+.impressao-tabela td.alertas div + div {
+  margin-top: 3px;
+}
+
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+
+  @bottom-right {
+    content: "Página " counter(page) " de " counter(pages);
+    font-size: 9px;
+    color: #838c99;
+  }
+}
+
+@media print {
+  html,
+  body {
+    background: #fff;
+  }
+
+  .impressao {
+    max-width: none;
+    padding: 0;
+    font-size: 9px;
+  }
+
+  .impressao-barra {
+    display: none;
+  }
+
+  .impressao-resumo th,
+  .impressao-tabela th,
+  .impressao-resumo tr.total td,
+  .impressao-tabela tfoot td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .impressao-tabela thead {
+    display: table-header-group;
+  }
+
+  /* o total sai uma vez só, no fim, e não no pé de toda página */
+  .impressao-tabela tfoot {
+    display: table-row-group;
+  }
+}
+
+/* Notas de entrada (2026-10-26, docs/console-fiscal.md decisão 7.8): a
+   classificação de cada nota na linha — vermelha quando falta, tracejada
+   quando é só sugestão do CRM — e a ficha lateral com os itens. */
+.entradas-card {
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.entradas-card:hover {
+  border-color: var(--border-strong);
+}
+
+.entradas-card.ativo {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.entradas-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-bottom: 14px;
+}
+
+.entradas-filtros select,
+.entradas-busca {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+.entradas-busca {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.entradas-filtros select {
+  max-width: 280px;
+}
+
+.entradas-tabela td {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.entradas-linha {
+  cursor: pointer;
+}
+
+.entradas-tabela .t-mono,
+.entradas-itens .t-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.entradas-forn {
+  font-weight: 600;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entradas-op {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entradas-cfop {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--surface-hover);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 6px;
+}
+
+.entradas-classe {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.entradas-classe select {
+  width: 220px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font-size: 12.5px;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.entradas-classe select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.entradas-classe select.vazia {
+  color: var(--danger);
+  border-color: rgba(200, 64, 47, 0.45);
+  background: var(--danger-soft);
+}
+
+.entradas-classe select.sugerida {
+  border-style: dashed;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.entradas-classe select:disabled {
+  cursor: default;
+}
+
+.entradas-confirmar {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--accent-secondary);
+  border-radius: 4px;
+  padding: 4px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.entradas-confirmar:hover {
+  background: var(--accent-soft);
+}
+
+.entradas-sugestao {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 2px;
+}
+
+.entradas-ficha {
+  width: min(1280px, 92vw);
+}
+
+.entradas-resumo {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.entradas-resumo > div {
+  background: var(--surface);
+  padding: 10px 14px;
+}
+
+.entradas-resumo b {
+  display: block;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.entradas-explica {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 18px;
+}
+
+.entradas-itens {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.entradas-itens th,
+.entradas-itens td {
+  white-space: nowrap;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.entradas-itens .entradas-item-desc {
+  white-space: normal;
+  min-width: 200px;
+}
+
+.entradas-itens tfoot td {
+  font-weight: 600;
+  background: var(--surface-sunken);
+  padding: 8px 10px;
+}
+
+.entradas-itens .entradas-classe select {
+  width: 170px;
+}
+
+.entradas-historico ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+
+.entradas-historico li {
+  margin-bottom: 8px;
+}
+
+.entradas-ficha-pe {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Matriz de permissões (Administração › Membros, 2026-10-26): rolagem
+   dentro da caixa, com cabeçalho e primeira coluna congelados. A tabela
+   perde o overflow:hidden e o border-collapse do .data-table — os dois
+   impedem o position:sticky de grudar. */
+.matriz-scroll {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.matriz-scroll .data-table {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.matriz-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border-strong);
+}
+
+.matriz-scroll th:first-child,
+.matriz-scroll td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 240px;
+  background: var(--surface);
+  box-shadow: inset -1px 0 0 var(--border-strong);
+}
+
+.matriz-scroll thead th:first-child {
+  z-index: 3;
+  box-shadow: inset -1px -1px 0 var(--border-strong);
+}
+
+/* Cabeçalho congelado em lista comum (Leads convertidos, 2026-10-28):
+   mesmo molde do .remessas-rolagem — a caixa rola e o cabeçalho fica
+   parado. A borda e o canto arredondado passam pra caixa, porque a
+   tabela perde o overflow:hidden e o border-collapse que impedem o
+   sticky de grudar. */
+.tabela-rolagem {
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tabela-rolagem .data-table {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.tabela-rolagem thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: none;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.matriz-grupo td {
+  background: var(--surface-sunken) !important;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* Console fiscal, aba Consultar notas (2026-10-28). Barra com período,
+   empresa, número e item; o resto na janela "Mais filtros" (ícone ao
+   lado, azul quando tem filtro ligado). O período é um campo só que abre
+   um quadro com atalhos à esquerda e, à direita, as datas ou os 12 meses
+   do ano. */
+.consulta-filtros {
+  margin-bottom: 14px;
+}
+
+.consulta-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+  padding: 10px 14px;
+}
+
+.consulta-barra .field {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.consulta-barra .field label {
+  margin-bottom: 3px;
+}
+
+.consulta-barra .field input {
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+
+.consulta-periodo {
+  flex: 1 1 260px;
+}
+
+.consulta-empresa {
+  flex: 2 1 220px;
+}
+
+.consulta-numero {
+  flex: 0 1 110px;
+}
+
+.consulta-item {
+  flex: 2 1 200px;
+}
+
+.consulta-acoes {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.consulta-acoes .btn {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.consulta-mais {
+  margin-left: 0;
+}
+
+.consulta-conta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent);
+  display: inline-grid;
+  place-items: center;
+}
+
+.consulta-ligados {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.consulta-periodo-caixa {
+  position: relative;
+}
+
+.consulta-periodo-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-primary);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.consulta-periodo-btn:hover,
+.consulta-periodo-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.consulta-periodo-btn .ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.consulta-periodo-txt {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.consulta-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: min(440px, calc(100vw - 32px));
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.consulta-pop-atalhos {
+  display: grid;
+  align-content: start;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+}
+
+.consulta-pop-atalhos button {
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.consulta-pop-atalhos button:hover {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+
+.consulta-pop-atalhos button.ativo {
+  background: var(--accent-soft);
+  color: var(--accent-secondary);
+  font-weight: 600;
+}
+
+.consulta-pop-datas,
+.consulta-pop-meses {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.consulta-pop-datas .field {
+  margin-bottom: 0;
+}
+
+.consulta-pop-datas .btn {
+  justify-self: end;
+}
+
+.consulta-ano {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.consulta-ano .btn {
+  font-size: 16px;
+  padding: 2px 10px;
+}
+
+.consulta-meses {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.consulta-meses button {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.consulta-meses button:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  border-color: var(--border-strong);
+}
+
+.consulta-meses button.ativo {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.consulta-meses button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .consulta-pop {
+    grid-template-columns: 1fr;
+  }
+
+  .consulta-pop-atalhos {
+    grid-template-columns: 1fr 1fr;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* Janela "Mais filtros" */
+.consulta-janela .modal-body {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.consulta-secao {
+  border: 0;
+  margin: 0;
+  padding: 14px 0 4px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.consulta-secao:last-child {
+  border-bottom: 0;
+}
+
+.consulta-secao legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.consulta-grade {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0 12px;
+}
+
+.consulta-secao > .field {
+  clear: both;
+}
+
+.consulta-rotulo {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.consulta-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: 100%;
+}
+
+.consulta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  min-height: 38px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.consulta-chips:focus-within {
+  border-color: var(--accent);
+}
+
+.field .consulta-chips input {
+  flex: 1;
+  min-width: 140px;
+  width: auto;
+  border: 0;
+  background: transparent;
+  padding: 3px 5px;
+}
+
+.consulta-marcas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.consulta-marca {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.consulta-marca:hover {
+  color: var(--text-primary);
+}
+
+.consulta-marca.ativo {
+  background: var(--accent-soft);
+  color: var(--accent-secondary);
+  border-color: rgba(5, 45, 244, 0.35);
+  font-weight: 600;
+}
+
+.consulta-par {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.consulta-par span {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.consulta-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 6px;
+}
+
+.consulta-check {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.consulta-check input {
+  margin: 3px 0 0;
+}
+
+.consulta-janela-pe {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.consulta-janela-acoes {
+  display: flex;
+  gap: 10px;
+}
+
+/* Resultado */
+.consulta-resultado-head {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.consulta-resultado-head .panel-title .t-sub {
+  font-weight: 400;
+}
+
+.consulta-resultado-acoes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.consulta-resultado-acoes .consulta-rotulo {
+  margin-bottom: 0;
+}
+
+.consulta-tabela td {
+  vertical-align: top;
+}
+
+.consulta-tabela .pill {
+  margin-top: 3px;
+  margin-right: 4px;
+}
+
+.consulta-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.consulta-tabela .consulta-item {
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.consulta-entrada {
+  color: var(--purple);
+  font-weight: 600;
+}
+
+.consulta-saida {
+  color: var(--accent-secondary);
+  font-weight: 600;
+}
+
+/* Relatório "SLA de Oportunidades" (2026-10-28): histograma em SVG
+   desenhado no servidor. Cores dos tokens do tema, nunca literais. */
+.sla-hist {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  font-family: var(--font-ui);
+}
+
+.sla-barra {
+  fill: var(--accent);
+}
+
+.sla-grade {
+  stroke: var(--border);
+}
+
+.sla-eixo {
+  stroke: var(--border-strong);
+}
+
+.sla-mediana {
+  stroke: var(--text-tertiary);
+  stroke-dasharray: 5 4;
+}
+
+.sla-tick {
+  font-size: 12px;
+  fill: var(--text-secondary);
+}
+
+.sla-valor,
+.sla-dia {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sla-nota {
+  margin-top: 10px;
+}
+
+.sla-tabela {
+  overflow-x: auto;
+}
+
+.sla-tabela .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sla-pendente {
+  color: var(--purple);
+  font-weight: 600;
+}
+
+/* ---------- Oportunidades na altura da janela (2026-10-29) ----------
+   Pedido do usuário: a faixa de encerradas fica sempre à vista, sem
+   rolar a página. A tela vira uma coluna da altura da janela; o quadro
+   estica no que sobra e cada etapa rola por dentro. Cards e indicadores
+   mais baixos. Tudo escopado em .pipeline-tela — o kanban da Prospecção
+   usa as mesmas classes de card e não muda. */
+.pipeline-tela {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.pipeline-tela > .topbar {
+  flex: none;
+}
+
+.pipeline-tela > .content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 28px 12px;
+}
+
+.pipeline-tela .error-banner {
+  flex: none;
+  margin-bottom: 0;
+}
+
+/* Indicadores numa linha só: rótulo à esquerda, número à direita. */
+.pipeline-stats {
+  flex: none;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.pipeline-stats .stat-tile {
+  padding: 9px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.pipeline-stats .stat-tile > :first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.pipeline-stats .stat-value {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin-top: 0;
+  font-size: 20px;
+  white-space: nowrap;
+}
+
+.pipeline-stats .stat-tile .sub {
+  grid-column: 1;
+  grid-row: 2;
+  margin-top: 1px;
+}
+
+/* Quadro */
+.pipeline-tela .board {
+  flex: 1;
+  min-height: 0;
+}
+
+.pipeline-tela .col {
+  min-height: 0;
+}
+
+.pipeline-tela .col-head {
+  padding: 8px 12px;
+}
+
+.pipeline-tela .col-body {
+  padding: 8px;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.col-head-acoes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.col-lista-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.col-lista-btn .ic {
+  width: 13px;
+  height: 13px;
+}
+
+.col-lista-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.col-lista-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Card compacto */
+.pipeline-tela .card {
+  padding: 7px 9px;
+  flex: none;
+}
+
+.pipeline-tela .card-sla {
+  top: 7px;
+  right: 7px;
+  font-size: 9px;
+  padding: 0 6px;
+}
+
+.pipeline-tela .card-co {
+  font-size: 11px;
+  line-height: 1.25;
+  padding-right: 36px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-meta .card-rep {
+  font-size: inherit;
+  color: var(--text-secondary);
+  margin-top: 0;
+}
+
+.card-meta .card-datas {
+  font-size: 9px;
+  margin-top: 0;
+}
+
+.pipeline-tela .card-foot {
+  margin-top: 3px;
+}
+
+.pipeline-tela .card-val {
+  font-size: 10.5px;
+}
+
+.pipeline-tela .card-pendencia {
+  font-size: 9px;
+  padding: 0 6px;
+}
+
+/* Faixa de encerradas: duas fileiras à vista, rola por dentro. */
+.pipeline-tela .closed-section {
+  flex: none;
+  margin-top: 0;
+  padding-top: 10px;
+}
+
+.pipeline-tela .closed-head {
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-bottom: 8px;
+}
+
+.pipeline-tela .closed-summary {
+  gap: 14px;
+  margin-bottom: 0;
+}
+
+.pipeline-tela .cs-stat b {
+  font-size: 13px;
+}
+
+.pipeline-tela .period-range {
+  margin-bottom: 8px;
+}
+
+.pipeline-tela .closed-grid {
+  grid-template-columns: repeat(auto-fill, 235px);
+  align-content: start;
+  gap: 8px;
+  height: 150px;
+  overflow-y: auto;
+  padding: 0 4px 6px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.pipeline-tela .closed-card {
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+
+.pipeline-tela .closed-card-top {
+  gap: 6px;
+  margin-bottom: 0;
+}
+
+.pipeline-tela .closed-co {
+  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipeline-tela .closed-card-top .card-sla {
+  margin: 0;
+  flex: none;
+}
+
+.pipeline-tela .closed-tag {
+  font-size: 8px;
+  padding: 1px 6px;
+  flex: none;
+}
+
+.pipeline-tela .closed-prod {
+  font-size: 9.5px;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipeline-tela .closed-foot {
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pipeline-tela .closed-val {
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.pipeline-tela .closed-motivo {
+  font-size: 9px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tela baixa ou estreita: volta a rolar a página inteira. */
+@media (max-width: 900px), (max-height: 620px) {
+  .pipeline-tela {
+    height: auto;
+  }
+  .pipeline-tela > .content {
+    display: block;
+    padding-bottom: 60px;
+  }
+  .pipeline-stats {
+    margin-bottom: 14px;
+  }
+  .pipeline-tela .col-body {
+    overflow-y: visible;
+  }
+  .pipeline-tela .closed-section {
+    margin-top: 20px;
+  }
+  .pipeline-tela .closed-grid {
+    height: auto;
+  }
+}
+
+/* Modal "etapa em lista" (2026-10-29) — ver pipeline/etapa-lista.tsx. */
+.modal.etapa-lista {
+  max-width: 1100px;
+  max-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+}
+
+.etapa-lista .modal-head {
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+.etapa-lista-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.etapa-lista-busca {
+  width: 280px;
+  max-width: 40vw;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.etapa-lista-busca:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.etapa-lista-corpo {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.etapa-lista-corpo .data-table {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  font-size: 12px;
+}
+
+.etapa-lista-corpo .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.etapa-lista-corpo .data-table td {
+  padding: 8px 14px;
+}
+
+.etapa-lista-data {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.etapa-lista-valor {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent-secondary);
+  white-space: nowrap;
+}
+
+.card-sla.etapa-lista-sla {
+  position: static;
+  display: inline-block;
+}
+
+.etapa-lista-rodape {
+  justify-content: space-between;
+  padding: 10px 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.etapa-lista-rodape b {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
 }

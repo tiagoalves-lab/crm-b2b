@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 
 // Itens da oportunidade e as tags que nascem deles (2026-09-04).
 //
@@ -144,6 +144,7 @@ export function ItemsPanel({
   busyKey,
   disabled,
   canEdit = true,
+  totalizador,
 }: {
   items: ItemsPanelItem[];
   // Devolve false pra manter o texto digitado (ex.: item repetido).
@@ -157,6 +158,11 @@ export function ItemsPanel({
   busyKey?: string | null;
   disabled?: boolean;
   canEdit?: boolean;
+  // Valor da oportunidade como totalizador da coluna (pedido do usuário,
+  // 2026-10-28): o campo Valor saiu do formulário e mora aqui. Quem chama
+  // decide se é campo editável ou a soma dos itens; sem a prop fica o
+  // Total padrão, só com a soma.
+  totalizador?: ReactNode;
 }) {
   const [draft, setDraft] = useState("");
   const comValor = items.filter((item) => item.amount !== null && item.amount !== undefined);
@@ -225,12 +231,12 @@ export function ItemsPanel({
       {/* Total dos itens (2026-09-04): é ele que vira o valor da
           oportunidade — quem soma de verdade é o backend, a cada item
           gravado. */}
-      {total !== null && (
+      {totalizador ?? (total !== null && (
         <div className="opp-item-total">
           <span>Total</span>
           <strong>{brl(total)}</strong>
         </div>
-      )}
+      ))}
       {canEdit && (
         <div className="opp-item-add">
           <input

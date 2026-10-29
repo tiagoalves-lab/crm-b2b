@@ -10,6 +10,7 @@ import { EgestorContatoPromoteService } from './egestor-contato-promote.service'
 import { EgestorContatoSyncService } from './egestor-contato-sync.service';
 import { EgestorHttpService } from './egestor-http.service';
 import { EgestorInteractionLogService } from './egestor-interaction-log.service';
+import { EgestorNfeWebhookRegistry } from './egestor-nfe-webhook.registry';
 import { EgestorSyncController } from './egestor-sync.controller';
 import { EgestorUsuarioService } from './egestor-usuario.service';
 import { EgestorVendaSyncService } from './egestor-venda-sync.service';
@@ -29,6 +30,7 @@ import { EgestorWebhookService } from './egestor-webhook.service';
     EgestorContatoPromoteService,
     EgestorContatoCorrectionService,
     EgestorInteractionLogService,
+    EgestorNfeWebhookRegistry,
     EgestorUsuarioService,
     EgestorVendaSyncService,
     EgestorWebhookEchoService,
@@ -40,6 +42,12 @@ import { EgestorWebhookService } from './egestor-webhook.service';
     EgestorContatoSyncService,
     EgestorContatoPromoteService,
     EgestorContatoCorrectionService,
+    // Console fiscal (src/fiscal/) reaproveita a autenticação, o cliente
+    // HTTP com throttle e o histórico de requisições.
+    EgestorAuthService,
+    EgestorHttpService,
+    EgestorInteractionLogService,
+    EgestorNfeWebhookRegistry,
   ],
 })
 export class EgestorModule {}

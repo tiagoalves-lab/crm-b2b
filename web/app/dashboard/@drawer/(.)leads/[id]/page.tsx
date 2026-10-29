@@ -6,6 +6,8 @@ import OverlayDrawer from "@/app/dashboard/_overlay/overlay-drawer";
 import { discardLeadFormAction } from "@/app/dashboard/leads/actions";
 import ActionForm from "@/app/_components/action-form";
 import ApproveLeadButton from "@/app/dashboard/leads/approve-button";
+import RestoreLeadButton from "@/app/dashboard/leads/restore-button";
+import UnconvertLeadButton from "@/app/dashboard/leads/unconvert-button";
 import SubmitButton from "@/app/_components/submit-button";
 
 export default async function LeadFichaDrawer({
@@ -44,6 +46,8 @@ export default async function LeadFichaDrawer({
                 <ApproveLeadButton leadId={lead.id} />
               </div>
             )}
+            {lead.status === "descartado" && <RestoreLeadButton leadId={lead.id} onSuccess="close" />}
+            {lead.status === "aprovado" && <UnconvertLeadButton leadId={lead.id} onSuccess="close" />}
           </div>
         </div>
       }

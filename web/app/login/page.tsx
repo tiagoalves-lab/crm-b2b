@@ -1,5 +1,6 @@
 import { signIn } from "./actions";
 import SubmitButton from "@/app/_components/submit-button";
+import { IS_BETA } from "@/lib/ambiente";
 
 export default async function LoginPage({
   searchParams,
@@ -18,7 +19,9 @@ export default async function LoginPage({
           width={138}
           height={34}
         />
-        <p className="auth-sub">Entrar no CRM</p>
+        <p className="auth-sub">
+          Entrar no CRM {IS_BETA && <span className="beta-badge">Beta</span>}
+        </p>
 
         {params.error && <p className="auth-error">{params.error}</p>}
 

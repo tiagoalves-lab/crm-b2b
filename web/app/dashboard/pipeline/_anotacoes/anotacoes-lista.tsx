@@ -5,6 +5,7 @@ import { useState } from "react";
 import { companyRazaoSocialName } from "@/lib/api/companies";
 import type { Membership, OpportunityCommentFeedItem } from "@/lib/api/types";
 import { formatDateTimeBR } from "@/lib/format-date";
+import { REFRESH_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import { markAllCommentsReadAction, setCommentReadAction } from "../actions";
 import { TagChips } from "../_detail/item-tags";
 import { TextoTrello } from "../_detail/texto-trello";
@@ -66,6 +67,9 @@ function Anotacao({
         {situacao && <span className="anotacoes-meta">{situacao}</span>}
         <span className="anotacoes-meta direita">
           {autorDaAnotacao(item, memberships)} · {formatDateTimeBR(item.createdAt)}
+          {/* Texto corrigido depois (2026-10-16) — as versões anteriores
+              aparecem no card. */}
+          {item.editedAt ? " · editado" : ""}
         </span>
         <button
           type="button"
@@ -100,6 +104,14 @@ export default function AnotacoesLista({
 
   const naoLidas = items.filter((i) => !i.lido).length;
 
+  // Selo de não lidas na barra do Pipeline (2026-10-21): ler aqui muda o
+  // número de trás. Refresh pendente em vez de refresh na hora — dentro
+  // do modal ele faria a página cheia tomar o lugar (ver
+  // opportunity-detail.tsx); o Toast dispara ao fechar.
+  function marcarRefreshPendente() {
+    sessionStorage.setItem(REFRESH_SESSION_KEY, "1");
+  }
+
   async function alternarLido(item: OpportunityCommentFeedItem) {
     if (ocupado) return;
     setOcupado(item.id);
@@ -111,6 +123,7 @@ export default function AnotacoesLista({
       return;
     }
     setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, lido: res.data.lido } : i)));
+    marcarRefreshPendente();
   }
 
   async function marcarTudo() {
@@ -124,6 +137,7 @@ export default function AnotacoesLista({
       return;
     }
     setItems((prev) => prev.map((i) => ({ ...i, lido: true })));
+    marcarRefreshPendente();
   }
 
   if (items.length === 0) {

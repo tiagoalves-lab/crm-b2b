@@ -174,10 +174,13 @@ Timeline/nota da empresa): níveis 1–3 (owner/admin/manager) enxergam
 **todas** as empresas do workspace sem filtro; a lógica antiga de
 ownership/hierarquia de time (dono direto, oportunidade própria na
 empresa, ou `CompanyAccess` concedido) vale só pro nível 4
-(`sales_rep`/`readonly`). Antes dessa mudança, `manager` via só a própria
-carteira + subordinados, igual a `sales_rep` — o restante dos módulos
-(oportunidades, tarefas, leads, contatos) **não** mudou, `manager`
-continua restrito à própria equipe neles via `PolicyService.scopeFilter()`.
+(`sales_rep`/`readonly`).
+
+A mesma regra vale pro **Funil de vendas** (leads, `PolicyService.rawLeadReadFilter()`
+/`canReachRawLead()`, pedido do usuário em 2026-10-27): `manager` enxerga
+todos os leads do workspace, inclusive os cadastrados por admin/SDR. Nos
+demais módulos (oportunidades, tarefas, contatos) `manager` continua
+restrito à própria equipe via `PolicyService.scopeFilter()`.
 
 ### b) Record-level / ownership
 RBAC sozinho não resolve "sales_rep só vê os próprios deals, manager vê os

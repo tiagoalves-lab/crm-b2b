@@ -4,6 +4,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import type { TenantContextService } from '../../tenancy/tenant-context.service';
 import type { EgestorCartaoCnpjService } from './egestor-cartao-cnpj.service';
 import type { EgestorInteractionLogService } from './egestor-interaction-log.service';
+import type { EgestorNfeWebhookRegistry } from './egestor-nfe-webhook.registry';
 import type { EgestorVendaSyncService } from './egestor-venda-sync.service';
 import type { EgestorWebhookEchoService } from './egestor-webhook-echo.service';
 import type {
@@ -127,6 +128,8 @@ function criarService(overrides: {
   cartaoPreencher?: jest.Mock;
   buscarVendaFresca?: jest.Mock;
   aplicarEventoVenda?: jest.Mock;
+  aplicarEventoNfe?: jest.Mock;
+  semProcessadorNfe?: boolean;
   fakeTxHolder?: ReturnType<typeof criarFakeTx>;
 }) {
   const fakeTxHolder = overrides.fakeTxHolder ?? criarFakeTx();
@@ -192,6 +195,15 @@ function criarService(overrides: {
         .mockResolvedValue({ resultado: 'venda_criada', empresa: 'ACME LTDA' }),
   } as unknown as EgestorVendaSyncService;
 
+  // Módulo "nfe" (2026-10-20) — processado pelo console fiscal através da
+  // ponte EgestorNfeWebhookRegistry.
+  const aplicarEventoNfe =
+    overrides.aplicarEventoNfe ??
+    jest.fn().mockResolvedValue({ resultado: 'nfe_criada', numero: 1201, situacao: 'autorizada' });
+  const nfeWebhook = {
+    obter: jest.fn().mockReturnValue(overrides.semProcessadorNfe ? null : { aplicarEventoNfe }),
+  } as unknown as EgestorNfeWebhookRegistry;
+
   const service = new EgestorWebhookService(
     fakeConfig(overrides.config ?? {}),
     prisma,
@@ -201,6 +213,7 @@ function criarService(overrides: {
     interactionLog,
     cartaoCnpj,
     vendas,
+    nfeWebhook,
   );
 
   return {
@@ -212,6 +225,7 @@ function criarService(overrides: {
     interactionLog,
     cartaoCnpj: preencherSeFaltando,
     vendas,
+    aplicarEventoNfe,
   };
 }
 
@@ -506,6 +520,44 @@ describe('EgestorWebhookService', () => {
             'Webhook vendas.deleted recebido (venda 447, Matriz) — venda excluída ou cancelada no eGestor — removida do histórico de compras.',
         }),
       );
+    });
+
+    it('módulo "nfe": vai pro console fiscal, sem eco e sem pipeline de contatos', async () => {
+      const { service, fakeTxHolder, processing, echo, aplicarEventoNfe, interactionLog } = criarService({});
+
+      const resultado = await service.handleEvent(
+        'filial',
+        fakePayload({ module: 'nfe', codigo: 1201 }),
+      );
+
+      expect(resultado).toEqual({ processResult: 'nfe_criada' });
+      expect(aplicarEventoNfe).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: 'ws-1', role: 'owner' }),
+        'filial',
+        '1201',
+        'updated',
+      );
+      expect(echo.consumirSeEco).not.toHaveBeenCalled();
+      expect(processing.buscarContatoFresco).not.toHaveBeenCalled();
+      expect(fakeTxHolder.linhas[0].processResult).toBe('nfe_criada');
+      expect(interactionLog.registrar).toHaveBeenCalledWith(
+        expect.anything(),
+        'ws-1',
+        expect.objectContaining({
+          action: 'webhook_nfe_processado',
+          summary:
+            'Webhook nfe.updated recebido (NF-e nº 1201, Filial) — nota registrada no Console fiscal. Situação: autorizada.',
+        }),
+      );
+    });
+
+    it('módulo "nfe" sem o console fiscal registrado: falha sem marcar processado (o eGestor reenvia)', async () => {
+      const { service, fakeTxHolder } = criarService({ semProcessadorNfe: true });
+
+      await expect(
+        service.handleEvent('matriz', fakePayload({ module: 'nfe', codigo: 5 })),
+      ).rejects.toThrow(/Console fiscal/);
+      expect(fakeTxHolder.linhas[0].processedAt ?? null).toBeNull();
     });
 
     it('eco (escrita do próprio CRM): marca processado como eco, sem chamar planejamento/processamento', async () => {

@@ -7,7 +7,11 @@ import type { Activity, ActivityType, Prisma } from '@prisma/client';
 import { PolicyService } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
-import { etapaAvancada, etapaDoSubtipo } from '../raw-leads/etapa-funil';
+import {
+  etapaAvancada,
+  etapaDoSubtipo,
+  marcaPassagem,
+} from '../raw-leads/etapa-funil';
 import { CONTACT_REQUIRED_ACTIVITY_SUBTIPOS } from './activity-subtipo.constants';
 import type { CreateActivityDto } from './dto/create-activity.dto';
 
@@ -160,7 +164,7 @@ export class ActivityService {
 
     const lead = await tx.rawLead.findFirst({
       where: { promotedCompanyId: companyId, status: 'novo' },
-      select: { id: true, etapa: true },
+      select: { id: true, etapa: true, andamentoAt: true, reuniaoAt: true },
     });
     if (!lead) return;
 
@@ -174,7 +178,7 @@ export class ActivityService {
     // etapa não anda.
     await tx.rawLead.updateMany({
       where: { id: lead.id },
-      data: { etapa: proxima },
+      data: { etapa: proxima, ...marcaPassagem(proxima, lead) },
     });
   }
 

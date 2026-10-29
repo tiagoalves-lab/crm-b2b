@@ -80,6 +80,8 @@ export interface UpdateOpportunityInput {
   description?: string;
   // Tratamento do SLA ao voltar de Negociação para proposta (2026-09-16).
   slaTratamento?: "erro_elaboracao" | "alteracao_cliente";
+  // Stand by (2026-10-22): true exige expectedCloseDate nova; false retoma.
+  standby?: boolean;
 }
 
 export function updateOpportunity(

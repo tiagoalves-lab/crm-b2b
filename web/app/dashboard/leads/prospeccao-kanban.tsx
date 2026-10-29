@@ -29,33 +29,32 @@ import { moveLeadEtapaAction } from "./actions";
 // a etapa na hora (PATCH /raw-leads/:id/etapa) e, se o backend recusar, o
 // cartão volta pra coluna de onde saiu.
 //
-// A última coluna não aceita soltar: a passagem pra Negociação/Fechamento é
-// "Converter lead", que exige CNPJ e cria a empresa — arrastar não faria
-// isso. Lead descartado não aparece no quadro (tem aba própria).
+// O quadro vai até Qualificado (2026-10-29, pedido do usuário): lead
+// convertido tem menu próprio (Leads convertidos) e saiu daqui junto com a
+// coluna Negociação/Fechamento. Qualificado é onde se faz a triagem final
+// antes de "Converter lead". Lead descartado também não aparece (tem aba
+// própria).
 //
 // Molde: pipeline/pipeline-board.tsx, o outro quadro do CRM. A diferença é
 // que aqui não existe ordem manual dentro da coluna — cartão de lead não
 // tem prioridade gravada. A ordem é a do último contato, do mais recente
 // pro mais antigo (ver porEtapa, no fim do arquivo).
 
-const COLUNA_TRAVADA: RawLeadEtapa = "negociacao";
+const COLUNAS = ETAPAS_FUNIL.filter((e) => e !== "negociacao");
 
 function Card({
   lead,
   contatos,
   representante,
   cor,
-  arrastavel,
 }: {
   lead: RawLead;
   contatos: Contact[];
   representante: string;
   cor: string;
-  arrastavel: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: lead.id,
-    disabled: !arrastavel,
   });
   const tier = effectiveTier(lead);
 
@@ -134,14 +133,13 @@ function Coluna({
   representanteDe: (lead: RawLead) => string;
   cor: string;
 }) {
-  const travada = etapa === COLUNA_TRAVADA;
-  const { setNodeRef, isOver } = useDroppable({ id: etapa, disabled: travada });
+  const { setNodeRef, isOver } = useDroppable({ id: etapa });
   const [limite, setLimite] = useState(PASSO);
   useEffect(() => setLimite(PASSO), [leads.length]);
   const visiveis = leads.slice(0, limite);
 
   return (
-    <div className={isOver && !travada ? "col drag-over" : "col"}>
+    <div className={isOver ? "col drag-over" : "col"}>
       <div className="col-head">
         <div className="col-head-top">
           <div className="col-name">
@@ -150,7 +148,6 @@ function Coluna({
           </div>
           <span className="col-count">{leads.length}</span>
         </div>
-        {travada && <div className="col-sum">entra por &quot;Converter lead&quot;</div>}
       </div>
       <div ref={setNodeRef} className="col-body">
         <SortableContext items={visiveis.map((l) => l.id)} strategy={verticalListSortingStrategy}>
@@ -161,7 +158,6 @@ function Coluna({
               contatos={contatosDe(lead)}
               representante={representanteDe(lead)}
               cor={cor}
-              arrastavel={!travada}
             />
           ))}
         </SortableContext>
@@ -189,8 +185,7 @@ export default function ProspeccaoKanban({
   nomePorUserId,
   cores,
 }: {
-  // Leads em triagem + convertidos: o quadro mostra o funil inteiro, da
-  // entrada ao fechamento. Descartado fica de fora (tem aba própria).
+  // Só leads em triagem — convertido e descartado ficam de fora.
   leads: RawLead[];
   contactsByCompanyId: Record<string, Contact[]>;
   nomePorUserId: Record<string, string>;
@@ -212,13 +207,13 @@ export default function ProspeccaoKanban({
 
   const porEtapa = useMemo(() => {
     const mapa = {} as Record<RawLeadEtapa, RawLead[]>;
-    for (const etapa of ETAPAS_FUNIL) mapa[etapa] = [];
+    for (const etapa of COLUNAS) mapa[etapa] = [];
     for (const lead of items) mapa[lead.etapa]?.push(lead);
     // Ordem da coluna: último contato mais RECENTE primeiro (pedido do
     // usuário, 2026-09-24). Quem nunca teve contato registrado vai pro
     // fim — é fila fria, não topo de prioridade — e entre eles vale a
     // ordem alfabética, que é como a coluna era ordenada inteira antes.
-    for (const etapa of ETAPAS_FUNIL) {
+    for (const etapa of COLUNAS) {
       mapa[etapa].sort((a, b) => {
         if (a.ultimoContato && b.ultimoContato) {
           return b.ultimoContato.localeCompare(a.ultimoContato);
@@ -248,11 +243,11 @@ export default function ProspeccaoKanban({
 
     // O alvo pode ser a coluna (zona vazia) ou outro cartão — no segundo
     // caso vale a etapa daquele cartão. Mesma regra do quadro do Pipeline.
-    const ehColuna = (ETAPAS_FUNIL as string[]).includes(overId);
+    const ehColuna = (COLUNAS as string[]).includes(overId);
     const destino = ehColuna
       ? (overId as RawLeadEtapa)
       : items.find((l) => l.id === overId)?.etapa;
-    if (!destino || destino === lead.etapa || destino === COLUNA_TRAVADA) return;
+    if (!destino || destino === lead.etapa) return;
 
     const anterior = items;
     setItems((prev) => prev.map((l) => (l.id === leadId ? { ...l, etapa: destino } : l)));
@@ -275,8 +270,8 @@ export default function ProspeccaoKanban({
     <>
       {erro && <div className="error-banner">{erro}</div>}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className={`board b${ETAPAS_FUNIL.length}`}>
-          {ETAPAS_FUNIL.map((etapa) => (
+        <div className={`board b${COLUNAS.length}`}>
+          {COLUNAS.map((etapa) => (
             <Coluna
               key={etapa}
               etapa={etapa}

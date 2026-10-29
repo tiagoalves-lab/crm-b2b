@@ -7,6 +7,7 @@ import { listPipelines } from "@/lib/api/pipelines";
 import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
 import type { Membership, Opportunity, Pipeline, Task } from "@/lib/api/types";
 import { dayKeyBR, formatPrazoBR } from "@/lib/format-date";
+import { ehEtapaDeProposta } from "../pipeline/sla";
 import CalendarView from "./calendar-view";
 import TarefasTable from "./tarefas-table";
 import TopbarFilter from "@/app/_components/topbar-filter";
@@ -107,6 +108,9 @@ export default async function TarefasPage({
     tipoLabel: taskTypeLabel(task.tipo),
     vinculoLabel: targetLabel(task),
     assigneeLabel: memberDisplayName(task.assigneeUserId, memberships),
+    membrosLabel: (task.memberUserIds ?? [])
+      .map((id) => memberDisplayName(id, memberships))
+      .join(", "),
     dueLabel: task.dueAt ? formatPrazoBR(task.dueAt, task.dueHasTime) : "—",
     dueClass: dueClass(task),
     nAnexos: task._count?.attachments ?? 0,
@@ -115,8 +119,9 @@ export default async function TarefasPage({
   }));
 
   // Calendário (client component com arrastar-e-soltar, 2026-09-04):
-  // além do título, o card mostra tipo, responsável e cliente.
-  const calendarRows = rows.map((task) => ({
+  // além do título, o card mostra tipo, responsável e cliente. Só
+  // pendentes (pedido do usuário, 2026-10-22) — concluída sai da agenda.
+  const calendarRows = rows.filter((task) => task.status !== "done").map((task) => ({
     id: task.id,
     title: task.title,
     dueAt: task.dueAt,
@@ -127,22 +132,23 @@ export default async function TarefasPage({
     vinculoLabel: targetLabel(task),
   }));
 
-  // Só oportunidade em "Negociação e Fechamento" entra no calendário
-  // (pedido do usuário, 2026-09-16) — as das etapas de proposta ficam só
-  // no quadro. É a ÚLTIMA etapa de cada pipeline, mesma referência do
-  // botão "Marcar Fechada" do card (stage.order === maxOrder).
-  const ultimaEtapa = new Set(
-    pipelines.flatMap((p) => {
-      const maior = Math.max(...p.stages.map((st) => st.order));
-      return p.stages.filter((st) => st.order === maior).map((st) => st.id);
-    }),
+  // Entra no calendário a oportunidade que já passou das etapas de
+  // proposta — Negociação e Fechamento (pedido do usuário, 2026-09-16; as
+  // duas listas eram uma só até 2026-10-22) — e toda a que está em Stand
+  // by, em qualquer etapa: é pelo calendário que ela volta a ser lembrada.
+  const etapaPosProposta = new Set(
+    pipelines.flatMap((p) => p.stages.filter((st) => !ehEtapaDeProposta(st)).map((st) => st.id)),
   );
   // Sem previsão de fechamento não há dia pra cair — fica só no quadro.
   const calendarOpportunities = openOpportunities
-    .filter((opp) => opp.expectedCloseDate && !opp.deletedAt && ultimaEtapa.has(opp.stageId))
+    .filter(
+      (opp) =>
+        opp.expectedCloseDate && !opp.deletedAt && (opp.standbyAt || etapaPosProposta.has(opp.stageId)),
+    )
     .map((opp) => ({
       id: opp.id,
       version: opp.version,
+      standby: Boolean(opp.standbyAt),
       closeDate: opp.expectedCloseDate as string,
       companyLabel: opp.company ? companyRazaoSocialName(opp.company) : "—",
       amountLabel: `${opp.currency} ${Number(opp.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,

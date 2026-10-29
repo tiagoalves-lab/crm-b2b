@@ -56,7 +56,7 @@ export default async function NovoMembroPage({
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
         <div className="form-panel">
-          <MemberForm members={members} actorRole={me.membership.role} />
+          <MemberForm members={members} actor={me.membership} />
         </div>
       </div>
     </>

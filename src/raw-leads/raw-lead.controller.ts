@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import { CartaoCnpjService } from '../companies/cartao-cnpj.service';
 import { CurrentMembership } from '../tenancy/current-membership.decorator';
 import { TenantContextService } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
@@ -31,21 +32,32 @@ export class RawLeadController {
   constructor(
     private readonly rawLeads: RawLeadService,
     private readonly tenantContext: TenantContextService,
+    private readonly cartaoCnpj: CartaoCnpjService,
   ) {}
 
+  // Lead novo com CNPJ já leva o Cartão CNPJ pra ficha da empresa — ver
+  // CartaoCnpjService. Em segundo plano, depois da transação: com a Receita
+  // fora do ar a consulta leva até 20 s, e o lead já está salvo
+  // (preencher() nunca lança).
   @Post()
-  create(
+  async create(
     @CurrentMembership() membership: MembershipContext,
     @Body() dto: CreateRawLeadDto,
   ) {
-    return this.tenantContext.run(
-      {
-        userId: membership.userId,
-        workspaceId: membership.workspaceId,
-        role: membership.role,
-      },
-      (tx) => this.rawLeads.create(tx, membership, dto),
+    const ctx = {
+      userId: membership.userId,
+      workspaceId: membership.workspaceId,
+      role: membership.role,
+    };
+    const lead = await this.tenantContext.run(ctx, (tx) =>
+      this.rawLeads.create(tx, membership, dto),
     );
+    if (lead.promotedCompanyId && lead.cnpj) {
+      void this.cartaoCnpj.preencher(ctx, membership, lead.promotedCompanyId, {
+        forcar: false,
+      });
+    }
+    return lead;
   }
 
   @Get()
@@ -306,21 +318,33 @@ export class RawLeadController {
   }
 
   // Completar o cadastro de um lead em triagem (CNPJ + dados da Receita) —
-  // ver RawLeadService#updateCadastro.
+  // ver RawLeadService#updateCadastro. Veio CNPJ = o usuário consultou a
+  // Receita agora: reconsulta também o Cartão CNPJ da ficha da empresa
+  // (CartaoCnpjService), pras duas telas mostrarem o mesmo dado. Aqui
+  // ESPERA a consulta (2026-10-28), ao contrário do create(): a aba "Dados
+  // cadastrais" do lead mostra esse cartão, e em segundo plano a tela
+  // recarregava antes dele ficar pronto. A Receita acabou de responder pro
+  // navegador, então a espera é curta; preencher() nunca lança.
   @Patch(':id/cadastro')
-  updateCadastro(
+  async updateCadastro(
     @CurrentMembership() membership: MembershipContext,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLeadCadastroDto,
   ) {
-    return this.tenantContext.run(
-      {
-        userId: membership.userId,
-        workspaceId: membership.workspaceId,
-        role: membership.role,
-      },
-      (tx) => this.rawLeads.updateCadastro(tx, membership, id, dto),
+    const ctx = {
+      userId: membership.userId,
+      workspaceId: membership.workspaceId,
+      role: membership.role,
+    };
+    const lead = await this.tenantContext.run(ctx, (tx) =>
+      this.rawLeads.updateCadastro(tx, membership, id, dto),
     );
+    if (dto.cnpj && lead.promotedCompanyId) {
+      await this.cartaoCnpj.preencher(ctx, membership, lead.promotedCompanyId, {
+        forcar: true,
+      });
+    }
+    return lead;
   }
 
   @Post(':id/discard')
@@ -335,6 +359,38 @@ export class RawLeadController {
         role: membership.role,
       },
       (tx) => this.rawLeads.discard(tx, membership, id),
+    );
+  }
+
+  // Desfaz o descarte — ver RawLeadService#restore.
+  @Post(':id/restore')
+  restore(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.rawLeads.restore(tx, membership, id),
+    );
+  }
+
+  // Desfaz a conversão — ver RawLeadService#unconvert.
+  @Post(':id/unconvert')
+  unconvert(
+    @CurrentMembership() membership: MembershipContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tenantContext.run(
+      {
+        userId: membership.userId,
+        workspaceId: membership.workspaceId,
+        role: membership.role,
+      },
+      (tx) => this.rawLeads.unconvert(tx, membership, id),
     );
   }
 }

@@ -307,6 +307,44 @@ describe('PolicyService', () => {
       });
       expect(policy.canModule(m, 'membros', 'criar')).toBe(false);
     });
+
+    it('Console fiscal: admin segue a matriz (nasce ligado), owner não', () => {
+      const adminSemConsole = membership({
+        role: 'admin',
+        permissions: { fiscal: { ver: false, editar: false } },
+      });
+      expect(policy.canModule(adminSemConsole, 'fiscal', 'ver')).toBe(false);
+      expect(policy.canModule(adminSemConsole, 'fiscal', 'editar')).toBe(false);
+      // Nos outros módulos o admin continua com bypass.
+      expect(policy.canModule(adminSemConsole, 'membros', 'criar')).toBe(true);
+
+      const adminPadrao = membership({ role: 'admin', permissions: null });
+      expect(policy.canModule(adminPadrao, 'fiscal', 'ver')).toBe(true);
+
+      const owner = membership({
+        role: 'owner',
+        permissions: { fiscal: { ver: false } },
+      });
+      expect(policy.canModule(owner, 'fiscal', 'ver')).toBe(true);
+    });
+
+    it('Relatórios financeiros: nasce desligado pra todos menos o owner', () => {
+      for (const role of ['admin', 'manager', 'sales_rep', 'readonly'] as const) {
+        const m = membership({ role, permissions: null });
+        expect(policy.canModule(m, 'relatorios_financeiros', 'ver')).toBe(false);
+      }
+      const adminLiberado = membership({
+        role: 'admin',
+        permissions: { relatorios_financeiros: { ver: true } },
+      });
+      expect(policy.canModule(adminLiberado, 'relatorios_financeiros', 'ver')).toBe(true);
+
+      const owner = membership({
+        role: 'owner',
+        permissions: { relatorios_financeiros: { ver: false } },
+      });
+      expect(policy.canModule(owner, 'relatorios_financeiros', 'ver')).toBe(true);
+    });
   });
 
   describe('assertCanDelete', () => {

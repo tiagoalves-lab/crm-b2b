@@ -77,6 +77,14 @@ describe('RLS — isolamento entre workspaces', () => {
     await withWorkspace(workspaceA.id, (tx) =>
       tx.company.deleteMany({ where: { workspaceId: workspaceA.id } }),
     );
+    // Console fiscal — itens da NF-e somem em cascata com a nota.
+    await withWorkspace(workspaceA.id, async (tx) => {
+      await tx.fiscalNfeEmitida.deleteMany({ where: { workspaceId: workspaceA.id } });
+      await tx.fiscalNfseEmitida.deleteMany({ where: { workspaceId: workspaceA.id } });
+      await tx.fiscalNfeRecebida.deleteMany({ where: { workspaceId: workspaceA.id } });
+      await tx.fiscalCfop.deleteMany({ where: { workspaceId: workspaceA.id } });
+      await tx.fiscalRemessaVinculo.deleteMany({ where: { workspaceId: workspaceA.id } });
+    });
     await prisma.workspace.deleteMany({
       where: { id: { in: [workspaceA.id, workspaceB.id] } },
     });
@@ -293,4 +301,127 @@ describe('RLS — isolamento entre workspaces', () => {
       ),
     ).rejects.toThrow();
   }, 20000);
+
+  // 2026-10-20: console fiscal — nota, item, NFS-e e CFOP de A não vazam
+  // pra B, e B não consegue gravar nada com o workspace de A.
+  it('CRÍTICO: tabelas fiscal_* não vazam pro workspace B', async () => {
+    const { nfe, nfse, recebida } = await withWorkspace(workspaceA.id, async (tx) => {
+      await tx.fiscalCfop.create({
+        data: { workspaceId: workspaceA.id, codigo: '5102', receita: true },
+      });
+      const nfe = await tx.fiscalNfeEmitida.create({
+        data: {
+          workspaceId: workspaceA.id,
+          estabelecimento: 'matriz',
+          codEgestor: 1,
+          situacao: 'autorizada',
+          situacaoEgestor: 50,
+          itens: {
+            create: [{ workspaceId: workspaceA.id, nItem: 1, cfop: '5102' }],
+          },
+        },
+      });
+      const nfse = await tx.fiscalNfseEmitida.create({
+        data: {
+          workspaceId: workspaceA.id,
+          estabelecimento: 'filial',
+          codEgestor: 1,
+          situacao: 'autorizada',
+          situacaoEgestor: 10,
+        },
+      });
+      const recebida = await tx.fiscalNfeRecebida.create({
+        data: {
+          workspaceId: workspaceA.id,
+          estabelecimento: 'matriz',
+          chave: '3'.repeat(44),
+          situacao: 'autorizada',
+          itens: {
+            create: [{ workspaceId: workspaceA.id, nItem: 1, cfop: '5102' }],
+          },
+        },
+      });
+      // Vínculo remessa × retorno feito à mão (decisão 7.5).
+      const vinculo = await tx.fiscalRemessaVinculo.create({
+        data: {
+          workspaceId: workspaceA.id,
+          remessaChave: '4'.repeat(44),
+          retornoChave: '3'.repeat(44),
+          acao: 'vincular',
+          alteradoPorUserId: '00000000-0000-4000-8000-000000000000',
+        },
+      });
+      return { nfe, nfse, recebida, vinculo };
+    });
+
+    const vistoPorB = await withWorkspace(workspaceB.id, async (tx) => ({
+      nfe: await tx.fiscalNfeEmitida.findUnique({ where: { id: nfe.id } }),
+      itens: await tx.fiscalNfeEmitidaItem.findMany({ where: { nfeId: nfe.id } }),
+      nfse: await tx.fiscalNfseEmitida.findUnique({ where: { id: nfse.id } }),
+      cfops: await tx.fiscalCfop.findMany({ where: { workspaceId: workspaceA.id } }),
+      recebida: await tx.fiscalNfeRecebida.findUnique({ where: { id: recebida.id } }),
+      itensRecebida: await tx.fiscalNfeRecebidaItem.findMany({ where: { nfeId: recebida.id } }),
+      vinculos: await tx.fiscalRemessaVinculo.findMany({ where: { workspaceId: workspaceA.id } }),
+    }));
+    expect(vistoPorB).toEqual({
+      nfe: null,
+      itens: [],
+      nfse: null,
+      cfops: [],
+      recebida: null,
+      itensRecebida: [],
+      vinculos: [],
+    });
+
+    await expect(
+      withWorkspace(workspaceB.id, (tx) =>
+        tx.fiscalRemessaVinculo.create({
+          data: {
+            workspaceId: workspaceA.id,
+            remessaChave: '5'.repeat(44),
+            retornoChave: '6'.repeat(44),
+            acao: 'vincular',
+            alteradoPorUserId: '00000000-0000-4000-8000-000000000000',
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      withWorkspace(workspaceB.id, (tx) =>
+        tx.fiscalNfeEmitidaItem.create({
+          data: { workspaceId: workspaceA.id, nfeId: nfe.id, nItem: 2 },
+        }),
+      ),
+    ).rejects.toThrow();
+  }, 20000);
+
+  // Varredura do catálogo: pega a tabela nova que alguém esquecer de
+  // proteger, sem depender de lembrar de escrever um teste pra ela
+  // (docs/seguranca.md, decisões 3.1 e 3.4). `_prisma_migrations` é do
+  // próprio Prisma e não é lida pela aplicação.
+  it('CRÍTICO: toda tabela do schema public tem RLS forçada, policy e nenhum acesso da anon key', async () => {
+    const tabelas = await prisma.$queryRaw<
+      { tabela: string; rls: boolean; forcada: boolean; policies: number; anon: boolean; authenticated: boolean }[]
+    >`
+      SELECT c.relname AS tabela,
+             c.relrowsecurity AS rls,
+             c.relforcerowsecurity AS forcada,
+             (SELECT count(*)::int FROM pg_policies p
+               WHERE p.schemaname = 'public' AND p.tablename = c.relname) AS policies,
+             has_table_privilege('anon', c.oid, 'SELECT') AS anon,
+             has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind = 'r'
+         AND c.relname <> '_prisma_migrations'
+    `;
+    // Se a consulta ao catálogo parar de enxergar as tabelas, o teste
+    // passaria de graça — exige um mínimo.
+    expect(tabelas.length).toBeGreaterThan(30);
+    const desprotegidas = tabelas.filter(
+      (t) => !t.rls || !t.forcada || t.policies === 0 || t.anon || t.authenticated,
+    );
+    expect(desprotegidas).toEqual([]);
+  });
 });

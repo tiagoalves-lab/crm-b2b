@@ -7,7 +7,14 @@ import { listMemberships } from "@/lib/api/memberships";
 import { listPipelines } from "@/lib/api/pipelines";
 import { ETAPA_LABEL, listRawLeads } from "@/lib/api/raw-leads";
 import { listTasks, taskTypeLabel } from "@/lib/api/tasks";
-import type { Activity, Membership, Opportunity, RawLeadEtapa, Task } from "@/lib/api/types";
+import type {
+  Activity,
+  Membership,
+  Opportunity,
+  RawLead,
+  RawLeadEtapa,
+  Task,
+} from "@/lib/api/types";
 import { dayKeyBR } from "@/lib/format-date";
 import RecentActivityTable from "./recent-activity-table";
 import WeeklyTasksTable from "./weekly-tasks-table";
@@ -173,6 +180,18 @@ function describeActivity(
     };
   }
 
+  if (action === "lead_unconverted") {
+    const razaoSocial = payload.razaoSocial as string | undefined;
+    return {
+      id: activity.id,
+      kind: "Prospecção",
+      text: `Lead desconvertido${razaoSocial ? ` — ${razaoSocial}` : ""}`,
+      company: companyLabel,
+      occurredAt: activity.occurredAt,
+      href: companyHref ?? "/dashboard/leads",
+    };
+  }
+
   if (typeof payload.title === "string") {
     const taskId = payload.taskId as string | undefined;
     return {
@@ -242,12 +261,15 @@ function fmtWhen(iso: string): string {
 // listagens que Pipeline/Tarefas/Leads já usam (+ /activities sem
 // filtro, ver ActivityQueryService#findAll, pro card "Últimas
 // atividades"), sem endpoint novo dedicado a este painel.
-// Janelas de tempo do funil (2026-09-21). 12 meses é o padrão porque o
-// ciclo da venda de máquina é de 9 a 12 meses — janela menor mostra o
-// funil zerado. "tudo" existe pra conferência, não pra leitura do dia.
+// Janelas de tempo do funil. Semana e 1 mês entraram em 2026-10-13 (o CRM
+// só tem dados desde ago/2026, então as janelas longas mostravam todas o
+// mesmo número); 12 meses virou 6 meses no mesmo pedido. "tudo" existe pra
+// conferência, não pra leitura do dia.
 const JANELAS = [
+  { chave: "semana", label: "Semana" },
+  { chave: "1m", label: "1 mês" },
   { chave: "3m", label: "3 meses" },
-  { chave: "12m", label: "12 meses" },
+  { chave: "6m", label: "6 meses" },
   { chave: "ano", label: "Este ano" },
   { chave: "tudo", label: "Tudo" },
 ] as const;
@@ -261,7 +283,7 @@ export default async function DashboardPage({
   const { janela: janelaParam } = await searchParams;
   const janela: Janela = JANELAS.some((j) => j.chave === janelaParam)
     ? (janelaParam as Janela)
-    : "12m";
+    : "6m";
   const token = await getServerAccessToken();
   const [
     { items: pipelines },
@@ -413,14 +435,15 @@ export default async function DashboardPage({
   //   2. o MOVIMENTO dentro da janela (entrou / avançou / saiu);
   //   3. a PENDÊNCIA da faixa, com link pra tela já filtrada.
   //
-  // Janela padrão de 12 meses: o ciclo da máquina é de 9 a 12 meses, então
-  // um funil mensal aparece zerado e não orienta nada.
+  // Janela padrão de 6 meses (era 12 até 2026-10-13, pedido do usuário).
   const inicioJanela = (() => {
     const d = new Date();
     if (janela === "tudo") return null;
-    if (janela === "3m") d.setMonth(d.getMonth() - 3);
-    else if (janela === "ano") return new Date(d.getFullYear(), 0, 1);
-    else d.setMonth(d.getMonth() - 12);
+    if (janela === "ano") return new Date(d.getFullYear(), 0, 1);
+    if (janela === "semana") d.setDate(d.getDate() - 7);
+    else if (janela === "1m") d.setMonth(d.getMonth() - 1);
+    else if (janela === "3m") d.setMonth(d.getMonth() - 3);
+    else d.setMonth(d.getMonth() - 6);
     d.setHours(0, 0, 0, 0);
     return d;
   })();
@@ -431,10 +454,56 @@ export default async function DashboardPage({
   };
 
   const todosLeads = [...leadsNovos, ...leadsAprovados, ...leadsDescartadosItems];
-  const entraramNaJanela = todosLeads.filter((l) => naJanela(l.createdAt)).length;
-  const qualificadosNaJanela = todosLeads.filter((l) => naJanela(l.qualifiedAt)).length;
   const convertidosNaJanela = leadsAprovados.filter((l) => naJanela(l.convertedAt)).length;
-  const descartadosNaJanela = leadsDescartadosItems.filter((l) => naJanela(l.discardedAt)).length;
+
+  // ── Movimento de cada faixa da prospecção (2026-10-21) ──────────────────
+  // O usuário leu "1.347 entraram, 585 saíram, 0,0% avançou" em
+  // Prospectar/Entrada com 917 empresas em Andamento: as faixas do meio
+  // não tinham data de passagem, então ninguém avançava, e todo descarte
+  // caía na primeira faixa. Agora cada faixa conta o próprio movimento.
+  const ORDEM_FAIXAS: RawLeadEtapa[] = ["entrada", "andamento", "reuniao", "qualificado", "negociacao"];
+  const posicao = (l: RawLead) => ORDEM_FAIXAS.indexOf(l.etapa);
+  const ms = (iso: string) => new Date(iso).getTime();
+  const datasGravadas = (l: RawLead) => [
+    l.createdAt,
+    l.andamentoAt,
+    l.reuniaoAt,
+    l.qualifiedAt,
+    l.convertedAt,
+  ];
+  // Quando o lead entrou na faixa. Sem data gravada (passagem anterior a
+  // 2026-10-21 sem registro na Timeline), a faixa em que ele está — ou
+  // parou, se descartado — usa a data de criação: ele com certeza passou
+  // por ali depois de criado, então a passagem só conta quando o lead
+  // inteiro é do período, e lead antigo nunca ganha movimento inventado.
+  // Negociação fica fora dessa regra: conversão sem data segue fora do
+  // movimento (linha própria embaixo do funil).
+  const entrouNaFaixa = (l: RawLead, faixa: number): string | null =>
+    datasGravadas(l)[faixa] ?? (faixa < 4 && posicao(l) === faixa ? l.createdAt : null);
+  // Quando saiu da faixa pra frente: a primeira faixa seguinte em que
+  // entrou depois dela. Quem pulou a faixa (arrastou de Prospectar direto
+  // pra Reunião, converteu sem prazo) não avançou de onde nunca esteve —
+  // é a decisão 6.10, que já valia pra Qualificado ("3400% avançou",
+  // 2026-10-13, era todo convertido contado como qualificado).
+  const saiuPraFrente = (l: RawLead, faixa: number): string | null => {
+    const desde = entrouNaFaixa(l, faixa);
+    if (!desde) return null;
+    const seguintes = datasGravadas(l)
+      .slice(faixa + 1)
+      .filter((d): d is string => d !== null && ms(d) >= ms(desde));
+    if (seguintes.length > 0) return seguintes.reduce((a, b) => (ms(a) <= ms(b) ? a : b));
+    // Está numa faixa à frente sem data gravada dela: mesma regra da
+    // criação de entrouNaFaixa.
+    const pos = posicao(l);
+    return pos > faixa && pos < 4 ? l.createdAt : null;
+  };
+  const movimentoDaFaixa = (faixa: number) => ({
+    entrou: todosLeads.filter((l) => naJanela(entrouNaFaixa(l, faixa))).length,
+    avancou: todosLeads.filter((l) => naJanela(saiuPraFrente(l, faixa))).length,
+    // O descartado guarda a etapa em que parou: é dali que ele saiu.
+    saiu: leadsDescartadosItems.filter((l) => naJanela(l.discardedAt) && posicao(l) === faixa)
+      .length,
+  });
   // Conversões feitas antes de 2026-09-21, quando as datas passaram a ser
   // gravadas. Ficam fora do movimento de propósito — inventar data
   // falsearia a série. Aparecem numa linha só, embaixo do funil.
@@ -469,11 +538,9 @@ export default async function DashboardPage({
   // "já falei com a empresa" e "tem reunião marcada" —, que a régua antiga
   // não sabia representar.
   //
-  // O MOVIMENTO no período continua saindo das datas de passagem
-  // (qualifiedAt/convertedAt/discardedAt, 2026-09-21). Andamento e Reunião
-  // não têm data de passagem própria: mostram só o estoque, e as pastilhas
-  // de movimento não são desenhadas quando zeradas — inventar número ali
-  // seria pior que não mostrar.
+  // O MOVIMENTO no período sai das datas de passagem de cada faixa
+  // (movimentoDaFaixa acima); as pastilhas de movimento não são
+  // desenhadas quando zeradas.
   const emTriagemPorEtapa = (etapa: RawLeadEtapa) =>
     leadsNovos.filter((l) => l.etapa === etapa).length;
 
@@ -482,9 +549,7 @@ export default async function DashboardPage({
       nome: ETAPA_LABEL.entrada,
       detalhe: "Empresas na fila, ainda sem nenhum contato registrado",
       agora: emTriagemPorEtapa("entrada"),
-      entrou: entraramNaJanela,
-      avancou: 0,
-      saiu: descartadosNaJanela,
+      ...movimentoDaFaixa(0),
       valor: null as number | null,
       acao:
         emTriagemPorEtapa("entrada") > 0
@@ -499,9 +564,7 @@ export default async function DashboardPage({
       nome: ETAPA_LABEL.andamento,
       detalhe: "SDR já registrou contato, sem reunião marcada",
       agora: emTriagemPorEtapa("andamento"),
-      entrou: 0,
-      avancou: 0,
-      saiu: 0,
+      ...movimentoDaFaixa(1),
       valor: null as number | null,
       acao: null,
     },
@@ -509,9 +572,7 @@ export default async function DashboardPage({
       nome: ETAPA_LABEL.reuniao,
       detalhe: "Reunião marcada ou realizada com o cliente",
       agora: emTriagemPorEtapa("reuniao"),
-      entrou: 0,
-      avancou: 0,
-      saiu: 0,
+      ...movimentoDaFaixa(2),
       valor: null as number | null,
       acao: null,
     },
@@ -519,9 +580,7 @@ export default async function DashboardPage({
       nome: ETAPA_LABEL.qualificado,
       detalhe: "Prazo de investimento informado ao SDR",
       agora: emTriagemPorEtapa("qualificado"),
-      entrou: qualificadosNaJanela,
-      avancou: convertidosNaJanela,
-      saiu: 0,
+      ...movimentoDaFaixa(3),
       valor: null as number | null,
       acao:
         emTriagemPorEtapa("qualificado") > 0
@@ -544,7 +603,7 @@ export default async function DashboardPage({
         convertidosSemProposta > 0
           ? {
               texto: `${convertidosSemProposta} convertidos sem proposta cadastrada`,
-              href: "/dashboard/leads?tier=convertidos",
+              href: "/dashboard/leads-convertidos",
               rotulo: "Abrir convertidos",
             }
           : propostasSemValor + propostasSemPrazo > 0
@@ -576,7 +635,7 @@ export default async function DashboardPage({
   });
   const maxEtapaValor = Math.max(...porEtapa.map((f) => f.valor), 1);
   const pct = (n: number) => `${n.toFixed(1).replace(".", ",")}%`;
-  const janelaLabel = JANELAS.find((j) => j.chave === janela)?.label ?? "12 meses";
+  const janelaLabel = JANELAS.find((j) => j.chave === janela)?.label ?? "6 meses";
 
   // WeeklyTasksTable/RecentActivityTable são client components (linha
   // inteira clicável) — só dados planos atravessam a fronteira, nada de
@@ -600,6 +659,12 @@ export default async function DashboardPage({
       id: described.id,
       kind: described.kind,
       userLabel: a.actorUserId ? memberDisplayName(a.actorUserId, memberships) : "—",
+      // Tarefa: quem está com ela; o resto, quem fez (2026-10-29).
+      responsavelLabel: a.taskAssigneeUserId
+        ? memberDisplayName(a.taskAssigneeUserId, memberships)
+        : a.actorUserId
+          ? memberDisplayName(a.actorUserId, memberships)
+          : "—",
       text: described.text,
       company: described.company,
       when: fmtWhen(described.occurredAt),
@@ -685,7 +750,10 @@ export default async function DashboardPage({
                 // dentro da janela, quanto avançou. Não usa mais o estoque
                 // acumulado — era o que fazia a taxa cair sozinha a cada
                 // lead importado.
-                const taxa = faixa.entrou > 0 ? (faixa.avancou / faixa.entrou) * 100 : null;
+                // Acima de 100% quer dizer que avançou quem entrou ANTES da
+                // janela — a taxa não se aplica, mostra "—".
+                const taxaBruta = faixa.entrou > 0 ? (faixa.avancou / faixa.entrou) * 100 : null;
+                const taxa = taxaBruta !== null && taxaBruta <= 100 ? taxaBruta : null;
                 return (
                   <div className="funil-nivel" key={faixa.nome}>
                     <div className="funil-caixa" style={{ width: LARGURAS_FUNIL[i] }}>
@@ -695,11 +763,9 @@ export default async function DashboardPage({
                       </div>
                       <div className="funil-numeros">
                         {/* Pastilha zerada não é desenhada (2026-09-23):
-                            com cinco faixas, Andamento e Reunião não têm
-                            data de passagem própria, e "+0 entraram" ao
-                            lado do estoque só confunde. "Hoje" sempre
-                            aparece — é o estoque da faixa, e zero ali é
-                            informação. */}
+                            "+0 entraram" ao lado do estoque só confunde.
+                            "Hoje" sempre aparece — é o estoque da faixa,
+                            e zero ali é informação. */}
                         {faixa.entrou > 0 && (
                           <span className="fchip entrou">
                             +{faixa.entrou.toLocaleString("pt-BR")} <small>entraram</small>

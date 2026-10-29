@@ -175,6 +175,9 @@ export interface Opportunity {
   description: string | null;
   status: OpportunityStatus;
   lostReason: string | null;
+  // Stand by (2026-10-22): quando foi colocada em espera. Continua "open",
+  // mas sai do quadro do Pipeline; null = ativa.
+  standbyAt: string | null;
   // De onde a oportunidade veio (2026-09-18). null = ciclo comercial
   // corrente, nascida no CRM. "historico-cotacoes" = carga das cotações de
   // jul-set/2025, que fica fora do funil do Painel.
@@ -213,6 +216,21 @@ export interface OpportunityComment {
   mentionedUserIds?: string[];
   mentionsDoneUserIds?: string[];
   createdAt: string;
+  // Edição do texto com histórico (2026-10-16): data da última edição
+  // (nulo = nunca editado) e cada versão anterior, da mais antiga pra mais
+  // nova. `edits` só vem no card (GET da oportunidade e PATCH do texto);
+  // as outras rotas devolvem o comentário sem ele.
+  editedAt?: string | null;
+  edits?: OpportunityCommentEdit[];
+}
+
+export interface OpportunityCommentEdit {
+  id: string;
+  bodyBefore: string;
+  bodyAfter: string;
+  // Usuário de sistema quando a correção veio do Trello.
+  editedByUserId: string;
+  editedAt: string;
 }
 
 // Linha do histórico de anotações do Pipeline (2026-09-09): o comentário
@@ -265,6 +283,9 @@ export interface Task {
   // Pessoas envolvidas na reunião (2026-09-24) — outros contatos da mesma
   // empresa, além do contato principal. Vazio nos outros tipos.
   participantContactIds: string[];
+  // Membros da tarefa (2026-09-29) — outros usuários que veem e trabalham
+  // a tarefa junto com o responsável.
+  memberUserIds: string[];
   assigneeUserId: string;
   companyId: string | null;
   opportunityId: string | null;
@@ -303,6 +324,10 @@ export interface TaskComment {
 export interface TaskWithDetails extends Task {
   checklistItems: TaskChecklistItem[];
   comments: TaskComment[];
+  // Empresa direta ou da oportunidade (2026-09-29) — rótulo da ficha
+  // mesmo quando quem abre é membro da tarefa e não enxerga a empresa.
+  company?: CompanyRef | null;
+  opportunity?: OpportunityRef | null;
 }
 
 export interface Activity {
@@ -315,6 +340,8 @@ export interface Activity {
   // Só em GET /activities (lista) — rótulo de empresa em "Últimas atividades".
   company?: CompanyRef | null;
   opportunity?: OpportunityRef | null;
+  // Só em GET /activities (lista) — em evento de tarefa, quem está com ela.
+  taskAssigneeUserId?: string | null;
   // Contato vinculado (2026-08-05) — obrigatório no back quando
   // payload.subtipo é ligação/reunião/visita/e-mail; o nome pra exibição
   // já vem denormalizado em payload.contatoNome (sem precisar de JOIN).
@@ -421,6 +448,9 @@ export interface RawLead {
   // Datas de passagem de faixa do funil (2026-09-21) — é o que permite ao
   // Painel medir MOVIMENTO num período em vez de estoque acumulado.
   // null = passagem anterior a este registro, ou que não aconteceu.
+  // Andamento e Reunião desde 2026-10-21 (vale a primeira entrada).
+  andamentoAt: string | null;
+  reuniaoAt: string | null;
   qualifiedAt: string | null;
   convertedAt: string | null;
   discardedAt: string | null;

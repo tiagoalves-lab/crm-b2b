@@ -15,7 +15,7 @@ export default async function OpportunityDetailModal({
 
   return (
     <OpportunityDetailProvider data={data} isModal>
-      <OverlayModal title={companyRazaoSocialName(data.company)} wide xl>
+      <OverlayModal title={companyRazaoSocialName(data.company)} split>
         <DetailBody />
       </OverlayModal>
     </OpportunityDetailProvider>

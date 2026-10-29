@@ -21,9 +21,12 @@ import {
 // oportunidade (com a empresa dela), pro Painel rotular "Últimas
 // atividades" sem baixar a base inteira de empresas (2026-09-04, ver
 // company-ref.ts).
+// `taskAssigneeUserId` (2026-10-29): em evento de tarefa, quem está com
+// ela hoje — no Painel, "Usuário" é quem fez e "Responsável" é este.
 export type ActivityListItem = Activity & {
   company: CompanyRef | null;
   opportunity: OpportunityRef | null;
+  taskAssigneeUserId: string | null;
 };
 
 // Etapas de proposta — mesma lista de opportunity-sla.ts. O que não é
@@ -156,7 +159,34 @@ export class ActivityQueryService {
       tx.activity.count({ where }),
     ]);
 
-    return { items, total, page, pageSize };
+    const taskIds = [
+      ...new Set(
+        items
+          .map((a) => (a.payload as Record<string, unknown> | null)?.taskId)
+          .filter((id): id is string => typeof id === 'string'),
+      ),
+    ];
+    const assignees = taskIds.length
+      ? await tx.task.findMany({
+          where: { id: { in: taskIds } },
+          select: { id: true, assigneeUserId: true },
+        })
+      : [];
+    const assigneePorTarefa = new Map(assignees.map((t) => [t.id, t.assigneeUserId]));
+
+    return {
+      items: items.map((a) => {
+        const taskId = (a.payload as Record<string, unknown> | null)?.taskId;
+        return {
+          ...a,
+          taskAssigneeUserId:
+            typeof taskId === 'string' ? (assigneePorTarefa.get(taskId) ?? null) : null,
+        };
+      }),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   // A visibilidade da timeline segue a visibilidade da entidade

@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { REFRESH_SESSION_KEY, TOAST_SESSION_KEY } from "@/app/dashboard/_overlay/toast";
 import type { AssigneeOption } from "@/lib/api/assignee-options";
 import type { Contact } from "@/lib/api/types";
-import { createTaskModalAction, listCompanyContactsAction } from "../actions";
+import { createTaskModalAction, createTaskNoCardAction, listCompanyContactsAction } from "../actions";
 import TipoContatoFields from "../tipo-contato-fields";
 import CompanyPicker from "../../pipeline/company-picker";
 import { TagPicker } from "../../pipeline/_detail/item-tags";
 import SubmitButton from "@/app/_components/submit-button";
+import { ArquivosPendentes } from "@/app/dashboard/_overlay/arquivos-pendentes";
+import { enviarAnexosTarefa } from "../_detail/enviar-anexos";
 
 // Compartilhado entre a versão full-page e a versão modal de "Nova
 // tarefa" (protótipo: openTaskForm sem id). Fecha via router.back() depois
@@ -24,6 +26,8 @@ export default function NovaForm({
   initialCompanyId,
   assigneeOptions,
   opportunityItems,
+  onCreated,
+  onCancel,
 }: {
   // Preenchidos quando o form é aberto de dentro de um card do Pipeline
   // ("+ Gerar tarefa") — trava o vínculo na oportunidade de origem em vez
@@ -48,26 +52,56 @@ export default function NovaForm({
   // direto do combobox de Contato quando a lista vier vazia
   // (TipoContatoFields).
   initialCompanyId?: string;
-  // Só o próprio representante (quem está criando) ou o gerente dele —
-  // resolvido no servidor (web/lib/api/assignee-options.ts).
+  // Qualquer membro ativo, quem está criando primeiro — resolvido no
+  // servidor (web/lib/api/assignee-options.ts).
   assigneeOptions: AssigneeOption[];
   // Itens da oportunidade de origem (só com lockedOpportunityId,
   // 2026-09-04) — viram chips pra carimbar na tarefa que está nascendo.
   opportunityItems?: string[];
+  // Embutido no card da oportunidade (2026-10-29): em vez de fechar a
+  // tela com back(), avisa quem abriu — o card segue aberto.
+  onCreated?: (mensagem: string) => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
-  const [state, formAction] = useActionState(createTaskModalAction, null);
+  const [state, formAction] = useActionState(onCreated ? createTaskNoCardAction : createTaskModalAction, null);
   const [contacts, setContacts] = useState<Contact[]>(initialContacts ?? []);
   const [tags, setTags] = useState<string[]>([]);
   const [companyId, setCompanyId] = useState(initialCompanyId ?? lockedCompanyId ?? "");
+  // Anexos ficam fora do formulário (2026-10-28) e sobem pelo navegador
+  // depois que a tarefa nasce — mesmo molde de pipeline/nova/nova-card.tsx.
+  const [files, setFiles] = useState<File[]>([]);
+  const [enviandoAnexos, setEnviandoAnexos] = useState(false);
   useEffect(() => {
-    if (state?.ok) {
-      sessionStorage.setItem(TOAST_SESSION_KEY, "Tarefa criada");
+    if (!state?.ok) return;
+    const { taskId } = state;
+    let cancelado = false;
+    async function concluir() {
+      let mensagem = "Tarefa criada";
+      if (files.length > 0) {
+        setEnviandoAnexos(true);
+        const { falhas } = await enviarAnexosTarefa(taskId, files);
+        if (falhas.length > 0) {
+          mensagem = `Tarefa criada, mas não deu pra enviar: ${falhas.join("; ")}. Abra a tarefa e anexe de novo.`;
+        }
+      }
+      if (cancelado) return;
+      if (onCreated) {
+        onCreated(mensagem);
+        return;
+      }
+      sessionStorage.setItem(TOAST_SESSION_KEY, mensagem);
       // Mesma marca de refresh do cadastro de oportunidade (2026-09-15):
       // sem ela a tarefa nova só aparecia na lista depois de um F5.
       sessionStorage.setItem(REFRESH_SESSION_KEY, "1");
       router.back();
     }
+    void concluir();
+    return () => {
+      cancelado = true;
+    };
+    // `files` fica de fora de propósito: só o resultado do submit dispara.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, router]);
 
   async function loadContactsFor(nextCompanyId: string) {
@@ -76,7 +110,7 @@ export default function NovaForm({
   }
 
   return (
-    <form action={formAction} className="form-grid" encType="multipart/form-data">
+    <form action={formAction} className="form-grid">
       {state?.ok === false && (
         <div className="error-banner" style={{ gridColumn: "1 / -1" }}>
           {state.message}
@@ -138,12 +172,25 @@ export default function NovaForm({
         </div>
       </div>
       <div className="task-detail-section" style={{ gridColumn: "1 / -1" }}>
-        <div className="drawer-section-title">Anexo (opcional)</div>
-        <input type="file" name="file" />
+        <div className="drawer-section-title">Anexos (opcional)</div>
+        <ArquivosPendentes files={files} onChange={setFiles} />
       </div>
-      <SubmitButton className="btn btn-primary" pendingLabel="Criando…">
-        Criar tarefa
-      </SubmitButton>
+      <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {onCancel && (
+          <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={enviandoAnexos}>
+            Cancelar
+          </button>
+        )}
+        {enviandoAnexos ? (
+          <button type="button" className="btn btn-primary" disabled aria-busy>
+            Enviando anexos…
+          </button>
+        ) : (
+          <SubmitButton className="btn btn-primary" pendingLabel="Criando…">
+            Criar tarefa
+          </SubmitButton>
+        )}
+      </div>
     </form>
   );
 }

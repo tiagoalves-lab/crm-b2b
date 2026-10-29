@@ -39,12 +39,22 @@ recebe, e isso vira aviso no log do Railway (não silêncio).
 
 **Decisão →** Três seções, nesta ordem: **pipeline de oportunidades** (em
 tabela: Nr, abertura, fechamento previsto, empresa, representante, status,
-SLA e itens), **comentários fixados** e **tarefas pendentes** (agrupadas em
-atrasadas / para hoje / próximos dias). O cabeçalho repete os três números
-que resumem o dia: valor em aberto, oportunidades abertas e tarefas
-atrasadas.
+SLA e itens), **comentários fixados** e **tarefas pendentes**. O cabeçalho
+repete os três números que resumem o dia: valor em aberto, oportunidades
+abertas e tarefas atrasadas.
 **Fonte →** Pedido do usuário, 2026-09-15; layout escolhido por ele entre
 três opções (quadro, tabela e lista) na prévia do mesmo dia.
+
+### 1.2.1 Recorte das tarefas
+
+**Decisão →** A seção de tarefas lista só as **atrasadas**, as **desta
+semana** (inclui hoje) e as **da próxima semana** — W0 e W+1, semana de
+segunda a domingo. Tarefa sem prazo ou com prazo mais adiante não entra na
+lista; uma linha no fim da seção diz quantas ficaram de fora.
+**Fonte →** Pedido do usuário, 2026-10-22.
+
+O dia de cada tarefa segue a mesma régua do calendário de Tarefas: prazo
+só-data vale o dia digitado; prazo com hora vale o dia em Brasília.
 
 A numeração `Nr` segue a **sequência do quadro**: primeiro os cards da
 primeira etapa, depois os da segunda, e assim por diante; dentro da etapa,
@@ -300,7 +310,7 @@ parada e manter o SLA no alvo**, não para dar panorama.
 
 **Decisão →** Só as oportunidades **abertas** das etapas de proposta:
 Solicitação de Propostas, Elaboração de Propostas e Aprovação de
-Propostas. Negociação e Fechamento fica de fora.
+Propostas. Negociação e Fechamento ficam de fora.
 **Fonte →** Pedido do usuário, 2026-09-15.
 
 A lista de etapas é configurável (`REPORT_FOLLOWUP_ETAPAS`) e casada pelo

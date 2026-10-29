@@ -338,6 +338,9 @@ export async function createNoteRpcAction(
     // Nome do contato, só pra escrever o título da tarefa sem ter que
     // buscar o contato de novo aqui.
     contatoNome?: string;
+    // Retomar contato (2026-10-28): dia do lembrete (yyyy-mm-dd), escolhido
+    // nos atalhos do formulário ou sugerido a partir do texto.
+    retornoEm?: string;
   },
 ): Promise<ActionResult<Activity>> {
   const token = await getServerAccessToken();
@@ -375,6 +378,30 @@ export async function createNoteRpcAction(
         return {
           ok: false,
           message: `Registro salvo na Timeline, mas a tarefa da reunião não foi criada: ${errorMessage(error)}`,
+        };
+      }
+    }
+
+    // Retomar contato (pedido do usuário, 2026-10-28): o vendedor anotava
+    // "contatar de novo em janeiro" e o combinado morria no texto. A data
+    // vira tarefa de follow-up na agenda de quem registrou, com o próprio
+    // registro como descrição. Mesma regra da reunião se falhar.
+    if (data.retornoEm) {
+      try {
+        await createTask(token, {
+          title: data.contatoNome ? `Retomar contato com ${data.contatoNome}` : "Retomar contato",
+          description: data.texto,
+          dueAt: data.retornoEm,
+          dueHasTime: false,
+          tipo: "followup",
+          contactId: data.contactId,
+          companyId,
+        });
+        revalidatePath("/dashboard/tarefas");
+      } catch (error) {
+        return {
+          ok: false,
+          message: `Registro salvo na Timeline, mas o lembrete de retorno não foi criado: ${errorMessage(error)}`,
         };
       }
     }

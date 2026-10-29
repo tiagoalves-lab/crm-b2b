@@ -113,6 +113,62 @@ export function montarSnapshotCartaoCnpj(
   };
 }
 
+// O lead da Prospecção (RawLead) guarda CNAE, porte e situação em colunas
+// próprias, sem ler o cartão da empresa — consultar a Receita pela ficha da
+// empresa deixava a ficha do lead com "—" nesses campos (relato do usuário,
+// 2026-10-26: mesma empresa, duas telas, dados diferentes). Traduz o cartão
+// pro formato que o editor de CNPJ da Prospecção grava
+// (web/app/dashboard/leads/cnpj-lookup-fields.ts#cadastroFromLookup): CNAE
+// separado em código/descrição, porte nas 3 faixas do score, caixa alta.
+//
+// Só devolve campos quando o cartão é de uma consulta NOVA (buscadoEm
+// diferente do que a empresa já tinha) — salvar a inscrição estadual reenvia
+// o customFields inteiro com o cartão antigo, e isso não pode sobrescrever o
+// que o lead tiver de mais recente.
+export interface CamposLeadCartaoCnpj {
+  cnaePrincipal?: string;
+  cnaeDescricao?: string;
+  porte?: string;
+  situacao?: string;
+}
+
+const SITUACOES_LEAD = ['ATIVA', 'BAIXADA', 'SUSPENSA', 'INAPTA', 'NULA'];
+
+function porteDoLead(raw: string): string | undefined {
+  const upper = raw.trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  if (upper === 'EPP' || upper.includes('PEQUENO') || upper.includes('MICRO')) {
+    return 'PEQUENO';
+  }
+  if (upper === 'DEMAIS' || upper === 'MEDIO') return 'MÉDIO';
+  if (upper === 'GRANDE') return 'GRANDE';
+  return undefined;
+}
+
+export function camposDoLeadPeloCartaoCnpj(
+  cartaoNovo: unknown,
+  cartaoAtual: unknown,
+): CamposLeadCartaoCnpj {
+  if (!cartaoNovo || typeof cartaoNovo !== 'object') return {};
+  const novo = cartaoNovo as Partial<CartaoCnpjSnapshot>;
+  const atual = (cartaoAtual ?? {}) as Partial<CartaoCnpjSnapshot>;
+  if (novo.buscadoEm === atual.buscadoEm) return {};
+
+  const campos: CamposLeadCartaoCnpj = {};
+  const cnae = normalizado(novo.cnaePrincipal);
+  if (cnae) {
+    const idx = cnae.indexOf(' - ');
+    campos.cnaePrincipal = (
+      idx === -1 ? cnae : cnae.slice(0, idx)
+    ).toUpperCase();
+    if (idx !== -1) campos.cnaeDescricao = cnae.slice(idx + 3).toUpperCase();
+  }
+  const porte = porteDoLead(normalizado(novo.porte));
+  if (porte) campos.porte = porte;
+  const situacao = normalizado(novo.situacaoCadastral).toUpperCase();
+  if (SITUACOES_LEAD.includes(situacao)) campos.situacao = situacao;
+  return campos;
+}
+
 export function montarAtualizacaoCartaoCnpj(
   company: CompanyParaCartaoCnpj,
   lookup: CnpjLookupResult,

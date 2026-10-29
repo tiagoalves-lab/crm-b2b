@@ -173,6 +173,23 @@ export function discardLead(token: string, id: string): Promise<RawLead> {
   });
 }
 
+// Desfaz o descarte: o lead volta pra triagem na etapa em que parou.
+export function restoreLead(token: string, id: string): Promise<RawLead> {
+  return apiFetch<RawLead>(`/raw-leads/${id}/restore`, {
+    method: "POST",
+    token,
+  });
+}
+
+// Desconverter lead (2026-10-27) — o backend recusa quando a empresa tem
+// proposta vinculada, já comprou ou tem outro lead convertido.
+export function unconvertLead(token: string, id: string): Promise<RawLead> {
+  return apiFetch<RawLead>(`/raw-leads/${id}/unconvert`, {
+    method: "POST",
+    token,
+  });
+}
+
 // Classificação do lead (Curto/Médio/Longo Prazo) — tier: null deixa o
 // lead sem classificação.
 export function updateLeadTier(

@@ -18,11 +18,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { companyRazaoSocialName } from "@/lib/api/companies";
 import type { Membership, Opportunity, Stage } from "@/lib/api/types";
 import { formatDateBR, formatDateOnlyBR } from "@/lib/format-date";
 import { moveOpportunityStageAction, reorderOpportunitiesAction } from "./actions";
+import EtapaLista from "./etapa-lista";
 import { calcularSla, ehEtapaDeProposta, slaSelo, slaTitulo, type SlaTratamento } from "./sla";
 import { stageColor } from "./stage-colors";
 import { useTopbarQuery } from "@/app/_components/topbar-filter";
@@ -69,15 +70,18 @@ function Card({
         </span>
         <div className="card-co">{companyName}</div>
         {/* Representante logo abaixo da razão social (pedido do usuário,
-            2026-09-11): saber de quem é o negócio sem abrir o card. */}
-        <div className="card-rep">{ownerName}</div>
-        {/* Abertura e fechamento no próprio card (2026-09-14). Card no
+            2026-09-11): saber de quem é o negócio sem abrir o card.
+            Abertura e fechamento no próprio card (2026-09-14). Card no
             quadro é sempre oportunidade aberta, então a segunda data é a
             previsão de fechamento; a data real aparece no card já
-            encerrado, na lista de baixo. */}
-        <div className="card-datas">
-          Aberta {formatDateBR(opp.createdAt)} · Previsão{" "}
-          {opp.expectedCloseDate ? formatDateOnlyBR(opp.expectedCloseDate) : "—"}
+            encerrado, na lista de baixo. Os dois na mesma linha desde o
+            card compacto (2026-10-29). */}
+        <div className="card-meta" title={ownerName}>
+          <span className="card-rep">{ownerName}</span> ·{" "}
+          <span className="card-datas">
+            Aberta {formatDateBR(opp.createdAt)} · Prev.{" "}
+            {opp.expectedCloseDate ? formatDateOnlyBR(opp.expectedCloseDate) : "—"}
+          </span>
         </div>
         {/* O círculo com as iniciais do representante saiu daqui a pedido
             do usuário (2026-09-14) — o nome dele já está logo abaixo da
@@ -102,11 +106,13 @@ function Column({
   opportunities,
   companyName,
   ownerNameOf,
+  onVerLista,
 }: {
   stage: Stage;
   opportunities: Opportunity[];
   companyName: (opp: Opportunity) => string;
   ownerNameOf: (id: string) => string;
+  onVerLista: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const color = stageColor(stage.order);
@@ -120,7 +126,22 @@ function Column({
             <span className="col-dot" style={{ background: color }} />
             {stage.name}
           </div>
-          <span className="col-count">{opportunities.length}</span>
+          <div className="col-head-acoes">
+            {/* Etapa em tabela (2026-10-29) — ver etapa-lista.tsx. */}
+            <button
+              type="button"
+              className="col-lista-btn"
+              title="Ver etapa em lista"
+              aria-label={`Ver ${stage.name} em lista`}
+              disabled={opportunities.length === 0}
+              onClick={onVerLista}
+            >
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+              </svg>
+            </button>
+            <span className="col-count">{opportunities.length}</span>
+          </div>
         </div>
         <div className="col-sum">{sum > 0 ? sum.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</div>
       </div>
@@ -177,6 +198,8 @@ export default function PipelineBoard({
   // filtrando aqui (e não por DOM) pra contagem e soma das colunas baterem.
   const query = useTopbarQuery();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [etapaEmLista, setEtapaEmLista] = useState<string | null>(null);
+  const fecharLista = useCallback(() => setEtapaEmLista(null), []);
   const [perguntaSla, setPerguntaSla] = useState<{
     etapa: string;
     resolve: (escolha: SlaTratamento | null) => void;
@@ -310,6 +333,7 @@ export default function PipelineBoard({
               opportunities={filtered.filter((o) => o.stageId === stage.id)}
               companyName={companyName}
               ownerNameOf={ownerNameOf}
+              onVerLista={() => setEtapaEmLista(stage.id)}
             />
           ))}
         </div>
@@ -318,7 +342,9 @@ export default function PipelineBoard({
             <div className="card dragging" style={{ borderLeftColor: stageColor(stages.find((s) => s.id === activeOpp.stageId)?.order ?? 1) }}>
               <span className="card-sla">{slaSelo(calcularSla(activeOpp))}</span>
               <div className="card-co">{companyName(activeOpp)}</div>
-              <div className="card-rep">{ownerNameOf(activeOpp.ownerUserId)}</div>
+              <div className="card-meta">
+                <span className="card-rep">{ownerNameOf(activeOpp.ownerUserId)}</span>
+              </div>
               <div className="card-foot">
                 <span className="card-val">{brlFull(Number(activeOpp.amount), activeOpp.currency)}</span>
               </div>
@@ -326,6 +352,20 @@ export default function PipelineBoard({
           ) : null}
         </DragOverlay>
       </DndContext>
+      {etapaEmLista && (() => {
+        const stage = stages.find((s) => s.id === etapaEmLista);
+        if (!stage) return null;
+        return (
+          <EtapaLista
+            stage={stage}
+            color={stageColor(stage.order)}
+            opportunities={filtered.filter((o) => o.stageId === stage.id)}
+            companyName={companyName}
+            ownerNameOf={ownerNameOf}
+            onClose={fecharLista}
+          />
+        );
+      })()}
       {perguntaSla && (
         <div className="overlay open" onClick={() => perguntaSla.resolve(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

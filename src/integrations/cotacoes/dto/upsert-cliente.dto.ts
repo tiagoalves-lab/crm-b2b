@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -80,4 +81,15 @@ export class UpsertClienteDto {
   @IsOptional()
   @IsUUID()
   crm_company_id?: string;
+
+  // true quando o usuário clicou na lupa do CNPJ (consulta à Receita) no
+  // formulário antes de salvar (2026-10-02). Aí o CRM reconsulta a Receita
+  // e regrava a ficha "Dados cadastrais" mesmo que ela já exista — sem a
+  // marca, só preenche quando a ficha falta. Quem consulta é o CRM (a mesma
+  // BrasilAPI do botão "Buscar dados"), não o app: o snapshot que a ficha
+  // mostra (CNAE, porte, situação) não viaja no payload, então não há como
+  // forjá-lo por aqui.
+  @IsOptional()
+  @IsBoolean()
+  receita_consultada?: boolean;
 }

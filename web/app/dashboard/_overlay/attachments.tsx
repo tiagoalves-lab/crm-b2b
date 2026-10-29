@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { formatDateTimeBR } from "@/lib/format-date";
+import { useColarArquivos } from "./colar-arquivos";
 
 // Bloco de anexos das fichas ricas (card de Oportunidade e ficha de
 // Tarefa), 2026-09-04. Nasceu de dois pedidos do usuário no mesmo dia:
@@ -34,7 +35,7 @@ export interface AttachmentRow {
 
 type Kind = "pdf" | "imagem" | "planilha" | "outro";
 
-function attachKind(mimeType: string | null): Kind {
+export function attachKind(mimeType: string | null): Kind {
   if (!mimeType) return "outro";
   if (mimeType === "application/pdf") return "pdf";
   if (mimeType.startsWith("image/")) return "imagem";
@@ -42,7 +43,7 @@ function attachKind(mimeType: string | null): Kind {
   return "outro";
 }
 
-function formatBytes(bytes: number | null): string {
+export function formatBytes(bytes: number | null): string {
   if (bytes === null) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -124,9 +125,9 @@ export function AttachmentsSection({
   busy: string | null;
   meUserId: string;
   canRemove: boolean;
-  // Publicação do anexo (card de Oportunidade, 2026-09-15): arquivo
-  // enviado por administrador/proprietário entra reservado e só some do
-  // "reservado" quando alguém desse nível publica. Quem não pode
+  // Publicação do anexo (card de Oportunidade): anexo novo já entra
+  // publicado (reserva desativada em 2026-10-16); o selo e o botão só
+  // aparecem nos reservados que ficaram de antes. Quem não pode
   // publicar nem recebe esses anexos do backend — a tela só mostra o
   // selo e o botão pra quem pode.
   canPublish?: boolean;
@@ -145,6 +146,12 @@ export function AttachmentsSection({
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{ attachment: AttachmentRow; url: string } | null>(null);
   const ocupado = busy !== null;
+
+  // Ctrl+V com a ficha aberta anexa na hora, igual escolher no botão.
+  useColarArquivos((files) => {
+    if (ocupado) return;
+    onUpload(multiple ? files : files.slice(0, 1));
+  });
 
   async function abrir(attachment: AttachmentRow) {
     const url = await getUrl(attachment.id);
@@ -174,6 +181,7 @@ export function AttachmentsSection({
         <button
           type="button"
           className="btn btn-sm"
+          title="Ou cole com Ctrl+V"
           disabled={ocupado}
           aria-busy={busy === "upload" || undefined}
           onClick={() => fileRef.current?.click()}
@@ -183,7 +191,7 @@ export function AttachmentsSection({
       </div>
 
       {attachments.length === 0 ? (
-        <div className="attach-empty">Nenhum arquivo. Anexe foto, PDF ou planilha.</div>
+        <div className="attach-empty">Nenhum arquivo. Anexe foto, PDF ou planilha — ou cole com Ctrl+V.</div>
       ) : (
         attachments.map((att) => {
           const kind = attachKind(att.mimeType);

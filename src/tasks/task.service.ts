@@ -14,6 +14,7 @@ import { ActivityService } from '../activities/activity.service';
 import { assertActiveMembership } from '../common/assert-active-membership';
 import type { PaginatedResult } from '../companies/company.service';
 import { NotificationService } from '../notifications/notification.service';
+import { toPermissionAction } from '../policy/permission-catalog';
 import { PolicyService } from '../policy/policy.service';
 import type { OwnerScopeFilter } from '../policy/policy.service';
 import type { TenantTx } from '../tenancy/tenant-context.service';
@@ -107,6 +108,12 @@ export class TaskService {
     }
 
     const tags = await this.resolveTags(tx, dto.opportunityId, dto.tags);
+    const membros = await this.resolveMembers(
+      tx,
+      membership.workspaceId,
+      dto.memberUserIds,
+      assigneeUserId,
+    );
 
     const task = await tx.task.create({
       data: {
@@ -120,6 +127,7 @@ export class TaskService {
         tipo: dto.tipo,
         contactId: dto.contactId,
         participantContactIds: participantes,
+        memberUserIds: membros,
         assigneeUserId,
         companyId: dto.companyId,
         opportunityId: dto.opportunityId,
@@ -174,11 +182,31 @@ export class TaskService {
       query.assigneeUserId,
     );
 
+    // Membros da tarefa (2026-09-29): quem tem a visão restrita ao próprio
+    // time também enxerga as tarefas em que alguém do time foi incluído
+    // como membro. Só quando a lista não foi filtrada por um responsável
+    // específico — aí a pergunta é "tarefas DESTE responsável".
+    const scopeIds =
+      scope.ownerUserId === undefined
+        ? undefined
+        : typeof scope.ownerUserId === 'string'
+          ? [scope.ownerUserId]
+          : scope.ownerUserId.in;
+    const assigneeWhere: Prisma.TaskWhereInput =
+      assigneeFilter === undefined
+        ? {}
+        : scopeIds && query.assigneeUserId === undefined
+          ? {
+              OR: [
+                { assigneeUserId: assigneeFilter },
+                { memberUserIds: { hasSome: scopeIds } },
+              ],
+            }
+          : { assigneeUserId: assigneeFilter };
+
     const where: Prisma.TaskWhereInput = {
       workspaceId: membership.workspaceId,
-      ...(assigneeFilter !== undefined
-        ? { assigneeUserId: assigneeFilter }
-        : {}),
+      ...assigneeWhere,
       ...(query.companyId ? { companyId: query.companyId } : {}),
       ...(query.opportunityId ? { opportunityId: query.opportunityId } : {}),
       ...(query.status ? { status: query.status } : {}),
@@ -221,6 +249,10 @@ export class TaskService {
       include: {
         checklistItems: { orderBy: { position: 'asc' } },
         comments: { orderBy: { createdAt: 'asc' } },
+        // Rótulo da ficha (2026-09-29): membro da tarefa pode não enxergar
+        // a empresa pela ficha dela — o nome vem junto com a tarefa.
+        company: { select: COMPANY_REF_SELECT },
+        opportunity: { select: OPPORTUNITY_REF_SELECT },
       },
     });
   }
@@ -281,6 +313,18 @@ export class TaskService {
       );
     }
 
+    // Membros (2026-09-29): recalculados quando a lista vem OU quando o
+    // responsável muda — quem virou responsável sai da lista de membros.
+    const membros =
+      dto.memberUserIds !== undefined || dto.assigneeUserId !== undefined
+        ? await this.resolveMembers(
+            tx,
+            membership.workspaceId,
+            dto.memberUserIds ?? existing.memberUserIds,
+            dto.assigneeUserId ?? existing.assigneeUserId,
+          )
+        : undefined;
+
     const tags =
       dto.tags !== undefined
         ? await this.resolveTags(
@@ -302,6 +346,7 @@ export class TaskService {
         tipo: dto.tipo,
         contactId: dto.contactId,
         participantContactIds: participantes,
+        memberUserIds: membros,
         status: dto.status,
         assigneeUserId: dto.assigneeUserId,
         tags,
@@ -476,17 +521,44 @@ export class TaskService {
       throw new NotFoundException('Tarefa não encontrada.');
     }
     if (
-      !(await this.policy.can(
+      await this.policy.can(
         tx,
         membership,
         action,
         { ownerUserId: task.assigneeUserId },
         'tarefas',
-      ))
+      )
     ) {
-      throw new NotFoundException('Tarefa não encontrada.');
+      return task;
     }
-    return task;
+    // Membro da tarefa (2026-09-29): vê e trabalha a tarefa como o
+    // responsável, dentro do que a matriz de permissões dele já permite —
+    // mas não exclui: excluir segue com quem já podia.
+    if (
+      action !== 'delete' &&
+      task.memberUserIds.includes(membership.userId) &&
+      this.policy.canModule(membership, 'tarefas', toPermissionAction(action))
+    ) {
+      return task;
+    }
+    throw new NotFoundException('Tarefa não encontrada.');
+  }
+
+  // Membros da tarefa (2026-09-29): membros ativos do workspace, sem
+  // repetidos e sem o responsável (ele já tem acesso por ser o dono — na
+  // lista ele apareceria duas vezes na ficha).
+  private async resolveMembers(
+    tx: TenantTx,
+    workspaceId: string,
+    ids: string[] | undefined,
+    assigneeUserId: string,
+  ): Promise<string[]> {
+    if (!ids || ids.length === 0) return [];
+    const unicos = Array.from(new Set(ids)).filter((id) => id !== assigneeUserId);
+    for (const userId of unicos) {
+      await assertActiveMembership(tx, workspaceId, userId);
+    }
+    return unicos;
   }
 
   // Contact é escopado por company (companyId obrigatório na tabela

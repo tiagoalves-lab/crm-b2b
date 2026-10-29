@@ -131,7 +131,7 @@ ol.steps li::before{content:counter(s);font-family:var(--f-mono);font-size:.85em
 .m-foot div{display:flex;gap:.4em}
 
 /* kanban */
-.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:.6em;font-size:.78em}
+.kanban{display:grid;grid-template-columns:repeat(5,1fr);gap:.6em;font-size:.78em}
 @container (max-width:720px){.kanban{grid-template-columns:1fr 1fr}}
 .kcol{background:var(--sunken);border:1px solid var(--border);border-radius:7px;padding:.55em;display:grid;gap:.5em;align-content:start}
 .kcol h4{margin:0;font-size:.95em;font-weight:600;line-height:1.25}
@@ -365,7 +365,7 @@ export const TREINAMENTO_HTML = `<div class="app">
   <div class="body">
     <ol class="steps">
       <li><span>Na ficha, aba <b>Timeline</b>, escolha o tipo: Anotação, Ligação, Reunião, Visita ou E-mail.</span></li>
-      <li><span>Em Ligação, Reunião, Visita e E-mail, <b>escolha com quem falou</b>. Se a empresa não tem contato, use <span class="ui">+ Cadastrar contato</span>.</span></li>
+      <li><span>Em Ligação, Reunião, Visita e E-mail, <b>escolha com quem falou</b>. Se a pessoa não está na lista, escolha <span class="ui">+ Cadastrar novo contato…</span>, a última opção do campo Contato.</span></li>
       <li><span>Escreva o que foi conversado e os próximos passos.</span></li>
       <li><span>Clique em <span class="ui">Registrar</span>. O registro mostra tipo, autor, contato, data e hora.</span></li>
     </ol>
@@ -391,7 +391,7 @@ export const TREINAMENTO_HTML = `<div class="app">
     </div>
     <div class="stack">
       <div class="label">Descartar</div>
-      <p>O lead vai para a aba <b>Descartados</b> (só consulta) e não volta para a triagem.</p>
+      <p>O lead vai para a aba <b>Descartados</b>. Mudou de ideia? Abra a ficha dele e clique em <span class="ui">Recuperar lead</span>: ele volta para a triagem na etapa em que parou.</p>
       <div class="label" style="margin-top:.6em">Avisos que bloqueiam a aprovação</div>
       <div class="note bad">“Preencha o CNPJ do lead antes de aprovar”</div>
       <div class="note bad">“Este CNPJ já está cadastrado em Empresas” — descarte o lead e trabalhe pela ficha da empresa que já existe.</div>
@@ -418,12 +418,14 @@ export const TREINAMENTO_HTML = `<div class="app">
       <div class="kcard"><span class="sla">4d</span><b>INDÚSTRIA DEMONSTRAÇÃO</b><span class="meta">Representante A</span><span class="val">R$ 72.500</span><span class="pend">⚠ Pendência para você</span></div>
     </div>
     <div class="kcol"><h4>Aprovação de Propostas<small>0 · R$ 0</small></h4><p style="color:var(--text-3);margin:0">Vazio</p></div>
-    <div class="kcol"><h4>Negociação e Fechamento<small>1 · R$ 120.000</small></h4>
+    <div class="kcol"><h4>Propostas aprovadas<small>0 · R$ 0</small></h4><p style="color:var(--text-3);margin:0">Vazio</p></div>
+    <div class="kcol"><h4>Negociação<small>1 · R$ 120.000</small></h4>
       <div class="kcard"><b>DISTRIBUIDORA FICTÍCIA</b><span class="meta">Representante C</span><span class="meta">Previsão 25/09</span><span class="val">R$ 120.000</span></div>
     </div>
+    <div class="kcol"><h4>Fechamento<small>0 · R$ 0</small></h4><p style="color:var(--text-3);margin:0">Vazio</p></div>
   </div>
   <div class="tiles three">
-    <div class="tile"><b>Selo “Nd”</b><p>Dias úteis de SLA da proposta. Conta sozinho e para quando o card chega em Negociação.</p></div>
+    <div class="tile"><b>Selo “Nd”</b><p>Dias úteis de SLA da proposta. Conta sozinho e para quando o card chega em Propostas aprovadas ou Negociação.</p></div>
     <div class="tile"><b>⚠ Pendência</b><p>Alguém te destacou num comentário e espera sua resposta.</p></div>
     <div class="tile"><b>Topo da coluna</b><p>Quantidade de cards e soma dos valores da etapa.</p></div>
   </div>
@@ -460,7 +462,7 @@ export const TREINAMENTO_HTML = `<div class="app">
     <ul class="pts">
       <li><b>Arraste para outra coluna</b> para mudar a etapa. A etapa não é editada dentro do card, só no quadro.</li>
       <li><b>Arraste dentro da mesma coluna</b> para mudar a prioridade — a ordem vale também nos e-mails de resumo.</li>
-      <li><b>O SLA é automático.</b> Ninguém digita prazo: ele conta desde a solicitação e para ao entrar em Negociação e Fechamento.</li>
+      <li><b>O SLA é automático.</b> Ninguém digita prazo: ele conta desde a solicitação e para ao entrar em Negociação.</li>
     </ul>
     <div class="stack">
       <div class="label">Voltou de Negociação para Proposta?</div>
@@ -499,11 +501,12 @@ export const TREINAMENTO_HTML = `<div class="app">
   <h2>Fechar ou perder a oportunidade</h2>
   <div class="body">
     <ol class="steps">
-      <li><span>Leve o card até <b>Negociação e Fechamento</b> — só nessa etapa as opções aparecem.</span></li>
+      <li><span>Leve o card até <b>Fechamento</b> — só nessa etapa as opções aparecem.</span></li>
       <li><span>Abra o card e clique em <span class="ui">Mais ações</span>.</span></li>
       <li><span><span class="ui">✓ Marcar Fechada</span> — venda ganha. 🎉</span></li>
       <li><span><span class="ui">✕ Marcar Perdida</span> — escolha o motivo. Se não houver um adequado, use <span class="ui">+ Novo motivo</span>.</span></li>
       <li><span>Errou? <span class="ui">↩ Reabrir</span> devolve a oportunidade ao quadro.</span></li>
+      <li><span>Cliente vai retomar mais adiante? <span class="ui">⏸ Colocar em Stand by</span> (em qualquer etapa) pede a nova previsão de fechamento: o card sai do quadro, entra no card <b>Stand by</b> do topo e volta pelo calendário. <span class="ui">▶ Retomar negociação</span> devolve ao quadro.</span></li>
     </ol>
     <div class="stack">
       <div class="label">Oportunidades encerradas</div>
@@ -539,7 +542,7 @@ export const TREINAMENTO_HTML = `<div class="app">
     </div>
     <div class="stack">
       <div class="tile"><b>Tabela</b><p>Pendentes primeiro, pelo prazo mais próximo. Prazo vencido aparece destacado. Clique na linha para abrir.</p></div>
-      <div class="tile"><b>Calendário</b><p>Visão do mês. <b>Arraste um card para outro dia</b> para mudar o prazo. Oportunidades em Negociação também aparecem, pela previsão de fechamento.</p></div>
+      <div class="tile"><b>Calendário</b><p>Visão do mês. <b>Arraste um card para outro dia</b> para mudar o prazo. Oportunidades em Negociação, Fechamento e Stand by também aparecem, pela previsão de fechamento.</p></div>
       <div class="tile"><b>Bolinha à esquerda</b><p>Conclui ou reabre a tarefa sem abrir a ficha.</p></div>
     </div>
   </div>

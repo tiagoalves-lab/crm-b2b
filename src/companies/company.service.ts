@@ -19,10 +19,18 @@ import type { TenantTx } from '../tenancy/tenant-context.service';
 import type { MembershipContext } from '../tenancy/tenant-membership.guard';
 import type { CreateCompanyDto } from './dto/create-company.dto';
 import type { UpdateCompanyDto } from './dto/update-company.dto';
+import { consultarReceita } from './consulta-receita';
 import { montarLogradouro } from './logradouro';
 import { registrarExclusao } from '../deletion-log/registrar-exclusao';
 import { empresasQueJaCompraram, jaComprou } from './cliente-regra';
 import { herdarSupervisor } from './equipe-de-vendas';
+import { camposDoLeadPeloCartaoCnpj } from './cartao-cnpj';
+import { LeadScoringService } from '../raw-leads/lead-scoring.service';
+
+// Score do lead espelhado em update() — LeadScoringService é cálculo puro,
+// sem dependência; instanciar aqui evita CompanyModule importar o módulo da
+// Prospecção (que já importa este).
+const leadScoring = new LeadScoringService();
 
 export interface PaginatedResult<T> {
   items: T[];
@@ -137,8 +145,6 @@ export interface CnpjLookupResult {
   estabelecimento?: string;
 }
 
-// Formato de resposta da BrasilAPI (https://brasilapi.com.br/api/cnpj/v1) —
-// só os campos que a gente de fato usa, o resto da resposta é ignorado.
 // Tabela de situação cadastral da Receita Federal — usada só como
 // fallback (a BrasilAPI já manda `descricao_situacao_cadastral` pronta).
 const SITUACAO_CADASTRAL_POR_CODIGO: Record<number, string | undefined> = {
@@ -148,36 +154,6 @@ const SITUACAO_CADASTRAL_POR_CODIGO: Record<number, string | undefined> = {
   4: 'INAPTA',
   8: 'BAIXADA',
 };
-
-interface BrasilApiCnpjResponse {
-  razao_social?: string;
-  nome_fantasia?: string;
-  email?: string;
-  ddd_telefone_1?: string;
-  ddd_telefone_2?: string;
-  // A Receita guarda o TIPO do logradouro separado do nome: "AVENIDA" +
-  // "BRASIL", nunca "AVENIDA BRASIL" num campo só. Ver montarLogradouro.
-  descricao_tipo_de_logradouro?: string;
-  logradouro?: string;
-  numero?: string;
-  complemento?: string;
-  bairro?: string;
-  cep?: string;
-  municipio?: string;
-  uf?: string;
-  // Código numérico (2 = ATIVA) — o texto vem em
-  // `descricao_situacao_cadastral`, ver o mapeamento em lookupCnpj.
-  situacao_cadastral?: number;
-  descricao_situacao_cadastral?: string;
-  data_inicio_atividade?: string;
-  porte?: string;
-  descricao_porte?: string;
-  natureza_juridica?: string;
-  cnae_fiscal?: number;
-  cnae_fiscal_descricao?: string;
-  cnaes_secundarios?: Array<{ codigo?: number; descricao?: string }>;
-  descricao_identificador_matriz_filial?: string;
-}
 
 // Timeline da empresa é registro de RELACIONAMENTO, não log técnico
 // (decisão do usuário, 2026-09-04): só ação humana entra. Carga em massa
@@ -595,6 +571,14 @@ export class CompanyService {
     // nenhum, em vez de estourar — é o caminho normal.
     const up = (valor: string | null | undefined) =>
       valor === undefined ? undefined : (valor?.toUpperCase() ?? null);
+    const ufLead =
+      dto.uf !== undefined ? (up(dto.uf)?.slice(0, 2) ?? null) : undefined;
+    // CNAE/porte/situação do Cartão CNPJ da Receita (2026-10-26) — ver
+    // camposDoLeadPeloCartaoCnpj.
+    const cartao = camposDoLeadPeloCartaoCnpj(
+      dto.customFields?.cnpj_lookup,
+      (existing.customFields as Record<string, unknown> | null)?.cnpj_lookup,
+    );
     const leadData: Prisma.RawLeadUpdateManyMutationInput = {
       ...(razao
         ? {
@@ -606,16 +590,42 @@ export class CompanyService {
         ? { cnpj: dto.cpfCnpj ? dto.cpfCnpj.replace(/\D/g, '') : null }
         : {}),
       ...(dto.cidade !== undefined ? { municipio: up(dto.cidade) } : {}),
-      ...(dto.uf !== undefined ? { uf: up(dto.uf)?.slice(0, 2) ?? null } : {}),
+      ...(ufLead !== undefined ? { uf: ufLead } : {}),
+      ...cartao,
     };
-    if (Object.keys(leadData).length > 0) {
-      await tx.rawLead.updateMany({
-        where: {
-          workspaceId: membership.workspaceId,
-          promotedCompanyId: updated.id,
+    const leadWhere = {
+      workspaceId: membership.workspaceId,
+      promotedCompanyId: updated.id,
+    };
+    if (Object.keys(cartao).length > 0) {
+      // CNAE, porte e situação entram no score — recalcula lead a lead
+      // (em geral é um só), igual RawLeadService#updateCadastro.
+      const leads = await tx.rawLead.findMany({
+        where: leadWhere,
+        select: {
+          id: true,
+          cnaePrincipal: true,
+          importador: true,
+          porte: true,
+          situacao: true,
+          uf: true,
         },
-        data: leadData,
       });
+      for (const lead of leads) {
+        const { score } = leadScoring.score({
+          cnaePrincipal: cartao.cnaePrincipal ?? lead.cnaePrincipal,
+          importador: lead.importador,
+          porte: cartao.porte ?? lead.porte,
+          situacao: cartao.situacao ?? lead.situacao,
+          uf: ufLead !== undefined ? ufLead : lead.uf,
+        });
+        await tx.rawLead.update({
+          where: { id: lead.id },
+          data: { ...leadData, score },
+        });
+      }
+    } else if (Object.keys(leadData).length > 0) {
+      await tx.rawLead.updateMany({ where: leadWhere, data: leadData });
     }
     if (!options.semTimeline) {
       await this.activities.emit(tx, {
@@ -707,50 +717,19 @@ export class CompanyService {
     return restored;
   }
 
-  // Consulta pública (sem chave/custo) da Receita Federal via BrasilAPI —
+  // Consulta pública (sem chave/custo) da base da Receita Federal —
   // não existe API unificada de SEFAZ pra dado cadastral de CNPJ (SEFAZ é
-  // por estado, sem padrão comum); o que devolve razão social/fantasia/
-  // endereço é a base da Receita, que é o que BrasilAPI espelha. Só busca
-  // e devolve o dado mapeado — não cria/atualiza nada, quem decide se usa
-  // é o chamador (form no frontend).
+  // por estado, sem padrão comum). Fontes e reserva em consulta-receita.ts.
+  // Só busca e devolve o dado mapeado — não cria/atualiza nada, quem decide
+  // se usa é o chamador (form no frontend).
   async lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
     const digits = cnpj.replace(/\D/g, '');
     if (digits.length !== 14) {
       throw new BadRequestException('CNPJ precisa ter 14 dígitos.');
     }
 
-    // Sem User-Agent/Accept, o fetch parece tráfego de bot anônimo — a
-    // proteção do Vercel/Cloudflare na frente da BrasilAPI bloqueia com
-    // 403 (`x-vercel-mitigated: deny`) antes mesmo de chegar na API de
-    // verdade. Descoberto rodando de dentro do Railway (2026-08-01) — de
-    // fora (curl local) o mesmo CNPJ respondia 200 normalmente.
-    const response = await fetch(
-      `https://brasilapi.com.br/api/cnpj/v1/${digits}`,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'Mozilla/5.0 (compatible; CRM-Gama-Brasil/1.0; +https://web-gamma-olive-80.vercel.app)',
-        },
-      },
-    );
-    if (response.status === 404) {
-      throw new NotFoundException(`CNPJ "${digits}" não encontrado.`);
-    }
-    if (!response.ok) {
-      // BrasilAPI manda um `message` específico (ex.: "CNPJ 11.111.111/1111-11
-      // inválido." quando o dígito verificador não bate) — repassa em vez de
-      // esconder atrás de um texto genérico, senão "CNPJ digitado errado"
-      // parece erro de infra e ninguém sabe o que corrigir.
-      const body: unknown = await response.json().catch(() => null);
-      const message =
-        body && typeof body === 'object' && 'message' in body
-          ? String(body.message)
-          : 'Não foi possível consultar o CNPJ agora — tente novamente em instantes.';
-      throw new BadRequestException(message);
-    }
-
-    const data = (await response.json()) as BrasilApiCnpjResponse;
+    // BrasilAPI com OpenCNPJ de reserva — ver consulta-receita.ts.
+    const data = await consultarReceita(digits);
 
     // Trata o indicativo "EM RECUPERAÇÃO JUDICIAL" direto na resposta da
     // consulta de CNPJ (pedido do usuário: "na requisição da API") — quem

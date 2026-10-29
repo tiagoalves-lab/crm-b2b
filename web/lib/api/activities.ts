@@ -51,6 +51,32 @@ export function apenasInteracoes(activities: Activity[]): Activity[] {
   return activities.filter((a) => TIPOS_DE_INTERACAO.has(a.type));
 }
 
+// Exceção à régua acima (pedido do usuário, 2026-10-28): a conversão do
+// lead — e o desfazer dela — entra na Timeline, com quem fez e quando. É
+// marco do relacionamento, não auditoria de cadastro. Fica fora dos
+// contadores de "Interações" e da "Última atividade", que continuam
+// contando só o que uma pessoa registrou.
+const ACOES_DE_CONVERSAO = new Set(["lead_approved", "lead_unconverted"]);
+
+export function ehConversao(activity: Activity): boolean {
+  const action = (activity.payload as { action?: unknown } | null)?.action;
+  return typeof action === "string" && ACOES_DE_CONVERSAO.has(action);
+}
+
+export function timelineDaFicha(activities: Activity[]): Activity[] {
+  return activities.filter((a) => TIPOS_DE_INTERACAO.has(a.type) || ehConversao(a));
+}
+
+// Texto da linha de conversão na Timeline. Sem `origem` (registros de
+// antes de 2026-10-28) é o "Aprovar" da Prospecção.
+export function textoDaConversao(activity: Activity): string {
+  const payload = activity.payload as { action?: string; origem?: string };
+  if (payload.action === "lead_unconverted") return "Conversão do lead desfeita";
+  if (payload.origem === "oportunidade") return "Lead convertido ao abrir oportunidade";
+  if (payload.origem === "cotacoes") return "Lead convertido pelo app de cotações";
+  return "Lead convertido";
+}
+
 export interface CreateActivityInput {
   companyId?: string;
   opportunityId?: string;

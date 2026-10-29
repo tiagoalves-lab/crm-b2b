@@ -210,6 +210,16 @@ model Workspace {
   opportunityLostReasons OpportunityLostReason[]
   calls         Call[]
   telefoniaDevices TelefoniaDevice[]
+  callRecordings   CallRecording[]
+  fiscalCfops      FiscalCfop[]
+  fiscalNfesEmitidas FiscalNfeEmitida[]
+  fiscalNfeEmitidaItens FiscalNfeEmitidaItem[]
+  fiscalNfsesEmitidas FiscalNfseEmitida[]
+  fiscalNfesRecebidas FiscalNfeRecebida[]
+  fiscalNfeRecebidaItens FiscalNfeRecebidaItem[]
+  fiscalRemessaVinculos FiscalRemessaVinculo[]
+  fiscalRemessaAlertaLogs FiscalRemessaAlertaLog[]
+  fiscalEntradaClassificacoes FiscalEntradaClassificacao[]
 
   @@map("workspaces")
 }
@@ -795,12 +805,17 @@ model RawLead {
   // funil do Painel só sabia contar ESTOQUE acumulado, e a taxa de
   // conversão dividia ganhos pelo total de leads de todos os tempos,
   // caindo sozinha a cada lead novo importado. Marcam o movimento:
+  //   andamentoAt → entrou em Andamento (2026-10-21)
+  //   reuniaoAt   → entrou em Reunião (2026-10-21)
   //   qualifiedAt → recebeu prazo de investimento (Curto/Médio/Longo)
   //   convertedAt → saiu da triagem (approve)
   //   discardedAt → saiu do funil (discard)
   // NULL = passagem anterior a este registro ("antes do registro" no
-  // funil), ou passagem que não aconteceu. Limpar a classificação também
-  // limpa qualifiedAt: só conta como qualificação o que tem prazo.
+  // funil), ou passagem que não aconteceu. Vale a primeira entrada na
+  // faixa. Limpar a classificação também limpa qualifiedAt: só conta como
+  // qualificação o que tem prazo.
+  andamentoAt       DateTime?     @map("andamento_at")
+  reuniaoAt         DateTime?     @map("reuniao_at")
   qualifiedAt       DateTime?     @map("qualified_at")
   convertedAt       DateTime?     @map("converted_at")
   discardedAt       DateTime?     @map("discarded_at")
@@ -881,6 +896,10 @@ model Opportunity {
   slaRevisionDate   DateTime?         @map("sla_revision_date") @db.Date
   status            OpportunityStatus @default(open)
   lostReason        String?           @map("lost_reason")
+  // Stand by (2026-10-22): o cliente avaliou e vai retomar mais adiante.
+  // Continua `open`; sai do quadro do Pipeline e reaparece no calendário
+  // pela previsão de fechamento, que é obrigatória ao entrar. NULL = ativa.
+  standbyAt         DateTime?         @map("standby_at")
   version           Int               @default(1)
   deletedAt         DateTime?         @map("deleted_at")
   createdAt         DateTime          @default(now()) @map("created_at")
@@ -966,11 +985,37 @@ model OpportunityComment {
   // Pipeline (2026-09-17). Migration 20260917180000_comentario_lido.
   readByUserIds String[] @default([]) @map("read_by_user_ids") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at")
+  // Última edição do texto (2026-10-16). NULL = nunca editado. As versões
+  // anteriores ficam em opportunity_comment_edits.
+  editedAt      DateTime? @map("edited_at")
 
   opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  edits       OpportunityCommentEdit[]
 
   @@index([opportunityId])
   @@map("opportunity_comments")
+}
+
+// Histórico de edição de comentário do card (pedido do usuário,
+// 2026-10-16): o autor corrige erro de digitação, mas o texto anterior
+// nunca se perde. Uma linha por edição, com o texto de antes e o de
+// depois. Só leitura e inclusão — a policy de RLS não libera UPDATE nem
+// DELETE (sai junto só quando o comentário é excluído, e aí a cópia vai
+// pro registro de exclusões). Edição feita no Trello e trazida pelo
+// espelho também entra aqui, com o usuário de sistema como autor.
+model OpportunityCommentEdit {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  commentId       String   @map("comment_id") @db.Uuid
+  opportunityId   String   @map("opportunity_id") @db.Uuid
+  bodyBefore      String   @map("body_before")
+  bodyAfter       String   @map("body_after")
+  editedByUserId  String   @map("edited_by_user_id") @db.Uuid
+  editedAt        DateTime @default(now()) @map("edited_at")
+
+  comment OpportunityComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([commentId])
+  @@map("opportunity_comment_edits")
 }
 
 // Lista lateral de itens do card de Oportunidade (2026-09-04): o que está
@@ -1051,6 +1096,12 @@ model Task {
   // tarefa — mesma escolha de tags logo abaixo. O service impede que o
   // contato principal entre aqui duas vezes.
   participantContactIds String[] @default([]) @map("participant_contact_ids") @db.Uuid
+  // Membros da tarefa (2026-09-29, pedido do usuário) — outros usuários
+  // do CRM que veem e trabalham a tarefa junto com o responsável (abrir,
+  // comentar, anexar, concluir; excluir não). Mesma escolha de lista de
+  // ids de participantContactIds. A policy de leitura de "tasks" também
+  // conhece esta coluna (migration 20260929120000_task_members).
+  memberUserIds  String[]   @default([]) @map("member_user_ids") @db.Uuid
   // Carimbo de itens da oportunidade de origem (2026-09-04) — só faz
   // sentido com opportunityId preenchido; validado no service contra a
   // lista da oportunidade (opportunities/opportunity-tags.ts).
@@ -1351,6 +1402,7 @@ model Call {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   company   Company?  @relation(fields: [companyId], references: [id])
   contact   Contact?  @relation(fields: [contactId], references: [id])
+  gravacoes CallRecording[]
 
   // Índice do casamento evento→chamada: a busca é sempre "chamada aberta
   // deste usuário, para este número, nos últimos minutos".
@@ -1382,4 +1434,524 @@ model TelefoniaDevice {
 
   @@index([workspaceId, userId])
   @@map("telefonia_dispositivos")
+}
+
+// Gravação de uma ligação (2026-10-26, docs/telefonia-crm.md, decisões 1.6
+// e 1.8). O MicroSIP grava a chamada atendida no PC do SDR; o script da
+// máquina envia o arquivo (POST /telefonia/gravacoes) e o áudio fica no
+// bucket privado `gravacoes`. Nenhuma tela lê esta tabela — a gravação
+// existe só no servidor, decisão do usuário.
+model CallRecording {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  // Dono da credencial que enviou = quem falou. Plain UUID, mesmo padrão
+  // de Call.userId.
+  userId      String   @map("user_id") @db.Uuid
+  // Credencial (telefonia_dispositivos) que enviou. Sem FK: revogar ou
+  // apagar a credencial não pode levar a gravação junto.
+  deviceId    String   @map("device_id") @db.Uuid
+  // Ligação casada por número + horário. Nulo quando nenhuma casou (script
+  // parado na hora da chamada, por exemplo) — a gravação entra mesmo assim.
+  callId      String?  @map("call_id") @db.Uuid
+  // Nome que o MicroSIP deu ao arquivo: data-hora-número-direção-conta.
+  arquivoNome String   @map("arquivo_nome")
+  // Número extraído do nome, só dígitos.
+  telefone    String?
+  gravadoEm   DateTime @map("gravado_em")
+  tamanhoBytes Int     @map("tamanho_bytes")
+  formato     String
+  storagePath String   @map("storage_path")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  // Transcrição e resumo (2026-10-27, decisão 1.7), feitos pelo
+  // TranscricaoService. pendente → concluida | sem_fala | erro (depois de
+  // 3 tentativas). Nenhuma tela lê ainda.
+  transcricaoStatus      String    @default("pendente") @map("transcricao_status")
+  transcricaoTentativas  Int       @default(0) @map("transcricao_tentativas")
+  transcricaoErro        String?   @map("transcricao_erro")
+  transcritaEm           DateTime? @map("transcrita_em")
+  // Duração do áudio, medida pelo Whisper.
+  duracaoSegundos        Int?      @map("duracao_segundos")
+  // Texto literal, palavra por palavra.
+  transcricao            String?
+  // [{ inicio, quem: 'representante' | 'cliente', texto }] — trechos do
+  // Whisper com quem falou, inferido pelo contexto (o Whisper não separa).
+  falas                  Json?
+  // { geral, pedido, objecoes, proximoPasso }
+  resumo                 Json?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  call      Call?     @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, userId, arquivoNome])
+  @@index([callId])
+  @@map("call_recordings")
+  // Índice parcial (fila de transcrição pendente) existe só na migration
+  // 20261027150000 — o Prisma não declara índice com WHERE.
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Console fiscal (2026-10-20) — conferência de PIS, COFINS, IPI, ICMS e
+// IR/CSLL trimestral (Gama é Lucro Presumido) + controle de remessa e
+// retorno. Prefixo `fiscal_` pra todas as tabelas do módulo aparecerem
+// juntas no Supabase. Colunas de valor usam o nome da tag do XML da NF-e em
+// snake_case (vBC → v_bc), pra conferência direta contra o arquivo.
+// ═════════════════════════════════════════════════════════════════════════
+
+// FiscalCfop — tabela de CFOP com a classificação da Gama (planilha
+// ConfigCFOP do usuário). É o que os relatórios usam pra separar receita,
+// remessa, retorno, devolução etc. — o CFOP que vale é o do ITEM da nota.
+// Sem FK a partir dos itens de propósito: nota com CFOP fora desta tabela
+// tem que entrar mesmo assim e aparecer como "CFOP sem cadastro".
+model FiscalCfop {
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  codigo        String
+  descricao     String?
+  receita       Boolean  @default(false)
+  devolucao     Boolean  @default(false)
+  remessa       Boolean  @default(false)
+  importacao    Boolean  @default(false)
+  transferencia Boolean  @default(false)
+  devVenda      Boolean  @default(false) @map("dev_venda")
+  devCompra     Boolean  @default(false) @map("dev_compra")
+  retorno       Boolean  @default(false)
+  // Remessa que precisa voltar (demonstração, conserto, comodato...) —
+  // é o que entra no controle de pendência remessa × retorno. Só faz
+  // sentido com `remessa` ligado (CHECK no banco).
+  exigeRetorno  Boolean  @default(false) @map("exige_retorno")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@id([workspaceId, codigo])
+  @@map("fiscal_cfop")
+}
+
+// FiscalNfeEmitida — NF-e emitida pela Gama (Matriz e Filial juntas), vinda
+// da API do eGestor. Inclui as notas de ENTRADA que a própria Gama emite
+// (importação, retorno de remessa, devolução de cliente): `sentido` diz a
+// direção, a tabela diz a origem. Totais = grupo <total> do XML como veio;
+// o detalhe por item fica em FiscalNfeEmitidaItem.
+model FiscalNfeEmitida {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId      String          @map("workspace_id") @db.Uuid
+  estabelecimento  Estabelecimento
+  // `codigo` da nota no eGestor — numeração POR CONTA, só é única junto
+  // com `estabelecimento`.
+  codEgestor       Int             @map("cod_egestor")
+  origem           String          @default("egestor:/v1/nfe")
+  chave            String?
+  numero           Int?
+  serie            Int?
+  modelo           Int?
+  // Instante exato (UTC) e a data LOCAL da nota, separada: mês e trimestre
+  // de apuração saem de `data_emissao`, nunca do instante convertido.
+  dhEmissao        DateTime?       @map("dh_emissao")
+  dataEmissao      DateTime?       @map("data_emissao") @db.Date
+  // autorizada | cancelada | inutilizada | denegada | rejeitada | pendente
+  situacao         String
+  situacaoEgestor  Int             @map("situacao_egestor")
+  // entrada | saida (tpNF do XML)
+  sentido          String?
+  naturezaOperacao String?         @map("natureza_operacao")
+  // finNFe: 1 normal, 2 complementar, 3 ajuste, 4 devolução
+  finalidade       Int?
+  destCpfCnpj      String?         @map("dest_cpf_cnpj")
+  destNome         String?         @map("dest_nome")
+  destUf           String?         @map("dest_uf")
+  // indIEDest: 1 contribuinte, 2 isento, 9 não contribuinte
+  destIndIe        Int?            @map("dest_ind_ie")
+  vBc              Decimal?        @map("v_bc") @db.Decimal(15, 2)
+  vIcms            Decimal?        @map("v_icms") @db.Decimal(15, 2)
+  vIcmsDeson       Decimal?        @map("v_icms_deson") @db.Decimal(15, 2)
+  vFcp             Decimal?        @map("v_fcp") @db.Decimal(15, 2)
+  vBcSt            Decimal?        @map("v_bc_st") @db.Decimal(15, 2)
+  vSt              Decimal?        @map("v_st") @db.Decimal(15, 2)
+  vFcpSt           Decimal?        @map("v_fcp_st") @db.Decimal(15, 2)
+  vFcpStRet        Decimal?        @map("v_fcp_st_ret") @db.Decimal(15, 2)
+  vIcmsUfDest      Decimal?        @map("v_icms_uf_dest") @db.Decimal(15, 2)
+  vFcpUfDest       Decimal?        @map("v_fcp_uf_dest") @db.Decimal(15, 2)
+  vIcmsUfRemet     Decimal?        @map("v_icms_uf_remet") @db.Decimal(15, 2)
+  vProd            Decimal?        @map("v_prod") @db.Decimal(15, 2)
+  vFrete           Decimal?        @map("v_frete") @db.Decimal(15, 2)
+  vSeg             Decimal?        @map("v_seg") @db.Decimal(15, 2)
+  vDesc            Decimal?        @map("v_desc") @db.Decimal(15, 2)
+  vIi              Decimal?        @map("v_ii") @db.Decimal(15, 2)
+  vIpi             Decimal?        @map("v_ipi") @db.Decimal(15, 2)
+  vIpiDevol        Decimal?        @map("v_ipi_devol") @db.Decimal(15, 2)
+  vPis             Decimal?        @map("v_pis") @db.Decimal(15, 2)
+  vCofins          Decimal?        @map("v_cofins") @db.Decimal(15, 2)
+  vOutro           Decimal?        @map("v_outro") @db.Decimal(15, 2)
+  vNf              Decimal?        @map("v_nf") @db.Decimal(15, 2)
+  vTotTrib         Decimal?        @map("v_tot_trib") @db.Decimal(15, 2)
+  // Reforma tributária (IBSCBSTot) — fase de teste em 2026.
+  vBcIbsCbs        Decimal?        @map("v_bc_ibs_cbs") @db.Decimal(15, 2)
+  vIbs             Decimal?        @map("v_ibs") @db.Decimal(15, 2)
+  vCbs             Decimal?        @map("v_cbs") @db.Decimal(15, 2)
+  // Chaves das notas referenciadas (refNFe) — é o que liga retorno à
+  // remessa e devolução à venda.
+  refChaves        String[]        @default([]) @map("ref_chaves")
+  infCpl           String?         @map("inf_cpl")
+  // Arquivo completo (nfeProc). Nulo enquanto a nota não tem XML no eGestor
+  // (só autorizada e cancelada têm).
+  xml              String?
+  sincronizadoEm   DateTime        @default(now()) @map("sincronizado_em")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  workspace Workspace              @relation(fields: [workspaceId], references: [id])
+  itens     FiscalNfeEmitidaItem[]
+
+  @@unique([workspaceId, estabelecimento, codEgestor])
+  @@index([workspaceId, dataEmissao])
+  @@index([workspaceId, chave])
+  @@map("fiscal_nfe_emitida")
+}
+
+// FiscalNfeEmitidaItem — um <det> do XML. É aqui que o CFOP manda: uma
+// mesma nota pode misturar venda e remessa.
+model FiscalNfeEmitidaItem {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  nfeId        String   @map("nfe_id") @db.Uuid
+  nItem        Int      @map("n_item")
+  cProd        String?  @map("c_prod")
+  xProd        String?  @map("x_prod")
+  ncm          String?
+  cest         String?
+  cfop         String?
+  uCom         String?  @map("u_com")
+  qCom         Decimal? @map("q_com") @db.Decimal(15, 4)
+  vUnCom       Decimal? @map("v_un_com") @db.Decimal(21, 10)
+  vProd        Decimal? @map("v_prod") @db.Decimal(15, 2)
+  vFrete       Decimal? @map("v_frete") @db.Decimal(15, 2)
+  vSeg         Decimal? @map("v_seg") @db.Decimal(15, 2)
+  vDesc        Decimal? @map("v_desc") @db.Decimal(15, 2)
+  vOutro       Decimal? @map("v_outro") @db.Decimal(15, 2)
+  // ICMS — `cst_icms` guarda o CST ou o CSOSN, o que vier no grupo.
+  origIcms     String?  @map("orig_icms")
+  cstIcms      String?  @map("cst_icms")
+  vBcIcms      Decimal? @map("v_bc_icms") @db.Decimal(15, 2)
+  pRedBc       Decimal? @map("p_red_bc") @db.Decimal(7, 4)
+  pIcms        Decimal? @map("p_icms") @db.Decimal(7, 4)
+  vIcms        Decimal? @map("v_icms") @db.Decimal(15, 2)
+  vIcmsDeson   Decimal? @map("v_icms_deson") @db.Decimal(15, 2)
+  vFcp         Decimal? @map("v_fcp") @db.Decimal(15, 2)
+  vBcSt        Decimal? @map("v_bc_st") @db.Decimal(15, 2)
+  pMvaSt       Decimal? @map("p_mva_st") @db.Decimal(7, 4)
+  pIcmsSt      Decimal? @map("p_icms_st") @db.Decimal(7, 4)
+  vIcmsSt      Decimal? @map("v_icms_st") @db.Decimal(15, 2)
+  vIcmsUfDest  Decimal? @map("v_icms_uf_dest") @db.Decimal(15, 2)
+  vFcpUfDest   Decimal? @map("v_fcp_uf_dest") @db.Decimal(15, 2)
+  vIcmsUfRemet Decimal? @map("v_icms_uf_remet") @db.Decimal(15, 2)
+  // IPI
+  cstIpi       String?  @map("cst_ipi")
+  cEnqIpi      String?  @map("c_enq_ipi")
+  vBcIpi       Decimal? @map("v_bc_ipi") @db.Decimal(15, 2)
+  pIpi         Decimal? @map("p_ipi") @db.Decimal(7, 4)
+  vIpi         Decimal? @map("v_ipi") @db.Decimal(15, 2)
+  // II (só nota de importação)
+  vIi          Decimal? @map("v_ii") @db.Decimal(15, 2)
+  // PIS / COFINS
+  cstPis       String?  @map("cst_pis")
+  vBcPis       Decimal? @map("v_bc_pis") @db.Decimal(15, 2)
+  pPis         Decimal? @map("p_pis") @db.Decimal(7, 4)
+  vPis         Decimal? @map("v_pis") @db.Decimal(15, 2)
+  cstCofins    String?  @map("cst_cofins")
+  vBcCofins    Decimal? @map("v_bc_cofins") @db.Decimal(15, 2)
+  pCofins      Decimal? @map("p_cofins") @db.Decimal(7, 4)
+  vCofins      Decimal? @map("v_cofins") @db.Decimal(15, 2)
+  // IBS / CBS (reforma tributária)
+  cstIbsCbs    String?  @map("cst_ibs_cbs")
+  cClassTrib   String?  @map("c_class_trib")
+  vBcIbsCbs    Decimal? @map("v_bc_ibs_cbs") @db.Decimal(15, 2)
+  pIbsUf       Decimal? @map("p_ibs_uf") @db.Decimal(7, 4)
+  vIbsUf       Decimal? @map("v_ibs_uf") @db.Decimal(15, 2)
+  pIbsMun      Decimal? @map("p_ibs_mun") @db.Decimal(7, 4)
+  vIbsMun      Decimal? @map("v_ibs_mun") @db.Decimal(15, 2)
+  vIbs         Decimal? @map("v_ibs") @db.Decimal(15, 2)
+  pCbs         Decimal? @map("p_cbs") @db.Decimal(7, 4)
+  vCbs         Decimal? @map("v_cbs") @db.Decimal(15, 2)
+  vTotTrib     Decimal? @map("v_tot_trib") @db.Decimal(15, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id])
+  nfe       FiscalNfeEmitida @relation(fields: [nfeId], references: [id], onDelete: Cascade)
+
+  @@unique([nfeId, nItem])
+  @@index([workspaceId, cfop])
+  @@map("fiscal_nfe_emitida_item")
+}
+
+// FiscalNfseEmitida — NFS-e emitida pela Gama (Matriz e Filial juntas).
+// O eGestor não entrega o arquivo da NFS-e: dados da nota vêm de
+// GET /v1/nfse e os impostos do relatório `nfseImpostos`.
+model FiscalNfseEmitida {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String          @map("workspace_id") @db.Uuid
+  estabelecimento Estabelecimento
+  codEgestor      Int             @map("cod_egestor")
+  origem          String          @default("egestor:/v1/nfse")
+  numeroNfse      Int?            @map("numero_nfse")
+  numeroRps       Int?            @map("numero_rps")
+  serie           String?
+  dhEmissao       DateTime?       @map("dh_emissao")
+  dataEmissao     DateTime?       @map("data_emissao") @db.Date
+  // autorizada | cancelada | rejeitada | denegada | pendente
+  situacao        String
+  situacaoEgestor Int             @map("situacao_egestor")
+  codVenda        String?         @map("cod_venda")
+  tomadorCpfCnpj  String?         @map("tomador_cpf_cnpj")
+  tomadorNome     String?         @map("tomador_nome")
+  codListaServico String?         @map("cod_lista_servico")
+  valorBruto      Decimal?        @map("valor_bruto") @db.Decimal(15, 2)
+  valorLiquido    Decimal?        @map("valor_liquido") @db.Decimal(15, 2)
+  vIss            Decimal?        @map("v_iss") @db.Decimal(15, 2)
+  vInss           Decimal?        @map("v_inss") @db.Decimal(15, 2)
+  vPis            Decimal?        @map("v_pis") @db.Decimal(15, 2)
+  vCofins         Decimal?        @map("v_cofins") @db.Decimal(15, 2)
+  vCsll           Decimal?        @map("v_csll") @db.Decimal(15, 2)
+  vIrrf           Decimal?        @map("v_irrf") @db.Decimal(15, 2)
+  // Itens como vieram do eGestor (serviço, código LC 116, quantidade,
+  // total) — referência; o painel trabalha com os totais acima.
+  itens           Json            @default("[]")
+  sincronizadoEm  DateTime        @default(now()) @map("sincronizado_em")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, estabelecimento, codEgestor])
+  @@index([workspaceId, dataEmissao])
+  @@map("fiscal_nfse_emitida")
+}
+
+// FiscalNfeRecebida — NF-e emitida por terceiros contra a Gama (Matriz ou
+// Filial), vinda de GET /v1/nfe/recebidas do eGestor, que por sua vez puxa
+// da SEFAZ (distribuição DF-e). Mesmo molde de FiscalNfeEmitida: conteúdo
+// exatamente como está no XML — inclusive o CFOP, que é o do FORNECEDOR
+// (5102 = venda dele), e o sentido, que não é invertido. A origem vem do
+// endpoint, nunca do conteúdo (docs/console-fiscal.md, decisões 2.2/2.3).
+// Nota sem XML completo no eGestor (sem manifestação de ciência) entra só
+// com o resumo da listagem; número/série/modelo saem da chave.
+model FiscalNfeRecebida {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId      String          @map("workspace_id") @db.Uuid
+  // Estabelecimento da Gama que recebeu (conta do eGestor onde a nota veio).
+  estabelecimento  Estabelecimento
+  // `codigo` da nota recebida no eGestor — nulo pra nota que não veio da
+  // API. Quem identifica a nota é a chave.
+  codEgestor       Int?            @map("cod_egestor")
+  origem           String          @default("egestor:/v1/nfe/recebidas")
+  chave            String
+  numero           Int?
+  serie            Int?
+  modelo           Int?
+  dhEmissao        DateTime?       @map("dh_emissao")
+  dataEmissao      DateTime?       @map("data_emissao") @db.Date
+  // autorizada | cancelada | denegada
+  situacao         String
+  // cSitNFe da SEFAZ, como o eGestor devolve: 1 autorizada, 2 denegada,
+  // 3 cancelada.
+  situacaoEgestor  Int?            @map("situacao_egestor")
+  // entrada | saida (tpNF do XML, do ponto de vista de quem emitiu)
+  sentido          String?
+  naturezaOperacao String?         @map("natureza_operacao")
+  finalidade       Int?
+  emitCpfCnpj      String?         @map("emit_cpf_cnpj")
+  emitNome         String?         @map("emit_nome")
+  emitUf           String?         @map("emit_uf")
+  destCpfCnpj      String?         @map("dest_cpf_cnpj")
+  // Último evento de manifestação do destinatário registrado no eGestor
+  // (210210 ciência, 210200 confirmação, 210220 desconhecimento, 210240
+  // operação não realizada); nulo = nenhuma.
+  manifesto        String?
+  // Nota já lançada como compra no eGestor (temCompra).
+  lancadaCompra    Boolean         @default(false) @map("lancada_compra")
+  nsu              String?
+  vBc              Decimal?        @map("v_bc") @db.Decimal(15, 2)
+  vIcms            Decimal?        @map("v_icms") @db.Decimal(15, 2)
+  vIcmsDeson       Decimal?        @map("v_icms_deson") @db.Decimal(15, 2)
+  vFcp             Decimal?        @map("v_fcp") @db.Decimal(15, 2)
+  vBcSt            Decimal?        @map("v_bc_st") @db.Decimal(15, 2)
+  vSt              Decimal?        @map("v_st") @db.Decimal(15, 2)
+  vFcpSt           Decimal?        @map("v_fcp_st") @db.Decimal(15, 2)
+  vFcpStRet        Decimal?        @map("v_fcp_st_ret") @db.Decimal(15, 2)
+  vIcmsUfDest      Decimal?        @map("v_icms_uf_dest") @db.Decimal(15, 2)
+  vFcpUfDest       Decimal?        @map("v_fcp_uf_dest") @db.Decimal(15, 2)
+  vIcmsUfRemet     Decimal?        @map("v_icms_uf_remet") @db.Decimal(15, 2)
+  vProd            Decimal?        @map("v_prod") @db.Decimal(15, 2)
+  vFrete           Decimal?        @map("v_frete") @db.Decimal(15, 2)
+  vSeg             Decimal?        @map("v_seg") @db.Decimal(15, 2)
+  vDesc            Decimal?        @map("v_desc") @db.Decimal(15, 2)
+  vIi              Decimal?        @map("v_ii") @db.Decimal(15, 2)
+  vIpi             Decimal?        @map("v_ipi") @db.Decimal(15, 2)
+  vIpiDevol        Decimal?        @map("v_ipi_devol") @db.Decimal(15, 2)
+  vPis             Decimal?        @map("v_pis") @db.Decimal(15, 2)
+  vCofins          Decimal?        @map("v_cofins") @db.Decimal(15, 2)
+  vOutro           Decimal?        @map("v_outro") @db.Decimal(15, 2)
+  vNf              Decimal?        @map("v_nf") @db.Decimal(15, 2)
+  vTotTrib         Decimal?        @map("v_tot_trib") @db.Decimal(15, 2)
+  vBcIbsCbs        Decimal?        @map("v_bc_ibs_cbs") @db.Decimal(15, 2)
+  vIbs             Decimal?        @map("v_ibs") @db.Decimal(15, 2)
+  vCbs             Decimal?        @map("v_cbs") @db.Decimal(15, 2)
+  refChaves        String[]        @default([]) @map("ref_chaves")
+  infCpl           String?         @map("inf_cpl")
+  xml              String?
+  sincronizadoEm   DateTime        @default(now()) @map("sincronizado_em")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  workspace Workspace               @relation(fields: [workspaceId], references: [id])
+  itens     FiscalNfeRecebidaItem[]
+
+  @@unique([workspaceId, estabelecimento, chave])
+  @@index([workspaceId, dataEmissao])
+  @@index([workspaceId, emitCpfCnpj])
+  @@map("fiscal_nfe_recebida")
+}
+
+model FiscalNfeRecebidaItem {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  nfeId        String   @map("nfe_id") @db.Uuid
+  nItem        Int      @map("n_item")
+  cProd        String?  @map("c_prod")
+  xProd        String?  @map("x_prod")
+  ncm          String?
+  cest         String?
+  cfop         String?
+  uCom         String?  @map("u_com")
+  qCom         Decimal? @map("q_com") @db.Decimal(15, 4)
+  vUnCom       Decimal? @map("v_un_com") @db.Decimal(21, 10)
+  vProd        Decimal? @map("v_prod") @db.Decimal(15, 2)
+  vFrete       Decimal? @map("v_frete") @db.Decimal(15, 2)
+  vSeg         Decimal? @map("v_seg") @db.Decimal(15, 2)
+  vDesc        Decimal? @map("v_desc") @db.Decimal(15, 2)
+  vOutro       Decimal? @map("v_outro") @db.Decimal(15, 2)
+  // ICMS — `cst_icms` guarda o CST ou o CSOSN, o que vier no grupo.
+  origIcms     String?  @map("orig_icms")
+  cstIcms      String?  @map("cst_icms")
+  vBcIcms      Decimal? @map("v_bc_icms") @db.Decimal(15, 2)
+  pRedBc       Decimal? @map("p_red_bc") @db.Decimal(7, 4)
+  pIcms        Decimal? @map("p_icms") @db.Decimal(7, 4)
+  vIcms        Decimal? @map("v_icms") @db.Decimal(15, 2)
+  vIcmsDeson   Decimal? @map("v_icms_deson") @db.Decimal(15, 2)
+  vFcp         Decimal? @map("v_fcp") @db.Decimal(15, 2)
+  vBcSt        Decimal? @map("v_bc_st") @db.Decimal(15, 2)
+  pMvaSt       Decimal? @map("p_mva_st") @db.Decimal(7, 4)
+  pIcmsSt      Decimal? @map("p_icms_st") @db.Decimal(7, 4)
+  vIcmsSt      Decimal? @map("v_icms_st") @db.Decimal(15, 2)
+  vIcmsUfDest  Decimal? @map("v_icms_uf_dest") @db.Decimal(15, 2)
+  vFcpUfDest   Decimal? @map("v_fcp_uf_dest") @db.Decimal(15, 2)
+  vIcmsUfRemet Decimal? @map("v_icms_uf_remet") @db.Decimal(15, 2)
+  // IPI
+  cstIpi       String?  @map("cst_ipi")
+  cEnqIpi      String?  @map("c_enq_ipi")
+  vBcIpi       Decimal? @map("v_bc_ipi") @db.Decimal(15, 2)
+  pIpi         Decimal? @map("p_ipi") @db.Decimal(7, 4)
+  vIpi         Decimal? @map("v_ipi") @db.Decimal(15, 2)
+  // II (só nota de importação)
+  vIi          Decimal? @map("v_ii") @db.Decimal(15, 2)
+  // PIS / COFINS
+  cstPis       String?  @map("cst_pis")
+  vBcPis       Decimal? @map("v_bc_pis") @db.Decimal(15, 2)
+  pPis         Decimal? @map("p_pis") @db.Decimal(7, 4)
+  vPis         Decimal? @map("v_pis") @db.Decimal(15, 2)
+  cstCofins    String?  @map("cst_cofins")
+  vBcCofins    Decimal? @map("v_bc_cofins") @db.Decimal(15, 2)
+  pCofins      Decimal? @map("p_cofins") @db.Decimal(7, 4)
+  vCofins      Decimal? @map("v_cofins") @db.Decimal(15, 2)
+  // IBS / CBS (reforma tributária)
+  cstIbsCbs    String?  @map("cst_ibs_cbs")
+  cClassTrib   String?  @map("c_class_trib")
+  vBcIbsCbs    Decimal? @map("v_bc_ibs_cbs") @db.Decimal(15, 2)
+  pIbsUf       Decimal? @map("p_ibs_uf") @db.Decimal(7, 4)
+  vIbsUf       Decimal? @map("v_ibs_uf") @db.Decimal(15, 2)
+  pIbsMun      Decimal? @map("p_ibs_mun") @db.Decimal(7, 4)
+  vIbsMun      Decimal? @map("v_ibs_mun") @db.Decimal(15, 2)
+  vIbs         Decimal? @map("v_ibs") @db.Decimal(15, 2)
+  pCbs         Decimal? @map("p_cbs") @db.Decimal(7, 4)
+  vCbs         Decimal? @map("v_cbs") @db.Decimal(15, 2)
+  vTotTrib     Decimal? @map("v_tot_trib") @db.Decimal(15, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id])
+  nfe       FiscalNfeRecebida @relation(fields: [nfeId], references: [id], onDelete: Cascade)
+
+  @@unique([nfeId, nItem])
+  @@index([workspaceId, cfop])
+  @@map("fiscal_nfe_recebida_item")
+}
+
+// Vínculo remessa × retorno feito À MÃO no Controle de remessas
+// (docs/console-fiscal.md, decisão 7.5) — o eGestor não guarda essa
+// ligação. Notas identificadas pela chave de acesso, que vale igual pra
+// nota emitida e recebida. O vínculo automático (o retorno cita a remessa
+// no XML) não é gravado aqui: é lido da nota. Esta tabela guarda só a
+// decisão da pessoa: `vincular` liga o que a nota não diz, `desvincular`
+// desfaz um vínculo (inclusive o automático, quando a nota cita errado).
+model FiscalRemessaVinculo {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId        String   @map("workspace_id") @db.Uuid
+  remessaChave       String   @map("remessa_chave")
+  retornoChave       String   @map("retorno_chave")
+  // vincular | desvincular
+  acao               String
+  // Quem fez por último (auth.users, sem FK — identidade vive no Supabase Auth).
+  alteradoPorUserId  String   @map("alterado_por_user_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, remessaChave, retornoChave])
+  @@index([workspaceId, retornoChave])
+  @@map("fiscal_remessa_vinculo")
+}
+
+// Log dos alertas do Controle de remessas (docs/console-fiscal.md, decisão
+// 7.7): cada "tratado" e cada "reaberto" vira uma linha, que nunca muda nem
+// some (RLS só deixa ler e inserir). O estado do alerta é o último registro
+// da remessa + regra. A regra é o código do acervo da tela
+// (web/.../alertas-remessa.ts).
+model FiscalRemessaAlertaLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  remessaChave String   @map("remessa_chave")
+  regra        String
+  // tratar | reabrir
+  acao         String
+  observacao   String?
+  // Quem fez (auth.users, sem FK — identidade vive no Supabase Auth).
+  userId       String   @map("user_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, remessaChave, createdAt])
+  @@map("fiscal_remessa_alerta_log")
+}
+
+// Classificação dos itens das notas de entrada (docs/console-fiscal.md,
+// decisão 7.8): log só de inserção, vale o último registro de cada item
+// (chave + nItem). Classe nula = classificação retirada.
+model FiscalEntradaClassificacao {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  chave       String
+  nItem       Int      @map("n_item")
+  classe      String?
+  observacao  String?
+  // tela | planilha (carga do histórico controlado em planilha)
+  origem      String   @default("tela")
+  // Quem fez (auth.users, sem FK — identidade vive no Supabase Auth).
+  userId      String   @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, chave, nItem, createdAt])
+  @@map("fiscal_entrada_classificacao")
 }

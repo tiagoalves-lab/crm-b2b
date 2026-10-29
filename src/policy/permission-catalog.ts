@@ -9,7 +9,7 @@ import type { PolicyAction } from './policy.types';
 //
 // Só se aplica a manager/sales_rep/readonly — owner/admin continuam bypass
 // total em todo lugar que já checava isso (PolicyService.can/canModule),
-// nunca consultam esta matriz. `role` continua existindo no banco e no RLS
+// nunca consultam esta matriz. Exceção: MODULOS_SEM_BYPASS_ADMIN (abaixo). `role` continua existindo no banco e no RLS
 // (ver prisma/schema.sql, policies "ws_and_role_select") só para decidir
 // ESCOPO (próprio registro vs. equipe via managerId vs. todos) — dimensão
 // separada de CAPACIDADE (pode tentar a ação em si), que é o que esta
@@ -60,6 +60,21 @@ export const PERMISSION_MODULES = [
   // 'ver' é enxergar o histórico de chamadas e ouvir o que foi gravado.
   // Não tem editar/excluir — chamada é fato acontecido, não cadastro.
   'telefonia',
+  // Console fiscal (2026-10-20, docs/console-fiscal.md): conferência de
+  // notas e tributos. 'ver' e 'editar' (2026-10-22: ligar retorno à
+  // remessa à mão, decisão 7.5) — a carga das notas é ação de owner/admin
+  // (mesmo critério das sincronizações do eGestor). Faturamento e imposto
+  // são informação de gestão: nasce DESLIGADO pra manager/sales_rep/
+  // readonly e LIGADO pro admin, que aqui segue a matriz
+  // (MODULOS_SEM_BYPASS_ADMIN) — dá pra tirar de um admin específico.
+  'fiscal',
+  // Relatórios financeiros (2026-10-26): seção financeira da tela
+  // Relatórios. Só 'ver'. Nasce DESLIGADO pra todo papel, admin incluído
+  // (MODULOS_SEM_BYPASS_ADMIN) — só o owner vê sem depender da caixa, e
+  // só quem já tem o acesso consegue liberar pra outro membro (cap do
+  // MembershipService). Todo endpoint de relatório financeiro checa
+  // canModule(ctx, 'relatorios_financeiros', 'ver') no backend.
+  'relatorios_financeiros',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 
@@ -96,6 +111,8 @@ export const MODULE_ACTIONS: Record<
   membros: ['ver', 'criar'],
   treinamento: ['ver'],
   telefonia: ['ver', 'criar'],
+  fiscal: ['ver', 'editar'],
+  relatorios_financeiros: ['ver'],
 };
 
 // Agrupamento visual só (subpágina de Permissões) — sem efeito na
@@ -115,7 +132,19 @@ export const MODULE_GROUP: Record<PermissionModule, string | null> = {
   membros: null,
   treinamento: null,
   telefonia: null,
+  fiscal: null,
+  relatorios_financeiros: null,
 };
+
+// Módulos em que o admin segue a matriz como qualquer outro papel, sem
+// bypass (pedido do usuário, 2026-10-22: "alguns admins não podem ter
+// acesso ao console"). O admin nasce com o acesso ligado (preset abaixo) e
+// o owner pode desligar membro a membro. Só o owner continua com bypass —
+// por isso promover a owner é exclusivo de owner (MembershipService).
+export const MODULOS_SEM_BYPASS_ADMIN: ReadonlySet<PermissionModule> = new Set<PermissionModule>([
+  'fiscal',
+  'relatorios_financeiros',
+]);
 
 export type PermissionMatrix = {
   [M in PermissionModule]?: Partial<Record<PermissionAction, boolean>>;
@@ -177,6 +206,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
     telefonia: telefoniaCompleta,
+    fiscal: { ver: true, editar: true },
+    relatorios_financeiros: { ver: true },
   },
   admin: {
     empresas_visao_geral: viewOnly,
@@ -193,6 +224,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: { ver: true, criar: true },
     treinamento: viewOnly,
     telefonia: telefoniaCompleta,
+    fiscal: { ver: true, editar: true },
+    relatorios_financeiros: { ver: false },
   },
   // Manager: mesmo critério de sempre — dono do registro ou subordinado
   // (escopo, inalterado) pode excluir; contatos/membros continuam fora do
@@ -215,6 +248,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: membrosManagerDefault,
     treinamento: { ver: false },
     telefonia: telefoniaCompleta,
+    fiscal: { ver: false },
+    relatorios_financeiros: { ver: false },
   },
   // sales_rep: nunca exclui (regra antiga, 2026-08-06, "mais restrita que
   // o resto do modelo de ownership" — ver comentário histórico que estava
@@ -240,6 +275,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: membrosSalesRepDefault,
     treinamento: { ver: false },
     telefonia: telefoniaCompleta,
+    fiscal: { ver: false },
+    relatorios_financeiros: { ver: false },
   },
   // readonly: só lê, em qualquer módulo (regra antiga: "action !== 'read'
   // → false" pra este papel).
@@ -258,6 +295,8 @@ export const DEFAULT_PERMISSIONS: Record<MembershipRole, PermissionMatrix> = {
     membros: viewOnly,
     treinamento: { ver: false },
     telefonia: viewOnly,
+    fiscal: { ver: false },
+    relatorios_financeiros: { ver: false },
   },
 };
 

@@ -42,6 +42,11 @@ export default async function MembrosPage({
           </div>
         </div>
         <TopbarFilter />
+        {canManage && (
+          <Link href="/dashboard/membros/matriz" className="btn btn-ghost">
+            Matriz de permissões
+          </Link>
+        )}
         {canCreate && (
           <Link href="/dashboard/membros/novo" className="btn btn-primary">
             + Novo membro

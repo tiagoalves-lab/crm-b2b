@@ -29,6 +29,7 @@ import {
   setCommentRead,
   setCommentPinned,
   setMentionDone,
+  updateComment,
 } from "@/lib/api/opportunity-comments";
 import { createItem, deleteItem, updateItem } from "@/lib/api/opportunity-items";
 import { createLostReason, listLostReasons, type LostReason } from "@/lib/api/opportunity-lost-reasons";
@@ -351,6 +352,33 @@ export async function setOpportunityStatusAction(
   }
 }
 
+// Stand by (pedido do usuário, 2026-10-22): colocar exige a nova previsão
+// de fechamento (dia em que ela volta a aparecer no calendário); retomar
+// devolve o card ao quadro, na etapa em que estava.
+export async function setOpportunityStandbyAction(
+  id: string,
+  version: number,
+  standby: boolean,
+  dayKey?: string,
+): Promise<DetailResult<Opportunity>> {
+  if (standby && !/^\d{4}-\d{2}-\d{2}$/.test(String(dayKey ?? ""))) {
+    return { ok: false, message: "Informe a nova previsão de fechamento." };
+  }
+  const token = await getServerAccessToken();
+  try {
+    return {
+      ok: true,
+      data: await updateOpportunity(token, String(id), {
+        version: Number(version),
+        standby: Boolean(standby),
+        expectedCloseDate: standby ? String(dayKey) : undefined,
+      }),
+    };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
 export async function listLostReasonsAction(): Promise<DetailResult<LostReason[]>> {
   const token = await getServerAccessToken();
   try {
@@ -539,6 +567,23 @@ export async function removeOpportunityCommentAction(
   try {
     await deleteComment(token, String(opportunityId), String(commentId));
     return { ok: true, data: null };
+  } catch (error) {
+    return detailFail(error);
+  }
+}
+
+// Editar o texto do comentário (2026-10-16).
+export async function updateOpportunityCommentAction(
+  opportunityId: string,
+  commentId: string,
+  body: string,
+): Promise<DetailResult<OpportunityComment>> {
+  const token = await getServerAccessToken();
+  try {
+    return {
+      ok: true,
+      data: await updateComment(token, String(opportunityId), String(commentId), String(body)),
+    };
   } catch (error) {
     return detailFail(error);
   }

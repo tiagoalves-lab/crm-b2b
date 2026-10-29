@@ -45,6 +45,7 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     description: null,
     status: 'open',
     lostReason: null,
+    standbyAt: null,
     origem: null,
     version: 1,
     deletedAt: null,
@@ -84,6 +85,8 @@ function fakeTx(options: FakeTxOptions = {}): TenantTx {
   const stagesById = options.stagesById ?? { [STAGE_ID]: stage() };
 
   return {
+    // empresa_precisa_lead_convertido: empresa já tem lead ou já comprou.
+    $queryRaw: jest.fn().mockResolvedValue([{ precisa: false }]),
     membership: {
       findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
     },
@@ -178,6 +181,53 @@ describe('OpportunityService', () => {
       await expect(
         service.findAll(tx, m, { companyId: COMPANY_ID }),
       ).rejects.toThrow('Sem permissão para ver oportunidades.');
+    });
+  });
+
+  // 2026-09-28 (G8 Brindes): empresa com oportunidade que nunca passou
+  // pela Prospecção sumia da Carteira e do Funil.
+  describe('create — lead convertido automático (2026-09-28)', () => {
+    const dto = {
+      companyId: COMPANY_ID,
+      pipelineId: PIPELINE_ID,
+      stageId: STAGE_ID,
+      amount: 0,
+      currency: 'BRL',
+    };
+
+    it('cria o lead convertido quando a empresa não tem lead nem compra', async () => {
+      const tx = fakeTx();
+      (tx.$queryRaw as unknown as jest.Mock).mockResolvedValue([{ precisa: true }]);
+      const create = jest.fn().mockResolvedValue({});
+      (tx as unknown as { rawLead: unknown }).rawLead = { create };
+      await service.create(tx, membership(), dto);
+      expect(create).toHaveBeenCalledTimes(1);
+      const data = (create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      expect(data).toMatchObject({
+        status: 'aprovado',
+        etapa: 'negociacao',
+        promotedCompanyId: COMPANY_ID,
+      });
+      // Conversão na Timeline em nome de quem abriu a oportunidade
+      // (2026-10-28).
+      const registros = (tx.activity.create as unknown as jest.Mock).mock.calls.map(
+        (c: unknown[]) => (c[0] as { data: { actorUserId: string; payload: Record<string, unknown> } }).data,
+      );
+      expect(registros).toContainEqual(
+        expect.objectContaining({
+          actorUserId: membership().userId,
+          companyId: COMPANY_ID,
+          payload: expect.objectContaining({ action: 'lead_approved', origem: 'oportunidade' }) as unknown,
+        }),
+      );
+    });
+
+    it('não cria nada quando a empresa já tem lead ou já comprou', async () => {
+      const tx = fakeTx();
+      const create = jest.fn();
+      (tx as unknown as { rawLead: unknown }).rawLead = { create };
+      await service.create(tx, membership(), dto);
+      expect(create).not.toHaveBeenCalled();
     });
   });
 
@@ -376,6 +426,101 @@ describe('OpportunityService', () => {
       const data = dataGravada(tx);
       expect(data.slaDueDate).toBeNull();
       expect(data.slaRevisionDate).toBeInstanceOf(Date);
+    });
+  });
+
+  // Stand by (2026-10-22) — ver OpportunityService#proximoStandby.
+  describe('Stand by', () => {
+    function dataGravada(tx: TenantTx): Record<string, unknown> {
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- jest.fn() não usa `this`
+      const mock = tx.opportunity.updateMany as unknown as jest.Mock<
+        unknown,
+        [{ data: Record<string, unknown> }]
+      >;
+      return mock.mock.calls[0][0].data;
+    }
+
+    function daquiA(dias: number): string {
+      return new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
+    }
+
+    it('entra em stand by com a nova previsão de fechamento', async () => {
+      const tx = fakeTx();
+      await service.update(tx, membership(), OPPORTUNITY_ID, {
+        version: 1,
+        standby: true,
+        expectedCloseDate: daquiA(30),
+      });
+      const data = dataGravada(tx);
+      expect(data.standbyAt).toBeInstanceOf(Date);
+      expect(data.expectedCloseDate).toEqual(new Date(daquiA(30)));
+    });
+
+    it('sem nova previsão de fechamento é recusado', async () => {
+      const tx = fakeTx();
+      await expect(
+        service.update(tx, membership(), OPPORTUNITY_ID, {
+          version: 1,
+          standby: true,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('previsão no passado é recusada', async () => {
+      const tx = fakeTx();
+      await expect(
+        service.update(tx, membership(), OPPORTUNITY_ID, {
+          version: 1,
+          standby: true,
+          expectedCloseDate: daquiA(-3),
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('oportunidade encerrada não vai para stand by', async () => {
+      const tx = fakeTx({
+        opportunity: baseOpportunity({ status: 'won', closedAt: new Date() }),
+      });
+      await expect(
+        service.update(tx, membership(), OPPORTUNITY_ID, {
+          version: 1,
+          standby: true,
+          expectedCloseDate: daquiA(30),
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('retomar limpa o stand by', async () => {
+      const tx = fakeTx({
+        opportunity: baseOpportunity({ standbyAt: new Date() }),
+      });
+      await service.update(tx, membership(), OPPORTUNITY_ID, {
+        version: 1,
+        standby: false,
+      });
+      expect(dataGravada(tx).standbyAt).toBeNull();
+    });
+
+    it('encerrar tira do stand by', async () => {
+      const tx = fakeTx({
+        opportunity: baseOpportunity({ standbyAt: new Date() }),
+      });
+      await service.update(tx, membership(), OPPORTUNITY_ID, {
+        version: 1,
+        status: 'won',
+      });
+      expect(dataGravada(tx).standbyAt).toBeNull();
+    });
+
+    it('editar o card em stand by não mexe no stand by', async () => {
+      const tx = fakeTx({
+        opportunity: baseOpportunity({ standbyAt: new Date() }),
+      });
+      await service.update(tx, membership(), OPPORTUNITY_ID, {
+        version: 1,
+        description: 'texto novo',
+      });
+      expect(dataGravada(tx).standbyAt).toBeUndefined();
     });
   });
 });

@@ -6,6 +6,8 @@ import FichaBody from "../_ficha/ficha-body";
 import { discardLeadFormAction } from "../actions";
 import ActionForm from "@/app/_components/action-form";
 import ApproveLeadButton from "../approve-button";
+import RestoreLeadButton from "../restore-button";
+import UnconvertLeadButton from "../unconvert-button";
 import SubmitButton from "@/app/_components/submit-button";
 
 // Fallback full-page — em navegação normal a mesma rota é interceptada
@@ -46,6 +48,8 @@ export default async function LeadFichaPage({
               <ApproveLeadButton leadId={lead.id} />
             </div>
           )}
+          {lead.status === "descartado" && <RestoreLeadButton leadId={lead.id} onSuccess="stay" />}
+            {lead.status === "aprovado" && <UnconvertLeadButton leadId={lead.id} onSuccess="stay" />}
           <Link href="/dashboard/leads" className="btn btn-ghost btn-sm">
             ✕ Fechar
           </Link>

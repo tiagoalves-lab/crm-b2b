@@ -5,7 +5,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { CotacoesService, nomeArquivoProposta } from './cotacoes.service';
+import {
+  CotacoesService,
+  nomeArquivoProposta,
+  nomeArquivoStorage,
+} from './cotacoes.service';
 
 const TOKEN = 'token-de-teste-cotacoes';
 const WORKSPACE_ID = '22222222-2222-4222-8222-222222222222';
@@ -52,11 +56,37 @@ function membershipFake(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function lookupFake() {
+  return {
+    razaoSocial: 'EMPRESA EXEMPLO LTDA',
+    cpfCnpj: '00000000000191',
+    tipo: 'PJ' as const,
+    fantasia: undefined,
+    logradouro: 'RUA UM',
+    numero: '10',
+    complemento: null,
+    bairro: 'CENTRO',
+    cep: '89200000',
+    cidade: 'JOINVILLE',
+    uf: 'SC',
+    emails: [],
+    fones: [],
+    situacaoCadastral: 'ATIVA',
+    dataAbertura: '2011-10-21',
+    porte: 'MICRO EMPRESA',
+    naturezaJuridica: 'Sociedade Empresária Limitada',
+    cnaePrincipal: '2539001 - Serviços de usinagem',
+    cnaeSecundarios: [],
+    estabelecimento: 'MATRIZ',
+    emRecuperacaoJudicial: false,
+  };
+}
+
 interface Deps {
   config: { get: jest.Mock };
   prisma: { workspace: { findUniqueOrThrow: jest.Mock } };
   tenantContext: { run: jest.Mock };
-  opportunities: { create: jest.Mock };
+  opportunities: { create: jest.Mock; update: jest.Mock };
   supabaseUsers: { getIdentities: jest.Mock };
   tx: {
     company: {
@@ -69,16 +99,32 @@ interface Deps {
       findFirst: jest.Mock;
       findMany: jest.Mock;
       update: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
     };
-    opportunityComment: { findMany: jest.Mock; createMany: jest.Mock };
-    opportunityAttachment: { findFirst: jest.Mock; create: jest.Mock };
+    opportunityItem: { findMany: jest.Mock };
+    opportunityComment: {
+      findMany: jest.Mock;
+      createMany: jest.Mock;
+      update: jest.Mock;
+    };
+    opportunityCommentEdit: { create: jest.Mock };
+    opportunityAttachment: {
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      findMany: jest.Mock;
+      deleteMany: jest.Mock;
+    };
     pipeline: { findFirst: jest.Mock };
     stage: { findFirst: jest.Mock };
     membership: { findFirst: jest.Mock; findMany: jest.Mock };
+    rawLead: { findFirst: jest.Mock; update: jest.Mock; create: jest.Mock };
+    activity: { create: jest.Mock };
     $queryRaw: jest.Mock;
   };
   pdf: { renderPdf: jest.Mock };
-  storage: { upload: jest.Mock };
+  storage: { upload: jest.Mock; remove: jest.Mock };
+  companies: { lookupCnpj: jest.Mock; update: jest.Mock };
+  opportunityItems: { update: jest.Mock };
 }
 
 function montar(
@@ -98,7 +144,9 @@ function montar(
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockResolvedValue({ id: OPPORTUNITY_ID }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ amount: null }),
     },
+    opportunityItem: { findMany: jest.fn().mockResolvedValue([]) },
     opportunityComment: {
       findMany: jest.fn().mockResolvedValue([]),
       createMany: jest
@@ -106,10 +154,14 @@ function montar(
         .mockImplementation(({ data }: { data: unknown[] }) =>
           Promise.resolve({ count: data.length }),
         ),
+      update: jest.fn().mockResolvedValue({}),
     },
+    opportunityCommentEdit: { create: jest.fn().mockResolvedValue({}) },
     opportunityAttachment: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: ATTACHMENT_ID }),
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     pipeline: {
       findFirst: jest.fn().mockResolvedValue({ id: PIPELINE_ID }),
@@ -123,6 +175,12 @@ function montar(
       findFirst: jest.fn().mockResolvedValue(membershipFake()),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    rawLead: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({}),
+    },
+    activity: { create: jest.fn().mockResolvedValue({}) },
     $queryRaw: jest.fn().mockResolvedValue([{ id: null }]),
   };
 
@@ -149,6 +207,7 @@ function montar(
     },
     opportunities: {
       create: jest.fn().mockResolvedValue({ id: OPPORTUNITY_ID }),
+      update: jest.fn().mockResolvedValue({ id: OPPORTUNITY_ID }),
     },
     supabaseUsers: {
       getIdentities: jest.fn().mockResolvedValue(new Map()),
@@ -159,7 +218,15 @@ function montar(
     pdf: {
       renderPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4 fake')),
     },
-    storage: { upload: jest.fn().mockResolvedValue(undefined) },
+    storage: {
+      upload: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
+    },
+    opportunityItems: { update: jest.fn().mockResolvedValue({}) },
+    companies: {
+      lookupCnpj: jest.fn().mockResolvedValue(lookupFake()),
+      update: jest.fn().mockResolvedValue(companyFake()),
+    },
     tx,
   };
 
@@ -171,6 +238,8 @@ function montar(
     deps.supabaseUsers as never,
     deps.pdf as never,
     deps.storage as never,
+    deps.companies as never,
+    deps.opportunityItems as never,
   );
   return { service, deps };
 }
@@ -349,6 +418,147 @@ describe('CotacoesService', () => {
     });
   });
 
+  // Cliente cotado no app deixa de ser prospect e ganha a ficha da
+  // Receita (2026-10-02).
+  describe('upsertCliente — qualificação e Cartão CNPJ', () => {
+    const dto = {
+      cnpj: '00000000000191',
+      razao_social: 'EMPRESA EXEMPLO LTDA',
+      crm_company_id: COMPANY_ID,
+    };
+
+    it('aprova o lead em triagem e tira a tag lead-triagem', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(
+        companyFake({ tags: ['lead-triagem'] }),
+      );
+      deps.tx.rawLead.findFirst.mockResolvedValue({
+        id: 'lead-1',
+        status: 'novo',
+        convertedAt: null,
+      });
+
+      await service.upsertCliente(dto);
+
+      expect(deps.tx.rawLead.update).toHaveBeenCalledWith({
+        where: { id: 'lead-1' },
+        data: expect.objectContaining({
+          status: 'aprovado',
+          etapa: 'negociacao',
+        }) as unknown,
+      });
+      const tagsUpdate = (deps.tx.company.update.mock.calls as unknown[][])
+        .map((c) => c[0] as { data: { tags?: string[] } })
+        .find((a) => a.data.tags !== undefined);
+      expect(tagsUpdate?.data.tags).toEqual([]);
+      // Conversão registrada na Timeline (2026-10-28), sem pessoa por trás.
+      expect(deps.tx.activity.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          actorUserId: null,
+          companyId: COMPANY_ID,
+          payload: expect.objectContaining({
+            action: 'lead_approved',
+            origem: 'cotacoes',
+          }) as unknown,
+        }) as unknown,
+      });
+    });
+
+    it('não mexe em lead já aprovado', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(companyFake());
+      deps.tx.rawLead.findFirst.mockResolvedValue({
+        id: 'lead-1',
+        status: 'aprovado',
+        convertedAt: new Date(),
+      });
+
+      await service.upsertCliente(dto);
+
+      expect(deps.tx.rawLead.update).not.toHaveBeenCalled();
+      expect(deps.tx.rawLead.create).not.toHaveBeenCalled();
+      expect(deps.tx.activity.create).not.toHaveBeenCalled();
+    });
+
+    it('cria o lead convertido quando a empresa não tem lead nenhum', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(companyFake());
+      deps.tx.$queryRaw.mockResolvedValue([{ precisa: true }]);
+
+      await service.upsertCliente(dto);
+
+      expect(deps.tx.rawLead.create).toHaveBeenCalledTimes(1);
+      const data = (deps.tx.rawLead.create.mock.calls as unknown[][])[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.data).toMatchObject({
+        status: 'aprovado',
+        etapa: 'negociacao',
+        promotedCompanyId: COMPANY_ID,
+        ownerUserId: OWNER_USER_ID,
+      });
+    });
+
+    it('preenche a ficha da Receita quando ela falta', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(companyFake());
+
+      const res = await service.upsertCliente(dto);
+
+      expect(res.receita).toBe('preenchido');
+      expect(deps.companies.lookupCnpj).toHaveBeenCalledWith('00000000000191');
+      const args = (deps.companies.update.mock.calls as unknown[][])[0];
+      const dtoUpdate = args[3] as { customFields: Record<string, unknown> };
+      // IE do formulário continua; snapshot da Receita entra junto.
+      expect(dtoUpdate.customFields).toMatchObject({
+        indicador_ie: '1',
+        cnpj_lookup: expect.objectContaining({
+          situacaoCadastral: 'ATIVA',
+        }) as unknown,
+      });
+      expect(args[4]).toEqual({ semTimeline: true });
+    });
+
+    it('não reconsulta quando já tem ficha e o usuário não consultou', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(
+        companyFake({ customFields: { cnpj_lookup: { porte: 'ME' } } }),
+      );
+
+      const res = await service.upsertCliente(dto);
+
+      expect(res.receita).toBe('ja_tinha');
+      expect(deps.companies.lookupCnpj).not.toHaveBeenCalled();
+    });
+
+    it('reconsulta quando o usuário consultou a Receita no formulário', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(
+        companyFake({ customFields: { cnpj_lookup: { porte: 'ME' } } }),
+      );
+
+      const res = await service.upsertCliente({
+        ...dto,
+        receita_consultada: true,
+      });
+
+      expect(res.receita).toBe('preenchido');
+      expect(deps.companies.lookupCnpj).toHaveBeenCalledTimes(1);
+    });
+
+    it('Receita fora do ar não derruba o salvar', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findFirst.mockResolvedValue(companyFake());
+      deps.companies.lookupCnpj.mockRejectedValue(new Error('timeout'));
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const res = await service.upsertCliente(dto);
+
+      expect(res.receita).toBe('erro');
+      expect(res.company.id).toBe(COMPANY_ID);
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────
   // Trello → funil (2026-09-04)
   // ─────────────────────────────────────────────────────────────
@@ -365,6 +575,10 @@ describe('CotacoesService', () => {
           stage: { name: 'Solicitação de Propostas' },
           company: { razaoSocial: 'EMPRESA EXEMPLO LTDA', fantasia: 'EXEMPLO' },
           _count: { comments: 3, items: 2 },
+          items: [
+            { id: 'item-1', name: 'GM3015S 6KW' },
+            { id: 'item-2', name: 'Dobradeira 135T' },
+          ],
         },
       ]);
 
@@ -386,6 +600,10 @@ describe('CotacoesService', () => {
           estagio: 'Solicitação de Propostas',
           status: 'open',
           itens: 2,
+          itens_lista: [
+            { id: 'item-1', nome: 'GM3015S 6KW' },
+            { id: 'item-2', nome: 'Dobradeira 135T' },
+          ],
           comentarios: 3,
           sincronizado_em: '2026-09-04T12:00:00.000Z',
         },
@@ -684,7 +902,11 @@ describe('CotacoesService', () => {
       const jaEspelhado = 'b'.repeat(24);
       const novo = 'c'.repeat(24);
       deps.tx.opportunityComment.findMany.mockResolvedValue([
-        { externalRef: jaEspelhado },
+        {
+          id: 'comentario-1',
+          externalRef: jaEspelhado,
+          body: 'mensagem antiga',
+        },
       ]);
 
       const res = await service.trelloSincronizarComentarios({
@@ -698,8 +920,12 @@ describe('CotacoesService', () => {
       expect(res).toEqual({
         opportunity_id: OPPORTUNITY_ID,
         novos: 1,
+        editados: 0,
         recebidos: 2,
       });
+      // Texto igual ao do Trello: nada de edição registrada.
+      expect(deps.tx.opportunityCommentEdit.create).not.toHaveBeenCalled();
+      expect(deps.tx.opportunityComment.update).not.toHaveBeenCalled();
 
       const gravacao = (
         deps.tx.opportunityComment.createMany.mock.calls as unknown[][]
@@ -727,6 +953,43 @@ describe('CotacoesService', () => {
       expect(gravacao.data[0].createdAt.toISOString()).toBe(
         '2026-09-04T13:00:00.000Z',
       );
+    });
+
+    it('mensagem corrigida no Trello atualiza o texto e guarda a versão anterior', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
+      const ref = 'b'.repeat(24);
+      deps.tx.opportunityComment.findMany.mockResolvedValue([
+        { id: 'comentario-1', externalRef: ref, body: 'comprimento 6400' },
+      ]);
+
+      const res = await service.trelloSincronizarComentarios({
+        card_id: CARD_ID,
+        comentarios: [
+          comentario(ref, 'comprimento 6000', '2026-10-15T14:59:00Z'),
+        ],
+      });
+
+      expect(res.novos).toBe(0);
+      expect(res.editados).toBe(1);
+      expect(deps.tx.opportunityComment.createMany).not.toHaveBeenCalled();
+      expect(
+        (deps.tx.opportunityCommentEdit.create.mock.calls as unknown[][])[0][0],
+      ).toMatchObject({
+        data: {
+          commentId: 'comentario-1',
+          opportunityId: OPPORTUNITY_ID,
+          bodyBefore: 'comprimento 6400',
+          bodyAfter: 'comprimento 6000',
+          editedByUserId: '00000000-0000-4000-8000-000000000000',
+        },
+      });
+      expect(
+        (deps.tx.opportunityComment.update.mock.calls as unknown[][])[0][0],
+      ).toMatchObject({
+        where: { id: 'comentario-1' },
+        data: { body: 'comprimento 6000' },
+      });
     });
 
     it('descarta mensagem vazia, repetida no lote, e ordena por data', async () => {
@@ -921,6 +1184,48 @@ describe('CotacoesService', () => {
       )[0][0] as { where: { AND: [unknown, { OR: unknown[] }] } };
       expect(args.where.AND[1].OR).toHaveLength(2);
     });
+
+    it('CNPJ completo fora dos clientes devolve a empresa da Prospecção à parte', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          companyFake({
+            tags: ['lead-triagem'],
+            originLeads: [{ etapa: 'entrada', status: 'novo' }],
+          }),
+        ]);
+
+      const res = await service.buscarCompanies({ q: '00.000.000/0001-91' });
+
+      expect(res.itens).toEqual([]);
+      expect(res.prospeccao).toHaveLength(1);
+      expect(res.prospeccao[0]).toMatchObject({
+        id: COMPANY_ID,
+        cnpj: '00000000000191',
+        etapa: 'Prospectar/Entrada',
+        descartado: false,
+      });
+      const args = (
+        deps.tx.company.findMany.mock.calls as unknown[][]
+      )[1][0] as { where: { NOT: unknown; cpfCnpj: unknown } };
+      // Só quem NÃO é elegível — o cliente já veio na primeira consulta.
+      expect(args.where.NOT).toHaveProperty('OR');
+      expect(args.where.cpfCnpj).toEqual({ contains: '00000000000191' });
+    });
+
+    it('não procura na Prospecção quando o CNPJ já é cliente ou está incompleto', async () => {
+      const { service, deps } = montar();
+      deps.tx.company.findMany.mockResolvedValue([companyFake()]);
+
+      const cheio = await service.buscarCompanies({ q: '00000000000191' });
+      const parcial = await service.buscarCompanies({ q: '0000000000' });
+
+      expect(cheio.prospeccao).toEqual([]);
+      expect(parcial.prospeccao).toEqual([]);
+      // Uma consulta por busca: nenhuma das duas foi à Prospecção.
+      expect(deps.tx.company.findMany).toHaveBeenCalledTimes(2);
+    });
   });
   // ---------------------------------------------------------------
   // Proposta congelada -> PDF no card (2026-09-28)
@@ -955,7 +1260,12 @@ describe('CotacoesService', () => {
       expect(caminho).toContain(
         `${WORKSPACE_ID}/opportunities/${OPPORTUNITY_ID}/`,
       );
-      expect(caminho).toContain('(ABCD1234).pdf');
+      // Codigo de verificacao como pasta e o nome da proposta no fim do
+      // caminho: "Abrir em nova aba" e salvar sugere o mesmo nome do card.
+      expect(caminho).toContain('/orc-3011/ABCD1234/');
+      expect(
+        String(caminho).endsWith('/Proposta 3011-26 Ver. 1.0 CLIENTE LTDA.pdf'),
+      ).toBe(true);
       expect(Buffer.isBuffer(bytes)).toBe(true);
       expect(tipo).toBe('application/pdf');
 
@@ -968,6 +1278,13 @@ describe('CotacoesService', () => {
         '00000000-0000-4000-8000-000000000000',
       );
       expect(criado.data.mimeType).toBe('application/pdf');
+      // Mesmo nome do "Salvar como PDF" do app, sem o codigo no fim.
+      expect(criado.data.fileName).toBe(
+        'Proposta 3011-26 Ver. 1.0 CLIENTE LTDA.pdf',
+      );
+      expect(res.file_name).toBe('Proposta 3011-26 Ver. 1.0 CLIENTE LTDA.pdf');
+      // Entra publicado: gerente e representante veem a proposta na hora.
+      expect(criado.data.publishedAt).toBeInstanceOf(Date);
       expect(res.ja_existia).toBe(false);
       expect(res.attachment_id).toBe(ATTACHMENT_ID);
       expect(res.pdf_sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -988,11 +1305,40 @@ describe('CotacoesService', () => {
       expect(deps.tx.opportunityAttachment.create).not.toHaveBeenCalled();
     });
 
+    it('reenvio da mesma versao do orcamento troca o PDF anterior da integracao', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
+      const pasta = `${WORKSPACE_ID}/opportunities/${OPPORTUNITY_ID}/orc-3011/`;
+      deps.tx.opportunityAttachment.findMany.mockResolvedValue([
+        { id: 'antigo-1', storagePath: `${pasta}velho.pdf` },
+      ]);
+
+      await service.upsertProposta(payload());
+
+      const [caminho] = deps.storage.upload.mock.calls[0] as unknown[];
+      expect(String(caminho).startsWith(pasta)).toBe(true);
+      // So anexos da integracao, desta versao do orcamento, e nunca o novo.
+      expect(deps.tx.opportunityAttachment.findMany).toHaveBeenCalledWith({
+        where: {
+          opportunityId: OPPORTUNITY_ID,
+          uploadedBy: '00000000-0000-4000-8000-000000000000',
+          storagePath: { startsWith: pasta },
+          id: { not: ATTACHMENT_ID },
+        },
+        select: { id: true, storagePath: true },
+      });
+      expect(deps.tx.opportunityAttachment.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['antigo-1'] } },
+      });
+      expect(deps.storage.remove).toHaveBeenCalledWith(`${pasta}velho.pdf`);
+    });
+
     it('nao duplica: reenvio do mesmo codigo devolve o anexo existente', async () => {
       const { service, deps } = montar();
       deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
       deps.tx.opportunityAttachment.findFirst.mockResolvedValue({
         id: ATTACHMENT_ID,
+        fileName: '3011_26-v1.0 (ABCD1234).pdf',
         storagePath: 'caminho/antigo.pdf',
         sizeBytes: BigInt(1234),
       });
@@ -1001,6 +1347,24 @@ describe('CotacoesService', () => {
 
       expect(res.ja_existia).toBe(true);
       expect(res.bytes).toBe(1234);
+      expect(res.file_name).toBe('3011_26-v1.0 (ABCD1234).pdf');
+      // Acha pela pasta do codigo ou, no formato de antes de 2026-10-16,
+      // pelo codigo no fim do nome — e so entre os anexos da integracao.
+      const pasta = `${WORKSPACE_ID}/opportunities/${OPPORTUNITY_ID}/orc-3011/`;
+      expect(deps.tx.opportunityAttachment.findFirst).toHaveBeenCalledWith({
+        where: {
+          opportunityId: OPPORTUNITY_ID,
+          uploadedBy: '00000000-0000-4000-8000-000000000000',
+          OR: [
+            { storagePath: { startsWith: `${pasta}ABCD1234/` } },
+            {
+              storagePath: { startsWith: pasta },
+              fileName: { endsWith: '(ABCD1234).pdf' },
+            },
+          ],
+        },
+        select: { id: true, fileName: true, storagePath: true, sizeBytes: true },
+      });
       expect(deps.pdf.renderPdf).not.toHaveBeenCalled();
       expect(deps.storage.upload).not.toHaveBeenCalled();
     });
@@ -1015,16 +1379,28 @@ describe('CotacoesService', () => {
       expect(deps.pdf.renderPdf).not.toHaveBeenCalled();
     });
 
-    it('sanea o nome do arquivo e carimba o codigo de verificacao', () => {
-      expect(nomeArquivoProposta('Proposta 3011/26 Ver. 1.0', 'ABCD1234')).toBe(
-        'Proposta 3011_26 Ver. 1.0 (ABCD1234).pdf',
+    it('mantem o nome do app e so tira o que o Windows nao aceita', () => {
+      expect(
+        nomeArquivoProposta('Proposta 3057-26 Ver. 3.0 TCK56Y CLIENTE LTDA'),
+      ).toBe('Proposta 3057-26 Ver. 3.0 TCK56Y CLIENTE LTDA.pdf');
+      // Barra vira "-" (a mesma troca do app); acento fica.
+      expect(nomeArquivoProposta('Proposta 3011/26 Ver. 1.0 MÁQUINAS LTDA')).toBe(
+        'Proposta 3011-26 Ver. 1.0 MÁQUINAS LTDA.pdf',
       );
-      // Path traversal e extensao repetida nao passam.
-      expect(nomeArquivoProposta('../../etc/passwd.pdf', 'ZZZZ0000')).toBe(
-        '____etc_passwd (ZZZZ0000).pdf',
+      // Extensao repetida e ponto no fim nao passam; vazio vira "Proposta".
+      expect(nomeArquivoProposta('Proposta 1-26 Ver. 1.0 X.pdf')).toBe(
+        'Proposta 1-26 Ver. 1.0 X.pdf',
       );
-      expect(nomeArquivoProposta('   ', 'ZZZZ0000')).toBe(
-        'Proposta (ZZZZ0000).pdf',
+      expect(nomeArquivoProposta('Proposta S.A.')).toBe('Proposta S.A.pdf');
+      expect(nomeArquivoProposta('   ')).toBe('Proposta.pdf');
+    });
+
+    it('chave do Storage: sem acento, sem barra e sem path traversal', () => {
+      expect(nomeArquivoStorage('Proposta 1-26 Ver. 1.0 AGRÍCOLA & CIA.pdf')).toBe(
+        'Proposta 1-26 Ver. 1.0 AGRICOLA _ CIA.pdf',
+      );
+      expect(nomeArquivoStorage(nomeArquivoProposta('../../etc/passwd.pdf'))).toBe(
+        '_-_-etc-passwd.pdf',
       );
     });
   });
@@ -1053,7 +1429,12 @@ describe('CotacoesService', () => {
         stage: { id: STAGE_ID, name: 'Solicitação de Propostas', order: 1 },
         items: [
           { id: 'item-1', name: 'Laser 3015 6kW', amount: null, position: 0 },
-          { id: 'item-2', name: 'Dobradeira 135T', amount: 250000, position: 1 },
+          {
+            id: 'item-2',
+            name: 'Dobradeira 135T',
+            amount: 250000,
+            position: 1,
+          },
         ],
         ...over,
       };
@@ -1063,7 +1444,9 @@ describe('CotacoesService', () => {
       const { service, deps } = montar();
       deps.tx.opportunity.findMany.mockResolvedValue([oportunidadeFake()]);
       deps.supabaseUsers.getIdentities.mockResolvedValue(
-        new Map([[OWNER_USER_ID, { login: 'darla', name: 'Darlã', email: null }]]),
+        new Map([
+          [OWNER_USER_ID, { login: 'darla', name: 'Darlã', email: null }],
+        ]),
       );
 
       const res = await service.fila({});
@@ -1087,8 +1470,9 @@ describe('CotacoesService', () => {
       deps.tx.opportunity.findMany.mockResolvedValue([]);
 
       await service.fila({});
-      const semHistorico = deps.tx.opportunity.findMany.mock
-        .calls[0][0] as { where: Record<string, unknown> };
+      const semHistorico = deps.tx.opportunity.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
       expect(semHistorico.where.NOT).toBeUndefined();
       expect(semHistorico.where.OR).toEqual([
         { origem: null },
@@ -1096,8 +1480,9 @@ describe('CotacoesService', () => {
       ]);
 
       await service.fila({ incluir_historico: true });
-      const comHistorico = deps.tx.opportunity.findMany.mock
-        .calls[1][0] as { where: Record<string, unknown> };
+      const comHistorico = deps.tx.opportunity.findMany.mock.calls[1][0] as {
+        where: Record<string, unknown>;
+      };
       expect(comHistorico.where.NOT).toBeUndefined();
       expect(comHistorico.where.OR).toBeUndefined();
     });
@@ -1122,20 +1507,289 @@ describe('CotacoesService', () => {
 
       await service.fila({});
 
-      const args = deps.tx.opportunity.findMany.mock
-        .calls[0][0] as { where: Record<string, unknown> };
+      const args = deps.tx.opportunity.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
       expect(args.where.status).toBe('open');
       expect(args.where.deletedAt).toBeNull();
     });
 
     it('solicitação sem itens continua aparecendo (é trabalho a detalhar)', async () => {
       const { service, deps } = montar();
-      deps.tx.opportunity.findMany.mockResolvedValue([oportunidadeFake({ items: [] })]);
+      deps.tx.opportunity.findMany.mockResolvedValue([
+        oportunidadeFake({ items: [] }),
+      ]);
 
       const res = await service.fila({});
 
       expect(res.solicitacoes).toHaveLength(1);
       expect(res.solicitacoes[0].itens).toEqual([]);
+    });
+  });
+
+  describe('avancarEstagio', () => {
+    const APROVACAO_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const aprovacao = {
+      id: APROVACAO_ID,
+      name: 'Aprovação de Propostas',
+      order: 3,
+    };
+
+    function cardFake(over: Record<string, unknown> = {}) {
+      return {
+        id: OPPORTUNITY_ID,
+        pipelineId: PIPELINE_ID,
+        stageId: STAGE_ID,
+        status: 'open',
+        version: 7,
+        stage: { id: STAGE_ID, name: 'Elaboração de Propostas', order: 2 },
+        ...over,
+      };
+    }
+
+    it('move o card para Aprovação pelo OpportunityService, com a versão lida e o ator-sistema', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue(cardFake());
+      deps.tx.stage.findFirst.mockResolvedValue(aprovacao);
+
+      const res = await service.avancarEstagio({
+        opportunity_id: OPPORTUNITY_ID,
+        etapa: 'aprovacao',
+      });
+
+      expect(res).toEqual({
+        opportunity_id: OPPORTUNITY_ID,
+        movido: true,
+        de: 'Elaboração de Propostas',
+        estagio: 'Aprovação de Propostas',
+        motivo: 'movido',
+      });
+      expect(deps.opportunities.update).toHaveBeenCalledWith(
+        deps.tx,
+        expect.objectContaining({
+          userId: '00000000-0000-4000-8000-000000000000',
+          role: 'owner',
+        }),
+        OPPORTUNITY_ID,
+        { version: 7, stageId: APROVACAO_ID },
+      );
+      // Estágio procurado por nome, dentro do funil do próprio card.
+      expect(deps.tx.stage.findFirst).toHaveBeenCalledWith({
+        where: {
+          pipelineId: PIPELINE_ID,
+          name: { equals: 'Aprovação de Propostas', mode: 'insensitive' },
+        },
+      });
+    });
+
+    it('nunca puxa para trás: card já em Negociação fica onde está', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue(
+        cardFake({
+          stageId: 'negociacao',
+          stage: {
+            id: 'negociacao',
+            name: 'Negociação e Fechamento',
+            order: 4,
+          },
+        }),
+      );
+      deps.tx.stage.findFirst.mockResolvedValue(aprovacao);
+
+      const res = await service.avancarEstagio({
+        opportunity_id: OPPORTUNITY_ID,
+        etapa: 'aprovacao',
+      });
+      expect(res.movido).toBe(false);
+      expect(res.motivo).toBe('ja_adiante');
+      expect(deps.opportunities.update).not.toHaveBeenCalled();
+    });
+
+    it('não mexe em card já no estágio nem em oportunidade fechada', async () => {
+      const { service, deps } = montar();
+      deps.tx.stage.findFirst.mockResolvedValue(aprovacao);
+
+      deps.tx.opportunity.findFirst.mockResolvedValueOnce(
+        cardFake({ stageId: APROVACAO_ID, stage: aprovacao }),
+      );
+      const mesmo = await service.avancarEstagio({
+        opportunity_id: OPPORTUNITY_ID,
+        etapa: 'aprovacao',
+      });
+      expect(mesmo.motivo).toBe('ja_no_estagio');
+
+      deps.tx.opportunity.findFirst.mockResolvedValueOnce(
+        cardFake({ status: 'won' }),
+      );
+      const ganha = await service.avancarEstagio({
+        opportunity_id: OPPORTUNITY_ID,
+        etapa: 'aprovacao',
+      });
+      expect(ganha.motivo).toBe('fechada');
+
+      expect(deps.opportunities.update).not.toHaveBeenCalled();
+    });
+
+    it('oportunidade inexistente vira 404', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue(null);
+      await expect(
+        service.avancarEstagio({
+          opportunity_id: OPPORTUNITY_ID,
+          etapa: 'aprovacao',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    describe('etapa "aprovadas" (PDF entregue no card)', () => {
+      const APROVADAS_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+      const aprovadas = {
+        id: APROVADAS_ID,
+        name: 'Propostas aprovadas',
+        order: 4,
+      };
+
+      it('move de Aprovação de Propostas para Propostas aprovadas', async () => {
+        const { service, deps } = montar();
+        deps.tx.opportunity.findFirst.mockResolvedValue(
+          cardFake({ stageId: APROVACAO_ID, stage: aprovacao }),
+        );
+        deps.tx.stage.findFirst.mockResolvedValue(aprovadas);
+
+        const res = await service.avancarEstagio({
+          opportunity_id: OPPORTUNITY_ID,
+          etapa: 'aprovadas',
+        });
+
+        expect(res).toEqual({
+          opportunity_id: OPPORTUNITY_ID,
+          movido: true,
+          de: 'Aprovação de Propostas',
+          estagio: 'Propostas aprovadas',
+          motivo: 'movido',
+        });
+        expect(deps.opportunities.update).toHaveBeenCalledWith(
+          deps.tx,
+          expect.anything(),
+          OPPORTUNITY_ID,
+          { version: 7, stageId: APROVADAS_ID },
+        );
+        expect(deps.tx.stage.findFirst).toHaveBeenCalledWith({
+          where: {
+            pipelineId: PIPELINE_ID,
+            name: { equals: 'Propostas aprovadas', mode: 'insensitive' },
+          },
+        });
+      });
+
+      it('não pula etapa: card ainda em Elaboração fica onde está', async () => {
+        const { service, deps } = montar();
+        deps.tx.opportunity.findFirst.mockResolvedValue(cardFake());
+        deps.tx.stage.findFirst.mockResolvedValue(aprovadas);
+
+        const res = await service.avancarEstagio({
+          opportunity_id: OPPORTUNITY_ID,
+          etapa: 'aprovadas',
+        });
+        expect(res.movido).toBe(false);
+        expect(res.motivo).toBe('fora_da_origem');
+        expect(deps.opportunities.update).not.toHaveBeenCalled();
+      });
+
+      it('card já em Propostas aprovadas ou adiante não se mexe', async () => {
+        const { service, deps } = montar();
+        deps.tx.stage.findFirst.mockResolvedValue(aprovadas);
+
+        deps.tx.opportunity.findFirst.mockResolvedValueOnce(
+          cardFake({ stageId: APROVADAS_ID, stage: aprovadas }),
+        );
+        const mesmo = await service.avancarEstagio({
+          opportunity_id: OPPORTUNITY_ID,
+          etapa: 'aprovadas',
+        });
+        expect(mesmo.motivo).toBe('ja_no_estagio');
+
+        deps.tx.opportunity.findFirst.mockResolvedValueOnce(
+          cardFake({
+            stageId: 'negociacao',
+            stage: { id: 'negociacao', name: 'Negociação', order: 5 },
+          }),
+        );
+        const adiante = await service.avancarEstagio({
+          opportunity_id: OPPORTUNITY_ID,
+          etapa: 'aprovadas',
+        });
+        expect(adiante.motivo).toBe('ja_adiante');
+
+        expect(deps.opportunities.update).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('itensValor', () => {
+    const ITEM_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const ITEM_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+    it('grava o valor de cada item pelo servico de itens, com o ator-sistema', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
+      deps.tx.opportunityItem.findMany.mockResolvedValue([
+        { id: ITEM_A, amount: null },
+        { id: ITEM_B, amount: 500 },
+      ]);
+      deps.tx.opportunity.findUniqueOrThrow.mockResolvedValue({ amount: 1500 });
+
+      const res = await service.itensValor({
+        opportunity_id: OPPORTUNITY_ID,
+        itens: [
+          { item_id: ITEM_A, amount: 1000 },
+          // mesmo valor que ja esta la: nao vira evento no historico
+          { item_id: ITEM_B, amount: 500 },
+        ],
+      });
+
+      expect(deps.opportunityItems.update).toHaveBeenCalledTimes(1);
+      expect(deps.opportunityItems.update).toHaveBeenCalledWith(
+        deps.tx,
+        expect.objectContaining({
+          userId: '00000000-0000-4000-8000-000000000000',
+        }),
+        OPPORTUNITY_ID,
+        ITEM_A,
+        { amount: 1000 },
+      );
+      expect(res).toEqual({
+        opportunity_id: OPPORTUNITY_ID,
+        atualizados: 1,
+        valor_oportunidade: '1500',
+      });
+    });
+
+    it('item de outro card vira 404 e nada e gravado', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue({ id: OPPORTUNITY_ID });
+      deps.tx.opportunityItem.findMany.mockResolvedValue([
+        { id: ITEM_A, amount: null },
+      ]);
+
+      await expect(
+        service.itensValor({
+          opportunity_id: OPPORTUNITY_ID,
+          itens: [{ item_id: ITEM_B, amount: 10 }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(deps.opportunityItems.update).not.toHaveBeenCalled();
+    });
+
+    it('oportunidade inexistente vira 404', async () => {
+      const { service, deps } = montar();
+      deps.tx.opportunity.findFirst.mockResolvedValue(null);
+      await expect(
+        service.itensValor({
+          opportunity_id: OPPORTUNITY_ID,
+          itens: [{ item_id: ITEM_A, amount: 10 }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 export interface ActivityRow {
   id: string;
   kind: string;
+  // Quem fez × quem está com a tarefa (2026-10-29) — fora de tarefa, iguais.
   userLabel: string;
+  responsavelLabel: string;
   text: string;
   company: string | null;
   when: string;
@@ -24,6 +26,7 @@ export default function RecentActivityTable({ rows }: { rows: ActivityRow[] }) {
       <thead>
         <tr>
           <th style={{ width: 100 }}>Tipo</th>
+          <th style={{ width: 110 }}>Usuário</th>
           <th style={{ width: 110 }}>Responsável</th>
           <th>Atividade</th>
           <th style={{ width: 160 }}>Empresa</th>
@@ -37,6 +40,7 @@ export default function RecentActivityTable({ rows }: { rows: ActivityRow[] }) {
               <span className="task-type">{row.kind}</span>
             </td>
             <td style={{ width: 110, whiteSpace: "nowrap", fontSize: 12 }}>{row.userLabel}</td>
+            <td style={{ width: 110, whiteSpace: "nowrap", fontSize: 12 }}>{row.responsavelLabel}</td>
             <td className="t-co">{row.text}</td>
             <td className="t-sub" style={{ width: 160 }}>
               {row.company ?? "—"}

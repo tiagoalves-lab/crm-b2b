@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { getServerAccessToken } from "@/lib/api/auth";
+import { getMe } from "@/lib/api/me";
+import { hasPermission } from "@/lib/api/permission-catalog";
 import { listMemberships } from "@/lib/api/memberships";
 import TopbarFilter from "@/app/_components/topbar-filter";
 import { RELATORIOS, relatorioDe } from "./catalogo";
 import RelatorioAnotacoes from "./_relatorios/anotacoes";
+import RelatorioContatos from "./_relatorios/contatos";
+import RelatorioSlaOportunidades from "./_relatorios/sla-oportunidades";
 import RelatorioTarefasConcluidas from "./_relatorios/tarefas-concluidas";
 
 // Tela de Relatórios no molde do eGestor (pedido do usuário, 2026-09-23):
@@ -30,7 +34,14 @@ export default async function RelatoriosPage({
   }
 
   const token = await getServerAccessToken();
-  const atual = relatorioDe(params.r);
+  // getMe tem cache() por renderização — o layout do dashboard já buscou.
+  const me = await getMe(token);
+  // Relatório com caixa própria (ex.: financeiros) some do menu e não
+  // abre pela URL pra quem não tem a caixa marcada.
+  const disponiveis = RELATORIOS.filter(
+    (r) => !r.permission || hasPermission(me.membership.role, me.membership.permissions, r.permission, "ver"),
+  );
+  const atual = disponiveis.find((r) => r.id === relatorioDe(params.r)?.id) ?? null;
   // Lista de membros só quando algum relatório está aberto: ela alimenta
   // o filtro de pessoa e traduz o id de quem registrou cada linha.
   const memberships = atual ? await listMemberships(token) : [];
@@ -52,7 +63,7 @@ export default async function RelatoriosPage({
               <div className="panel-title">Relatórios</div>
             </div>
             <div className="panel-body">
-              {RELATORIOS.map((item) => (
+              {disponiveis.map((item) => (
                 <Link
                   key={item.id}
                   href={`/dashboard/relatorios?r=${item.id}`}
@@ -74,6 +85,10 @@ export default async function RelatoriosPage({
 
                 {atual.id === "anotacoes" ? (
                   <RelatorioAnotacoes token={token} params={params} memberships={memberships} />
+                ) : atual.id === "contatos" ? (
+                  <RelatorioContatos token={token} params={params} memberships={memberships} />
+                ) : atual.id === "sla-oportunidades" ? (
+                  <RelatorioSlaOportunidades token={token} params={params} memberships={memberships} />
                 ) : (
                   <RelatorioTarefasConcluidas
                     token={token}

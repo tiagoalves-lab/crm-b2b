@@ -8,8 +8,10 @@ import {
   TIPO_LEAD_META,
 } from '../reports/report-config.service';
 import {
+  diaBR,
   diaCurtoBR,
-  diferencaEmDias,
+  diaDoPrazo,
+  diasEntre,
   horarioBR,
   FUSO_PADRAO,
 } from '../reports/report-datas';
@@ -345,13 +347,21 @@ export class NotificationService {
       return;
     }
 
-    const prazo = task.dueAt ? diaCurtoBR(task.dueAt, this.tz) : null;
+    // Prazo só-data é meia-noite UTC: lido no fuso de Brasília recuava um
+    // dia (ver diaDoPrazo) — o aviso mostrava a véspera e chamava de
+    // atrasada a tarefa que vence hoje.
+    const prazo = task.dueAt
+      ? diaCurtoBR(task.dueAt, task.dueHasTime ? this.tz : 'UTC')
+      : null;
     const aviso = {
       titulo: task.title,
       empresa: nomeEmpresa(task.company ?? task.opportunity?.company ?? null),
       prazo,
       atrasada: task.dueAt
-        ? diferencaEmDias(task.dueAt, new Date(), this.tz) > 0
+        ? diasEntre(
+            diaDoPrazo(task.dueAt, task.dueHasTime, this.tz),
+            diaBR(new Date(), this.tz),
+          ) > 0
         : false,
       tipo: task.tipo ? rotuloTipo(task.tipo) : null,
       descricao: task.description,

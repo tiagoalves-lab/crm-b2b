@@ -265,7 +265,7 @@ describe('OpportunityAttachmentService', () => {
   });
 
   // ── Publicação do anexo (2026-09-15) ────────────────────────────────
-  it('anexo enviado por admin nasce reservado; por representante, já publicado', async () => {
+  it('anexo nasce publicado, seja de admin ou de representante', async () => {
     const service = new OpportunityAttachmentService(
       fakeOpportunityService(),
       fakeStorage(),
@@ -278,7 +278,7 @@ describe('OpportunityAttachmentService', () => {
       OPPORTUNITY_ID,
       { fileName: 'proposta.pdf' },
     );
-    expect(doAdmin.attachment.publishedAt).toBeNull();
+    expect(doAdmin.attachment.publishedAt).toBeInstanceOf(Date);
 
     const doRep = await service.createUploadUrl(
       fakeTx(),

@@ -349,3 +349,112 @@ describe('MembershipService', () => {
     expect(tx.membership.count).not.toHaveBeenCalled();
   });
 });
+
+// Console fiscal (2026-10-22): admin segue a caixa da matriz, só o owner
+// tem bypass — então admin não mexe na caixa que não tem e não promove a owner.
+describe('MembershipService — Console fiscal sem bypass do admin', () => {
+  let service: MembershipService;
+  const adminSemConsole = callerMembership({
+    id: 'membership-admin',
+    userId: 'user-admin',
+    role: 'admin',
+    permissions: { fiscal: { ver: false, editar: false } },
+  });
+
+  beforeEach(() => {
+    service = new MembershipService(fakeSupabaseUser(), new PolicyService());
+  });
+
+  function dadosGravados(tx: TenantTx, metodo: 'create' | 'update') {
+    return (tx.membership[metodo] as jest.Mock).mock.calls[0][0].data;
+  }
+
+  it('admin não promove ninguém a owner', async () => {
+    const tx = fakeTx({ target: targetRow({ role: 'sales_rep' }) });
+    await expect(
+      service.update(tx, adminSemConsole, 'membership-target', { role: 'owner' }),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.create(tx, adminSemConsole, {
+        name: 'Novo Dono',
+        login: 'novo.dono',
+        password: 'senha1234',
+        role: 'owner',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('owner continua promovendo a owner', async () => {
+    const tx = fakeTx({ target: targetRow({ role: 'admin' }) });
+    await expect(
+      service.update(tx, callerMembership(), 'membership-target', { role: 'owner' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('owner desliga o console de um admin', async () => {
+    const tx = fakeTx({ target: targetRow({ role: 'admin' }) });
+    await service.update(tx, callerMembership(), 'membership-target', {
+      permissions: { fiscal: { ver: false, editar: false } },
+    });
+    expect(dadosGravados(tx, 'update').permissions.fiscal).toEqual({
+      ver: false,
+      editar: false,
+    });
+  });
+
+  it('admin sem console não tira o console de quem tem, nem ao salvar outro campo', async () => {
+    const tx = fakeTx({ target: targetRow({ role: 'admin', permissions: null }) });
+    await service.update(tx, adminSemConsole, 'membership-target', {
+      permissions: { fiscal: { ver: false, editar: false }, tarefas: { excluir: false } },
+    });
+    const gravado = dadosGravados(tx, 'update').permissions;
+    expect(gravado.fiscal).toEqual({ ver: true, editar: true });
+    expect(gravado.tarefas).toEqual({ excluir: false });
+  });
+
+  it('admin sem console não liga o console de ninguém', async () => {
+    const tx = fakeTx({ target: targetRow({ role: 'manager', permissions: null }) });
+    await service.update(tx, adminSemConsole, 'membership-target', {
+      permissions: { fiscal: { ver: true, editar: true } },
+    });
+    expect(dadosGravados(tx, 'update').permissions.fiscal).toEqual({
+      ver: false,
+      editar: false,
+    });
+  });
+
+  it('admin sem console promovendo a admin não dá o console por tabela', async () => {
+    const tx = fakeTx({ target: targetRow({ role: 'sales_rep', permissions: null }) });
+    await service.update(tx, adminSemConsole, 'membership-target', { role: 'admin' });
+    expect(dadosGravados(tx, 'update').permissions.fiscal).toEqual({
+      ver: false,
+      editar: false,
+    });
+  });
+
+  it('admin sem console cadastrando admin sem matriz: novo nasce sem o console', async () => {
+    const tx = fakeTx();
+    await service.create(tx, adminSemConsole, {
+      name: 'Novo Admin',
+      login: 'novo.admin',
+      password: 'senha1234',
+      role: 'admin',
+    });
+    // Relatórios financeiros também: o admin que cadastra não tem a caixa.
+    expect(dadosGravados(tx, 'create').permissions).toEqual({
+      fiscal: { ver: false, editar: false },
+      relatorios_financeiros: { ver: false },
+    });
+  });
+
+  it('owner cadastrando sem matriz continua gravando sem matriz (preset do papel)', async () => {
+    const tx = fakeTx();
+    await service.create(tx, callerMembership(), {
+      name: 'Novo Admin',
+      login: 'novo.admin',
+      password: 'senha1234',
+      role: 'admin',
+    });
+    expect(dadosGravados(tx, 'create').permissions).toBeUndefined();
+  });
+});

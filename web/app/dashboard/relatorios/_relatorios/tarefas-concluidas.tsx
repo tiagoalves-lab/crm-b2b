@@ -5,6 +5,7 @@ import type { Membership, TaskType } from "@/lib/api/types";
 import { formatDateOnlyBR, formatDateTimeBR } from "@/lib/format-date";
 import { memberName } from "../../(administracao)/membros/roles";
 import { faixaDoPeriodo, faixaPorExtenso, PERIODOS, PERIODO_PADRAO } from "../periodo";
+import PersonalizadoAoDigitar from "../personalizado-ao-digitar";
 
 // Relatório "Tarefas concluídas" (pedido do usuário, 2026-09-23) — mesma
 // moldura do relatório de anotações: filtros em cima, resultado embaixo.
@@ -51,6 +52,7 @@ export default async function RelatorioTarefasConcluidas({
         </div>
         <div className="panel-body">
           <form method="get" action="/dashboard/relatorios" className="rel-filtros">
+            <PersonalizadoAoDigitar />
             <input type="hidden" name="r" value="tarefas-concluidas" />
 
             <div className="field">

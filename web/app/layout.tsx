@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { IS_BETA } from "@/lib/ambiente";
 
 export const metadata: Metadata = {
-  title: "Gama Brasil · CRM",
+  title: IS_BETA ? "BETA · Gama Brasil · CRM" : "Gama Brasil · CRM",
   description: "CRM B2B multi-tenant — Gama Brasil",
 };
 

@@ -57,7 +57,7 @@ export default async function EditarMembroPage({
       <div className="content">
         {error && <div className="error-banner">{error}</div>}
         <div className="form-panel">
-          <MemberEditForm member={member} members={members} />
+          <MemberEditForm member={member} members={members} actor={me.membership} />
         </div>
       </div>
     </>

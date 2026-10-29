@@ -13,6 +13,7 @@ import { validate } from './config/env.validation';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { CotacoesModule } from './integrations/cotacoes/cotacoes.module';
 import { EgestorModule } from './integrations/egestor/egestor.module';
+import { FiscalModule } from './fiscal/fiscal.module';
 import { MetaLeadsModule } from './integrations/meta-leads/meta-leads.module';
 import { MeController } from './me/me.controller';
 import { MembershipModule } from './memberships/membership.module';
@@ -79,6 +80,7 @@ import { UserThrottlerGuard } from './common/throttler/user-throttler.guard';
     RelatorioModule,
     DeletionLogModule,
     TelefoniaModule,
+    FiscalModule,
   ],
   controllers: [AppController, MeController],
   providers: [

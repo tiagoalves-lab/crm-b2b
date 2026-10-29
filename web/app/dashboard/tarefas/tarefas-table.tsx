@@ -15,6 +15,8 @@ export interface TarefaRow {
   tipoLabel: string;
   vinculoLabel: string;
   assigneeLabel: string;
+  // Membros da tarefa (2026-09-30), nomes separados por vírgula; "" = nenhum.
+  membrosLabel: string;
   dueLabel: string;
   dueClass: string;
   nAnexos: number;
@@ -45,6 +47,7 @@ export default function TarefasTable({ rows, baseHref }: { rows: TarefaRow[]; ba
             <th style={{ width: 40 }}></th>
             <th>Tarefa</th>
             <th>Responsável</th>
+            <th>Membros</th>
             <th>Tipo</th>
             <th>Vínculo</th>
             <th>Prazo</th>
@@ -96,6 +99,7 @@ export default function TarefasTable({ rows, baseHref }: { rows: TarefaRow[]; ba
                   )}
                 </td>
                 <td>{task.assigneeLabel}</td>
+                <td>{task.membrosLabel || "—"}</td>
                 <td style={{ fontWeight: 500 }}>{task.tipoLabel}</td>
                 <td>
                   <span style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>{task.vinculoLabel}</span>
@@ -128,7 +132,7 @@ export default function TarefasTable({ rows, baseHref }: { rows: TarefaRow[]; ba
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={8} className="empty">
+              <td colSpan={9} className="empty">
                 Nenhuma tarefa.
               </td>
             </tr>

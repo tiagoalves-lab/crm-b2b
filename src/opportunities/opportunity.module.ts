@@ -42,6 +42,6 @@ import { OpportunityService } from './opportunity.service';
     OpportunityLostReasonService,
   ],
   // Idem TaskModule: exportado pro CountsService (src/counts/).
-  exports: [OpportunityService],
+  exports: [OpportunityService, OpportunityItemService],
 })
 export class OpportunityModule {}

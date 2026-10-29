@@ -6,6 +6,10 @@ import { isoParaInputLocal } from "@/lib/format-date";
 import type { Contact, TaskType } from "@/lib/api/types";
 import { createContactInlineAction } from "./actions";
 
+// Valor da opção "+ Cadastrar novo contato" no fim da lista de contatos —
+// nunca vai pro servidor (escolhê-la só abre o cadastro).
+const NOVO_CONTATO = "__novo_contato__";
+
 // Compartilhado entre "Nova tarefa" (nova/nova-form.tsx, renderizado por
 // um client component) e o form de edição dentro do modal de detalhe
 // (_detail/detail-body.tsx, renderizado por um Server Component — dá pra
@@ -48,7 +52,7 @@ export default function TipoContatoFields({
   // Empresa por trás do Contato — precisa pra cadastrar um contato novo
   // direto daqui quando a empresa escolhida ainda não tem nenhum. Ausente
   // (ex.: "Nova tarefa" antes de escolher uma empresa) esconde o
-  // "+ Cadastrar contato".
+  // "+ Cadastrar novo contato" (última opção da lista de contatos).
   companyId?: string | null;
 }) {
   const [tipo, setTipo] = useState<TaskType | "">(initialTipo ?? "");
@@ -174,46 +178,41 @@ export default function TipoContatoFields({
       </label>
       <input type="hidden" name="dueHasTime" value={comHora ? "1" : ""} />
       {requiresContact && (
-        <div>
-          <div className="field" style={{ marginBottom: 6 }}>
-            <label>Contato</label>
-          </div>
-          <select
-            name="contactId"
-            value={selectedContactId}
-            onChange={(event) => setSelectedContactId(event.target.value)}
-            required
-          >
-            <option value="" disabled>
-              Selecione um contato
-            </option>
-            {localContacts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-                {c.cargo ? ` — ${c.cargo}` : ""}
+        <>
+          {/* Mesmo formato de rótulo do Tipo e do Prazo, pra alinhar na
+              grade. "Cadastrar novo contato" é a última opção da própria
+              lista (pedido do usuário, 2026-10-29, molde do "+ Adicionar
+              nova opção" do app de orçamentos) — antes era um texto com
+              botão embaixo do campo, que desalinhava a linha. Escolher
+              essa opção abre o cadastro e não troca o contato marcado. */}
+          <label>
+            Contato
+            <select
+              name="contactId"
+              value={selectedContactId}
+              onChange={(event) => {
+                if (event.target.value === NOVO_CONTATO) {
+                  setCreating(true);
+                  return;
+                }
+                setSelectedContactId(event.target.value);
+              }}
+              required
+            >
+              <option value="" disabled>
+                {localContacts.length === 0 ? "Nenhum contato cadastrado" : "Selecione um contato"}
               </option>
-            ))}
-          </select>
-          {localContacts.length === 0 && !creating && (
-            <div className="field-hint">
-              Nenhum contato cadastrado para esta empresa.
-              {companyId && (
-                <>
-                  {" "}
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{ padding: 0 }}
-                    onClick={() => setCreating(true)}
-                  >
-                    + Cadastrar contato
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+              {localContacts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                  {c.cargo ? ` — ${c.cargo}` : ""}
+                </option>
+              ))}
+              {companyId && <option value={NOVO_CONTATO}>+ Cadastrar novo contato…</option>}
+            </select>
+          </label>
           {creating && (
-            <div className="field" style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="field" style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 8 }}>
               {formError && <div className="error-banner">{formError}</div>}
               <input placeholder="Nome*" value={nome} onChange={(event) => setNome(event.target.value)} />
               <input placeholder="Cargo" value={cargo} onChange={(event) => setCargo(event.target.value)} />
@@ -252,7 +251,7 @@ export default function TipoContatoFields({
               </div>
             </div>
           )}
-        </div>
+        </>
       )}
       {ehReuniao && (
         <div style={{ gridColumn: "1 / -1" }}>

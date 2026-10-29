@@ -28,17 +28,21 @@ Feche o MicroSIP.
 
 ## 3. Rodar o instalador
 
-1. Copie esta pasta (`scripts/telefonia`) para a máquina, por exemplo em
+1. Descompacte o pacote (ou copie esta pasta) na máquina, por exemplo em
    `C:\gama-telefonia`.
-2. No CRM, em **Administração → Telefonia**, gere a credencial daquele
-   computador e copie o endereço do CRM e o token.
-3. **Feche o MicroSIP** (com ele aberto, a configuração que o instalador
-   grava se perde ao fechar) e, na pasta, clique com o botão direito →
-   **Abrir no Terminal**. Rode:
+2. **Feche o MicroSIP** (com ele aberto, a configuração que o instalador
+   grava se perde ao fechar).
+3. Dê dois cliques em **`INSTALAR.bat`**. Se a máquina já teve a
+   telefonia, ele acha a instalação anterior e reaproveita a credencial;
+   se não, pede o token gerado no CRM, em **Administração → Telefonia**.
+   Antes de instalar, mostra o diagnóstico do registro anterior (quantos
+   avisos chegaram ao CRM e o último erro, sem número de cliente).
 
-   ```powershell
-   .\instalar.ps1 -ApiUrl "https://ENDERECO-DO-CRM" -Token "gama-fone_..."
-   ```
+Quem preferir o terminal pode rodar direto:
+
+```powershell
+.\instalar.ps1 -ApiUrl "https://ENDERECO-DO-CRM" -Token "gama-fone_..."
+```
 
 O instalador guarda a credencial, associa o botão **Ligar** do CRM ao
 MicroSIP, liga o registro automático das chamadas e, no fim, manda um
@@ -67,10 +71,29 @@ que o instalador registra só para o usuário daquela máquina.
 ## O que estes scripts fazem (e o que não fazem)
 
 - `discar.ps1` recebe o clique do botão Ligar e abre o MicroSIP no número.
-- `registrar-chamada.ps1` avisa o CRM quando a chamada começa, é atendida
-  e termina. Nada mais.
-- Não gravam áudio, não leem a tela, não guardam o número em lugar nenhum
-  além do log local.
+- `registrar-chamada.ps1` avisaria o CRM quando a chamada começa, é
+  atendida e termina. **Desligado** (decisão do usuário, 2026-10-27): a
+  gravação é um controle à parte e não muda nada no CRM. O instalador
+  deixa os ganchos do MicroSIP vazios.
+- A gravação é do próprio MicroSIP (o instalador liga a gravação automática
+  em MP3 na pasta `gravacoes`, ao lado destes scripts).
+- `enviar-gravacoes.ps1` sobe para o CRM o que estiver nessa pasta e apaga
+  o que o CRM confirmou. Roda a cada clique em **Ligar** (dentro do
+  `discar.ps1`) e uma vez no fim da instalação. Não existe tarefa agendada:
+  o antivírus da máquina da SDR (Panda Dome) bloqueia PowerShell aberto
+  pelo Agendador. Arquivo que o CRM recusar vai para `recusadas`, dentro da
+  pasta onde estava.
+- O envio também olha a pasta que estiver configurada no MicroSIP e a
+  pasta padrão dele (`Área de Trabalho\Recordings`, oculta), onde as
+  ligações da SDR ficaram antes da correção. Fora da pasta do instalador,
+  só sobe (e apaga) arquivo com o nome que o MicroSIP dá às gravações.
+- Não leem a tela e não guardam o número em lugar nenhum além do log local.
+
+## Reinstalar numa máquina que já tem a telefonia
+
+Feche o MicroSIP e dê dois cliques em `INSTALAR.bat` do pacote novo, em
+qualquer pasta — o endereço do CRM e a credencial são reaproveitados da
+instalação anterior.
 - O token identifica a máquina e a pessoa; não é senha de login e não dá
   acesso ao resto do CRM. Revogar no CRM derruba só o registro automático
   daquele computador.

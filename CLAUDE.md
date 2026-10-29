@@ -63,6 +63,8 @@ Referência sob demanda: `arquitetura-dados.md` (modelo de dados),
 `reports-email.md` (e-mails que o CRM envia: resumo diário + avisos de
 tarefa designada e de destaque em anotação), `telefonia-crm.md` (plano da
 ligação telefônica do SDR de dentro do CRM),
+`console-fiscal.md` (módulo de conferência de notas fiscais: tributos,
+remessa × retorno, tabelas `fiscal_*` e tabela de CFOP da Gama),
 `design-system-gama.md` (identidade visual da Gama — cores, tipografia e
 componentes; consultar antes de criar tela ou componente novo, e copiar
 pra qualquer produto Gama novo).
@@ -135,8 +137,21 @@ na raiz. Frontend → `web/node_modules/.bin/vercel --prod` dentro de
 `web/`. **Não usar `npx`** neste ambiente (trava com `ECOMPROMISED`).
 
 Publique ao concluir qualquer ajuste de código, sem perguntar — é a única
-forma do usuário conferir. Entrega só de backend vai pro Railway; só de
-frontend, pra Vercel; se tocou nos dois, os dois.
+forma do usuário conferir. **Todo ajuste vai direto pra produção**
+(instrução do usuário, 2026-10-28), inclusive funcionalidade nova. Entrega
+só de backend vai pro Railway; só de frontend, pra Vercel; se tocou nos
+dois, os dois.
+
+**Beta (molde "dev × exec" do Apps Script, 2026-10-20)**: endereço fixo
+`https://crm-gama-beta.vercel.app`, com selo "Beta" (`web/lib/ambiente.ts`,
+variável só no ambiente Preview da Vercel). Só se usa **quando o usuário
+pedir** pra publicar no beta — nunca por iniciativa do agente. Nesse caso:
+`vercel deploy` (sem `--prod`) e depois `vercel alias set <url-do-deploy> crm-gama-beta.vercel.app`,
+e produção só depois do "pode publicar" dele. O beta usa o **mesmo banco e
+o mesmo backend** da produção — backend recebe só acréscimos enquanto a
+novidade está em teste. Entrada tem a trava da Vercel (login da conta
+Vercel do time) antes do login do CRM. Em `git bash`, `vercel curl /rota`
+precisa de `MSYS_NO_PATHCONV=1`.
 
 ### Cuidados
 
