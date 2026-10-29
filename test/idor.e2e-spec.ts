@@ -792,6 +792,29 @@ describe('IDOR — um sales_rep não alcança o registro de outro pela rota HTTP
       );
     }, 20000);
 
+    // Um card só pelo id (2026-10-29). Sem token, qualquer um leria empresa,
+    // valor, itens e motivo de perda de qualquer card — inclusive os fechados.
+    // UUID válido de propósito: id mal formado morre no ParseUUIDPipe com 400
+    // antes do token ser conferido, e o teste passaria sem exercitar o controle.
+    it('recusa ler um card sem Authorization nenhum', async () => {
+      const res = await request(app.getHttpServer()).get(
+        '/integrations/cotacoes/oportunidades/00000000-0000-4000-8000-000000000000',
+      );
+      expect(res.status).toBe(401);
+    }, 20000);
+
+    it('recusa ler um card com token forjado', async () => {
+      const res = await request(app.getHttpServer())
+        .get(
+          '/integrations/cotacoes/oportunidades/00000000-0000-4000-8000-000000000000',
+        )
+        .set('Authorization', 'Bearer token-forjado-de-proposito');
+      expect(res.status).toBe(401);
+      expect((res.body as { message?: string }).message).toBe(
+        'Token inválido.',
+      );
+    }, 20000);
+
     // Proposta congelada → PDF no card (2026-09-28). Sem esta checagem,
     // qualquer um anexaria um "documento oficial" em qualquer card — e o
     // anexo da integração é justamente o que ninguém pode remover pela tela.

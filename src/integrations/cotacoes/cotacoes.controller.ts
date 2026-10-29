@@ -4,6 +4,8 @@ import {
   Get,
   Headers,
   HttpCode,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -118,6 +120,19 @@ export class CotacoesController {
   ) {
     this.cotacoes.assertTokenValido(authorization);
     return this.cotacoes.fila(query);
+  }
+
+  // Um card só, pelo id, em qualquer situação (aberto, ganho, perdido) — a
+  // aba "Card CRM" da tela de aprovação do app. Mesmo formato do item da fila.
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Public()
+  @Get('oportunidades/:id')
+  async oportunidade(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    this.cotacoes.assertTokenValido(authorization);
+    return this.cotacoes.oportunidade(id);
   }
 
   // "Enviar proposta ao CRM" — recebe a proposta CONGELADA do app de

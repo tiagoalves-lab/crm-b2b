@@ -1245,32 +1245,7 @@ export class CotacoesService {
                   ],
                 }),
           },
-          select: {
-            id: true,
-            description: true,
-            amount: true,
-            createdAt: true,
-            updatedAt: true,
-            position: true,
-            slaDueDate: true,
-            trelloCardId: true,
-            trelloCardUrl: true,
-            ownerUserId: true,
-            company: {
-              select: {
-                id: true,
-                razaoSocial: true,
-                fantasia: true,
-                cpfCnpj: true,
-                uf: true,
-              },
-            },
-            stage: { select: { id: true, name: true, order: true } },
-            items: {
-              select: { id: true, name: true, amount: true, position: true },
-              orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
-            },
-          },
+          select: SELECT_SOLICITACAO,
           orderBy: [{ updatedAt: 'asc' }],
           take: limite + 1,
         }),
@@ -1286,38 +1261,55 @@ export class CotacoesService {
     return {
       atualizado_em: new Date().toISOString(),
       truncado,
-      solicitacoes: pagina.map((o) => {
-        const dono = identidades.get(o.ownerUserId);
-        return {
-          opportunity_id: o.id,
-          empresa: {
-            id: o.company.id,
-            nome: o.company.razaoSocial || o.company.fantasia || '',
-            cnpj: (o.company.cpfCnpj ?? '').replace(/\D/g, ''),
-            uf: o.company.uf ?? '',
+      solicitacoes: pagina.map((o) =>
+        montarSolicitacao(o, identidades.get(o.ownerUserId)),
+      ),
+    };
+  }
+
+  // Um card só, pelo id (2026-10-29) — a aba "Card CRM" da tela de aprovação
+  // do app de cotações. Até aqui o app pedia a fila inteira e procurava o card
+  // nela, e card ganho/perdido não vinha (a fila é só `open`). Diferenças de
+  // propósito em relação à fila:
+  // - **Sem filtro de status nem de carga histórica**: quem pede pelo id já
+  //   sabe qual card quer. Por isso a resposta leva `status`, `fechado_em`,
+  //   `motivo_perda` e `standby_em` — o app precisa dizer em que pé o card está.
+  // - **Mesmo formato da fila** (`montarSolicitacao`): o app usa o mesmo código
+  //   para marcar os itens cotados nas duas.
+  // - **404 com `motivo: 'nao_encontrada'`**: é o que deixa o app separar
+  //   "card apagado/inexistente" do 404 padrão do Nest ("Cannot GET"), que ele
+  //   lê como "rota ainda não publicada" e cai na fila.
+  async oportunidade(id: string): Promise<OportunidadeDaCotacao> {
+    const workspaceId = await this.workspaceId();
+    const o = await this.tenantContext.run(
+      this.ctxSistema(workspaceId),
+      async (tx) =>
+        tx.opportunity.findFirst({
+          where: { id, workspaceId, deletedAt: null },
+          select: {
+            ...SELECT_SOLICITACAO,
+            status: true,
+            closedAt: true,
+            lostReason: true,
+            standbyAt: true,
           },
-          etapa: o.stage.name,
-          etapa_posicao: o.stage.order,
-          // Ordem do card dentro da etapa no quadro (null = nunca arrastado):
-          // a Fila de cotação do app ordena igual ao pipeline.
-          posicao: o.position ?? null,
-          representante: dono?.name ?? dono?.login ?? '',
-          descricao: o.description ?? '',
-          valor: o.amount == null ? null : Number(o.amount),
-          criado_em: o.createdAt.toISOString(),
-          atualizado_em: o.updatedAt.toISOString(),
-          // Vazio = proposta ainda pendente (o CRM zera quando ela sai das
-          // etapas de proposta). É o mesmo sinal do SLA da tela do CRM.
-          proposta_em: o.slaDueDate ? o.slaDueDate.toISOString() : null,
-          trello_card_id: o.trelloCardId ?? null,
-          trello_card_url: o.trelloCardUrl ?? null,
-          itens: o.items.map((i) => ({
-            item_id: i.id,
-            descricao: i.name,
-            valor: i.amount == null ? null : Number(i.amount),
-          })),
-        };
-      }),
+        }),
+    );
+    if (!o) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Oportunidade não encontrada.',
+        motivo: 'nao_encontrada',
+      });
+    }
+
+    const identidades = await this.supabaseUsers.getIdentities([o.ownerUserId]);
+    return {
+      ...montarSolicitacao(o, identidades.get(o.ownerUserId)),
+      status: o.status,
+      fechado_em: o.closedAt ? o.closedAt.toISOString() : null,
+      motivo_perda: o.lostReason ?? null,
+      standby_em: o.standbyAt ? o.standbyAt.toISOString() : null,
     };
   }
 
@@ -1701,6 +1693,77 @@ export interface SolicitacaoDaFila {
   trello_card_id: string | null;
   trello_card_url: string | null;
   itens: Array<{ item_id: string; descricao: string; valor: number | null }>;
+}
+
+export interface OportunidadeDaCotacao extends SolicitacaoDaFila {
+  status: OpportunityStatus;
+  fechado_em: string | null;
+  motivo_perda: string | null;
+  standby_em: string | null;
+}
+
+// O que a fila e a rota de um card só leem da oportunidade — um select só,
+// senão os dois formatos divergem com o tempo.
+const SELECT_SOLICITACAO = {
+  id: true,
+  description: true,
+  amount: true,
+  createdAt: true,
+  updatedAt: true,
+  position: true,
+  slaDueDate: true,
+  trelloCardId: true,
+  trelloCardUrl: true,
+  ownerUserId: true,
+  company: {
+    select: {
+      id: true,
+      razaoSocial: true,
+      fantasia: true,
+      cpfCnpj: true,
+      uf: true,
+    },
+  },
+  stage: { select: { id: true, name: true, order: true } },
+  items: {
+    select: { id: true, name: true, amount: true, position: true },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+  },
+} satisfies Prisma.OpportunitySelect;
+
+function montarSolicitacao(
+  o: Prisma.OpportunityGetPayload<{ select: typeof SELECT_SOLICITACAO }>,
+  dono: { name?: string | null; login?: string | null } | undefined,
+): SolicitacaoDaFila {
+  return {
+    opportunity_id: o.id,
+    empresa: {
+      id: o.company.id,
+      nome: o.company.razaoSocial || o.company.fantasia || '',
+      cnpj: (o.company.cpfCnpj ?? '').replace(/\D/g, ''),
+      uf: o.company.uf ?? '',
+    },
+    etapa: o.stage.name,
+    etapa_posicao: o.stage.order,
+    // Ordem do card dentro da etapa no quadro (null = nunca arrastado):
+    // a Fila de cotação do app ordena igual ao pipeline.
+    posicao: o.position ?? null,
+    representante: dono?.name ?? dono?.login ?? '',
+    descricao: o.description ?? '',
+    valor: o.amount == null ? null : Number(o.amount),
+    criado_em: o.createdAt.toISOString(),
+    atualizado_em: o.updatedAt.toISOString(),
+    // Vazio = proposta ainda pendente (o CRM zera quando ela sai das
+    // etapas de proposta). É o mesmo sinal do SLA da tela do CRM.
+    proposta_em: o.slaDueDate ? o.slaDueDate.toISOString() : null,
+    trello_card_id: o.trelloCardId ?? null,
+    trello_card_url: o.trelloCardUrl ?? null,
+    itens: o.items.map((i) => ({
+      item_id: i.id,
+      descricao: i.name,
+      valor: i.amount == null ? null : Number(i.amount),
+    })),
+  };
 }
 
 interface ComentarioEspelhado {

@@ -1525,6 +1525,62 @@ describe('CotacoesService', () => {
       expect(res.solicitacoes).toHaveLength(1);
       expect(res.solicitacoes[0].itens).toEqual([]);
     });
+
+    // Um card só (2026-10-29): mesmo formato da fila, em qualquer situação.
+    describe('oportunidade (um card só)', () => {
+      it('devolve card ganho com a situação e a data de fechamento', async () => {
+        const { service, deps } = montar();
+        deps.tx.opportunity.findFirst.mockResolvedValue(
+          oportunidadeFake({
+            status: 'won',
+            closedAt: new Date('2026-10-20T15:00:00Z'),
+            lostReason: null,
+            standbyAt: null,
+          }),
+        );
+
+        const res = await service.oportunidade(OPPORTUNITY_ID);
+
+        expect(res.opportunity_id).toBe(OPPORTUNITY_ID);
+        expect(res.status).toBe('won');
+        expect(res.fechado_em).toBe('2026-10-20T15:00:00.000Z');
+        expect(res.empresa.cnpj).toBe('00000000000191');
+        expect(res.itens.map((i) => i.item_id)).toEqual(['item-1', 'item-2']);
+      });
+
+      it('não filtra por situação nem por origem, só workspace e apagado', async () => {
+        const { service, deps } = montar();
+        deps.tx.opportunity.findFirst.mockResolvedValue(
+          oportunidadeFake({
+            status: 'lost',
+            closedAt: null,
+            lostReason: 'Preço',
+            standbyAt: null,
+          }),
+        );
+
+        const res = await service.oportunidade(OPPORTUNITY_ID);
+
+        const args = deps.tx.opportunity.findFirst.mock.calls[0][0] as {
+          where: Record<string, unknown>;
+        };
+        expect(args.where.id).toBe(OPPORTUNITY_ID);
+        expect(args.where.deletedAt).toBeNull();
+        expect(args.where.workspaceId).toBeDefined();
+        expect(args.where.status).toBeUndefined();
+        expect(args.where.OR).toBeUndefined();
+        expect(res.motivo_perda).toBe('Preço');
+      });
+
+      it('card inexistente ou apagado vira 404 com motivo próprio', async () => {
+        const { service, deps } = montar();
+        deps.tx.opportunity.findFirst.mockResolvedValue(null);
+
+        await expect(service.oportunidade(OPPORTUNITY_ID)).rejects.toMatchObject({
+          response: { motivo: 'nao_encontrada' },
+        });
+      });
+    });
   });
 
   describe('avancarEstagio', () => {

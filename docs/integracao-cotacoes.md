@@ -252,6 +252,24 @@ oferece "Cadastrar" nesse caso).
 
 Resposta: `{ opportunity_id, novos, editados, recebidos }`.
 
+## `GET /integrations/cotacoes/oportunidades/:id` — um card só (2026-10-29)
+
+A aba "Card CRM" da tela de aprovação do app (`?aprovar=N`) mostra o card
+vinculado ao orçamento. Até aqui o app pedia a `GET /fila` inteira (até 500
+cards) e procurava o card nela — e a fila só traz `status = open`, então card
+ganho/perdido não aparecia.
+
+- **Mesmo formato do item da fila** (`montarSolicitacao`, um `select` só para
+  as duas rotas), mais `status` (open | won | lost), `fechado_em`,
+  `motivo_perda` e `standby_em`.
+- **Sem filtro de situação nem de carga histórica**: quem pede pelo id já sabe
+  o card. Continua o filtro de workspace e de apagado.
+- **404 com `motivo: "nao_encontrada"`** para card inexistente/apagado. O app
+  lê o 404 padrão do Nest ("Cannot GET") como "rota ainda não publicada" e cai
+  na fila — por isso app e CRM sobem em qualquer ordem.
+- Token `COTACOES_API_TOKEN` como as demais; throttle 120/min por IP; id
+  validado como UUID antes do handler.
+
 ## Carga inicial (feita em 2026-08-28)
 
 Migração única, direto nos dois bancos (antes do endpoint existir), com
