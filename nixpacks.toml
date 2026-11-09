@@ -37,6 +37,11 @@ aptPkgs = [
   "libasound2t64",
   "fonts-liberation",
   "fonts-dejavu-core",
+  # Tahoma (2026-11-09, proposta 3068 v2): os templates do app de cotações usam
+  # Tahoma, que o Linux não tem — o Chromium caía na DejaVu Sans, bem mais larga,
+  # o texto ganhava linhas e, como o layout da proposta é posicionado, invadia o
+  # elemento de baixo. A Tahoma do Wine é livre e tem as mesmas medidas.
+  "fonts-wine",
   # Sem unzip o puppeteer não extrai o Chrome que baixa: o postinstall do
   # npm ci só avisava, e o servidor subia sem navegador (2026-10-08).
   "unzip",
